@@ -4,7 +4,14 @@ const color_schemes = {
     "neon":{
         "empty":"#0E1318",
         "food":"#2F7AB7",
+        "low food": "#ff0000",
+        "medium food": "#ff8000",
+        "prestige food": "#00ffff",
         "wall":"white",
+        "cave": "#3a0d00",
+        "low food landmark": "#ff4000",
+        "medium food landmark": "#ffbf00",
+        "prestige food landmark": "#00bfff",
         "mouth":"#DEB14D",
         "producer":"#15DE59",
         "mover":"#60D4FF",
@@ -16,7 +23,14 @@ const color_schemes = {
     "classic":{
         "empty":"#121D29",
         "food":"green",
+        "low food": "#ff0000",
+        "medium food": "#ff8000",
+        "prestige food": "#00ffff",
         "wall":"gray",
+        "cave": "#3a0d00",
+        "low food landmark": "#ff4000",
+        "medium food landmark": "#ffbf00",
+        "prestige food landmark": "#00bfff",
         "mouth":"orange",
         "producer":"pink",
         "mover":"blue",
@@ -28,7 +42,14 @@ const color_schemes = {
     "soft":{
         "empty":"#0B0E11",
         "food":"#4F86B2",
+        "low food": "#ff0000",
+        "medium food": "#ff8000",
+        "prestige food": "#00ffff",
         "wall":"#5F6F78",
+        "cave": "#3a0d00",
+        "low food landmark": "#ff4000",
+        "medium food landmark": "#ffbf00",
+        "prestige food landmark": "#00bfff",
         "mouth":"#B89A6A",
         "producer":"#4EA17B",
         "mover":"#6BA2C4",
@@ -40,7 +61,14 @@ const color_schemes = {
     "dark":{
         "empty":"black",
         "food":"#225986",
+        "low food": "#ff0000",
+        "medium food": "#ff8000",
+        "prestige food": "#00ffff",
         "wall":"#56616E",
+        "cave": "#3a0d00",
+        "low food landmark": "#ff4000",
+        "medium food landmark": "#ffbf00",
+        "prestige food landmark": "#00bfff",
         "mouth":"#AD8A45",
         "producer":"#198D4F",
         "mover":"#278BB0",
@@ -52,7 +80,14 @@ const color_schemes = {
     "grayscale":{
         "empty":"black",
         "food":"#777777",
+        "low food": "#ff0000",
+        "medium food": "#ff8000",
+        "prestige food": "#00ffff",
         "wall":"#EEEEEE",
+        "cave": "#3a0d00",
+        "low food landmark": "#ff4000",
+        "medium food landmark": "#ffbf00",
+        "prestige food landmark": "#00bfff",
         "mouth":"#FFFFFF",
         "producer":"#CCCCCC",
         "mover":"#BBBBBB",
@@ -81,9 +116,11 @@ class ColorSchemeSingleton {
         }
         CellStates.eye.slit_color=color_scheme['eye-slit']
         for (var cell_type in color_scheme) {
-            $('#'+cell_type+'.cell-type ').css('background-color', color_scheme[cell_type]);
-            $('#'+cell_type+'.cell-legend-type').css('background-color', color_scheme[cell_type]);
-            
+            // Set colors for cell-type and cell-legend-type with proper selector syntax
+            const cell_type_elem = $('#' + cell_type.replace(/ /g, '\\ ') + '.cell-type');
+            const legend_type_elem = $('#' + cell_type.replace(/ /g, '\\ ') + '.cell-legend-type');
+            cell_type_elem.css('background-color', color_scheme[cell_type]);
+            legend_type_elem.css('background-color', color_scheme[cell_type]);
         }
         this.world_env.renderer.renderFullGrid(this.world_env.grid_map.grid);
         this.editor_env.renderer.renderFullGrid(this.editor_env.grid_map.grid);

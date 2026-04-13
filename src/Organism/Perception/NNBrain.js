@@ -1,0 +1,419 @@
+/**
+ * NNBrain.js
+ *
+ * Neural network policy for investigating whether within-lifetime reinforcement
+ * learning influences the rate at which effective food-seeking behaviours become
+ * encoded in heritable neural network weights across generations.
+ *
+ * Architecture:  33 -> 8 -> 4
+ *   Input  (33): 4 eye directions x 8 one-hot percept types  +  1 energy scalar
+ *   Hidden  (8): ReLU
+ *   Output  (4): softmax -> up / right / down / left
+ *   Genome: 33x8 + 8 + 8x4 + 4 = 264 + 8 + 32 + 4 = 308 weights
+ *
+ * Perception:
+ *   Uses the existing EyeCell.look() raycast (lookRange = 30 by default).
+ *   Each of the 4 directional eye cells returns the first non-empty cell within
+ *   range. NNBrain reads those observations directly rather than going through
+ *   the Brain.observe() / Brain.decide() pipeline.
+ *
+ *   Percept types (one-hot, 8 classes):
+ *     0 - nothing / empty / out-of-bounds
+ *     1 - food_red       (energy 0.5)
+ *     2 - food_orange    (energy 1.0)
+ *     3 - food_teal      (energy 2.0)
+ *     4 - wall / obstacle
+ *     5 - landmark_red   (red food nearby)
+ *     6 - landmark_orange
+ *     7 - landmark_teal
+ *
+ * GA / inheritance (non-Lamarckian):
+ *   genome_weights -- starting weights; what the GA reads and crossovers.
+ *                     Never modified during an agent's lifetime.
+ *   active_weights -- copy of genome at birth; RL updates go here only.
+ *                     Discarded at death. The GA never sees these.
+ *
+ * Condition A (rl_enabled = true):
+ *   active_weights drifts via REINFORCE + eligibility traces each tick.
+ *   genome_weights stays frozen. GA selects on genome_weights.
+ *
+ * Condition B (rl_enabled = false):
+ *   active_weights === genome_weights (same reference). No RL, no drift.
+ *
+ * Exploration:
+ *   Epsilon-greedy with linear decay over the agent's lifetime.
+ *   Set EPSILON_START = 0 to disable entirely.
+ */
+
+'use strict';
+
+const Directions = require('../Directions');
+
+// Percept type map: CellState name -> one-hot index
+// Add entries here when you add new CellStates.
+// Anything not listed falls back to 0 (nothing).
+// Keys are CellState.name values (the string passed to super() in each class).
+// These must match exactly — note spaces in the new food/landmark names.
+const PERCEPT_INDEX = {
+    'empty':                    0,
+    'wall':                     4,
+    'low food':                 1,   // CellStates.lowFood.name
+    'medium food':              2,   // CellStates.mediumFood.name
+    'prestige food':            3,   // CellStates.prestigeFood.name
+    'low food landmark':        5,   // CellStates.lowFoodLandmark.name
+    'medium food landmark':     6,   // CellStates.mediumFoodLandmark.name
+    'prestige food landmark':   7,   // CellStates.prestigeFoodLandmark.name
+    'food':                     2,   // base LifeEngine food -> medium tier as fallback
+    'cave':                     0,   // caves not a navigation target; treated as empty
+};
+const N_PERCEPT_TYPES = 8;
+
+// Fixed iteration order for the 4 eye directions
+const EYE_DIRECTIONS = [
+    Directions.up,
+    Directions.right,
+    Directions.down,
+    Directions.left,
+];
+const N_EYE_DIRECTIONS = 4;
+
+// Network topology
+const N_SCALARS   = 1;   // energy
+const STATE_SIZE  = N_EYE_DIRECTIONS * N_PERCEPT_TYPES + N_SCALARS;  // 33
+const HIDDEN_SIZE = 8;
+const OUTPUT_SIZE = 4;
+
+const W1_SIZE     = STATE_SIZE  * HIDDEN_SIZE;   // 264
+const B1_SIZE     = HIDDEN_SIZE;                 //   8
+const W2_SIZE     = HIDDEN_SIZE * OUTPUT_SIZE;   //  32
+const B2_SIZE     = OUTPUT_SIZE;                 //   4
+const GENOME_SIZE = W1_SIZE + B1_SIZE + W2_SIZE + B2_SIZE;  // 308
+
+// RL hyper-parameters
+const RL_LR       = 0.02;
+const TRACE_DECAY = 0.90;
+
+// Exploration
+const EPSILON_START = 0.2;
+const EPSILON_END   = 0.05;
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function xavierRandom(fan_in, fan_out) {
+    const limit = Math.sqrt(6 / (fan_in + fan_out));
+    return (Math.random() * 2 - 1) * limit;
+}
+
+function relu(x) { return x > 0 ? x : 0; }
+
+function softmax(arr) {
+    const max  = Math.max(...arr);
+    const exps = arr.map(v => Math.exp(v - max));
+    const sum  = exps.reduce((a, b) => a + b, 0);
+    return exps.map(v => v / sum);
+}
+
+function perceptIndex(name) {
+    const idx = PERCEPT_INDEX[name];
+    return idx !== undefined ? idx : 0;
+}
+
+// ── Main class ────────────────────────────────────────────────────────────────
+
+class NNBrain {
+    constructor(owner, rl_enabled = true) {
+        this.owner      = owner;
+        this.rl_enabled = rl_enabled;
+
+        this.genome_weights = new Float32Array(GENOME_SIZE);
+        this._initGenome();
+
+        // Condition A: independent copy that RL drifts. genome_weights stays frozen.
+        // Condition B: same reference — no drift, no overhead.
+        this.active_weights = rl_enabled
+            ? new Float32Array(this.genome_weights)
+            : this.genome_weights;
+
+        this.traces       = rl_enabled ? new Float32Array(GENOME_SIZE) : null;
+        this._hidden      = new Float32Array(HIDDEN_SIZE);
+        this._input       = new Float32Array(STATE_SIZE);
+        this._last_probs  = null;
+        this._last_action = null;
+    }
+
+    _initGenome() {
+        let i = 0;
+        for (let j = 0; j < W1_SIZE; j++) this.genome_weights[i++] = xavierRandom(STATE_SIZE, HIDDEN_SIZE);
+        for (let j = 0; j < B1_SIZE; j++) this.genome_weights[i++] = 0;
+        for (let j = 0; j < W2_SIZE; j++) this.genome_weights[i++] = xavierRandom(HIDDEN_SIZE, OUTPUT_SIZE);
+        for (let j = 0; j < B2_SIZE; j++) this.genome_weights[i++] = 0;
+    }
+
+    // Inherit from parent — genome_weights only, never active_weights.
+    // Non-Lamarckian: RL drift in the parent is discarded.
+    copy(parent_brain) {
+        this.rl_enabled     = parent_brain.rl_enabled;
+        this.genome_weights = new Float32Array(parent_brain.genome_weights);
+        if (this.rl_enabled) {
+            this.active_weights = new Float32Array(this.genome_weights);
+            this.traces         = new Float32Array(GENOME_SIZE);
+        } else {
+            this.active_weights = this.genome_weights;
+            this.traces         = null;
+        }
+        this._hidden      = new Float32Array(HIDDEN_SIZE);
+        this._input       = new Float32Array(STATE_SIZE);
+        this._last_probs  = null;
+        this._last_action = null;
+    }
+
+    // ── Perception ────────────────────────────────────────────────────────────
+
+    // Build 33-element state vector from 4 eye observations + energy.
+    // observations: array of 4 Observation objects in [up, right, down, left] order.
+    buildStateVector(observations, max_energy) {
+        const state = this._input;
+        state.fill(0);
+
+        for (let d = 0; d < N_EYE_DIRECTIONS; d++) {
+            const obs  = observations[d];
+            const base = d * N_PERCEPT_TYPES;
+            let type_idx = 0;
+            if (obs && obs.cell && obs.cell.state) {
+                type_idx = perceptIndex(obs.cell.state.name);
+            }
+            state[base + type_idx] = 1;
+        }
+
+        const energy_norm = max_energy > 0
+            ? Math.min(1, Math.max(0, (this.owner.energy || 0) / max_energy))
+            : 0;
+        state[N_EYE_DIRECTIONS * N_PERCEPT_TYPES] = energy_norm;
+
+        return state;
+    }
+
+    // ── Forward pass ──────────────────────────────────────────────────────────
+
+    forward(input_state) {
+        const w = this.active_weights;
+
+        // Hidden layer
+        const b1_off = W1_SIZE;
+        for (let j = 0; j < HIDDEN_SIZE; j++) {
+            let sum = w[b1_off + j];
+            const base = j * STATE_SIZE;
+            for (let i = 0; i < STATE_SIZE; i++) sum += w[base + i] * input_state[i];
+            this._hidden[j] = relu(sum);
+        }
+
+        // Output layer
+        const W2_off = W1_SIZE + B1_SIZE;
+        const b2_off = W2_off + W2_SIZE;
+        const logits = new Array(OUTPUT_SIZE);
+        for (let k = 0; k < OUTPUT_SIZE; k++) {
+            let sum = w[b2_off + k];
+            const base = W2_off + k * HIDDEN_SIZE;
+            for (let j = 0; j < HIDDEN_SIZE; j++) sum += w[base + j] * this._hidden[j];
+            logits[k] = sum;
+        }
+
+        this._last_probs  = softmax(logits);
+        this._last_action = this._sampleCategorical(this._last_probs);
+        return this._last_action;
+    }
+
+    _sampleCategorical(probs) {
+        let r = Math.random();
+        for (let i = 0; i < probs.length; i++) {
+            r -= probs[i];
+            if (r <= 0) return i;
+        }
+        return probs.length - 1;
+    }
+
+    // ── RL update ─────────────────────────────────────────────────────────────
+
+    // REINFORCE with eligibility traces.
+    // Only updates active_weights — genome_weights is never touched.
+    reinforce(reward) {
+        if (!this.rl_enabled || !this.traces || !this._last_probs) return;
+
+        const w      = this.active_weights;
+        const traces = this.traces;
+        const action = this._last_action;
+        const probs  = this._last_probs;
+
+        const W2_off = W1_SIZE + B1_SIZE;
+        const b2_off = W2_off + W2_SIZE;
+
+        for (let k = 0; k < OUTPUT_SIZE; k++) {
+            const factor = (k === action ? 1 : 0) - probs[k];
+            const base   = W2_off + k * HIDDEN_SIZE;
+            for (let j = 0; j < HIDDEN_SIZE; j++) {
+                traces[base + j] = TRACE_DECAY * traces[base + j] + factor * this._hidden[j];
+            }
+            traces[b2_off + k] = TRACE_DECAY * traces[b2_off + k] + factor;
+        }
+
+        const b1_off = W1_SIZE;
+        for (let j = 0; j < HIDDEN_SIZE; j++) {
+            if (this._hidden[j] <= 0) continue;
+            let delta = 0;
+            for (let k = 0; k < OUTPUT_SIZE; k++) {
+                delta += w[W2_off + k * HIDDEN_SIZE + j] * ((k === action ? 1 : 0) - probs[k]);
+            }
+            traces[b1_off + j] = TRACE_DECAY * traces[b1_off + j] + delta;
+            const base = j * STATE_SIZE;
+            for (let i = 0; i < STATE_SIZE; i++) {
+                traces[base + i] = TRACE_DECAY * traces[base + i] + delta * this._input[i];
+            }
+        }
+
+        for (let idx = 0; idx < GENOME_SIZE; idx++) {
+            w[idx] += RL_LR * reward * traces[idx];
+        }
+    }
+
+    // ── Main entry point ──────────────────────────────────────────────────────
+
+    /**
+     * Called once per tick by AdvancedOrganism.update().
+     *
+     * @param {number} reward        reward signal this tick
+     * @param {number} max_energy    for normalising energy input
+     * @param {number} lifetime_frac 0.0 at birth -> 1.0 at max lifespan, for epsilon decay
+     * @returns {number}  Directions constant 0-3
+     */
+    decide(reward, max_energy, lifetime_frac) {
+        const observations = this._collectObservations();
+        const state        = this.buildStateVector(observations, max_energy);
+
+        // Epsilon-greedy: linear decay from EPSILON_START to EPSILON_END
+        const epsilon = EPSILON_START + (EPSILON_END - EPSILON_START) * lifetime_frac;
+        let action;
+        if (Math.random() < epsilon) {
+            // Explore: random action, but still run forward to cache activations
+            this.forward(state);
+            action = Math.floor(Math.random() * OUTPUT_SIZE);
+            this._last_action = action;
+        } else {
+            action = this.forward(state);
+        }
+
+        if (this.rl_enabled && reward !== 0) {
+            this.reinforce(reward);
+        }
+
+        return action;
+    }
+
+    // Collect one Observation per cardinal direction from the organism's eye cells.
+    // Expects the anatomy to have 4 eye cells, one per direction.
+    // Slots without an eye cell return null (encoded as "nothing" in buildStateVector).
+    _collectObservations() {
+        const obs_by_dir = [null, null, null, null];
+        for (const cell of this.owner.anatomy.cells) {
+            if (typeof cell.look === 'function') {
+                const abs_dir = cell.getAbsoluteDirection();
+                const slot    = EYE_DIRECTIONS.indexOf(abs_dir);
+                if (slot !== -1) obs_by_dir[slot] = cell.look();
+            }
+        }
+        return obs_by_dir;
+    }
+
+    // ── GA interface ──────────────────────────────────────────────────────────
+
+    // Returns genome_weights only. RL drift (active_weights) is never exposed.
+    getGenome() {
+        return this.genome_weights;
+    }
+
+    setGenome(new_weights) {
+        if (new_weights.length !== GENOME_SIZE) {
+            throw new Error(`NNBrain.setGenome: expected ${GENOME_SIZE}, got ${new_weights.length}`);
+        }
+        this.genome_weights = new Float32Array(new_weights);
+        if (this.rl_enabled) {
+            this.active_weights = new Float32Array(this.genome_weights);
+            this.traces.fill(0);
+        } else {
+            this.active_weights = this.genome_weights;
+        }
+        this._hidden.fill(0);
+        this._input.fill(0);
+        this._last_probs  = null;
+        this._last_action = null;
+    }
+
+    // ── Serialisation ─────────────────────────────────────────────────────────
+
+    serialize() {
+        return {
+            type:           'NNBrain',
+            rl_enabled:     this.rl_enabled,
+            genome_weights: Array.from(this.genome_weights),
+        };
+    }
+
+    loadSerialized(data) {
+        if (data.type !== 'NNBrain') throw new Error('NNBrain.loadSerialized: wrong type tag');
+        this.rl_enabled = data.rl_enabled;
+        this.setGenome(new Float32Array(data.genome_weights));
+    }
+
+    // Stub methods for compatibility with Anatomy.js cell addition/removal tracking
+    // NNBrain has fixed input architecture so no dynamic updates needed
+    checkAddedCell(cell) {
+        // No-op: NNBrain input layer is fixed (33 elements)
+    }
+
+    checkRemovedCell(cell) {
+        // No-op: NNBrain input layer is fixed (33 elements)
+    }
+
+    // Stub method for compatibility with EditorController
+    // NNBrain is a fixed-architecture neural network, not a state machine
+    countCells() {
+        // Count eye cells from the organism's anatomy
+        this.eye_cell_count = 0;
+        for (const cell of this.owner.anatomy.cells) {
+            if (cell.state && cell.state.name === 'eye') {
+                this.eye_cell_count++;
+            }
+        }
+    }
+
+    // Stub properties for EditorController compatibility
+    // NNBrain doesn't use state machines like Brain does
+    get num_states() {
+        return 1;  // NNBrain is not a state machine
+    }
+
+    get independent_eye_decisions() {
+        return false;  // NNBrain doesn't have independent eye decisions
+    }
+
+    setIndependentEyeDecisions(enabled) {
+        // No-op: NNBrain doesn't support this feature
+    }
+
+    // Stub method for compatibility with EyeCell.performFunction()
+    // NNBrain reads eye observations directly via buildStateVector(), not via observe() pipeline
+    observe(observation) {
+        // No-op: NNBrain bypasses the Brain.observe() / Brain.decide() pipeline
+    }
+}
+
+NNBrain.GENOME_SIZE      = GENOME_SIZE;
+NNBrain.STATE_SIZE       = STATE_SIZE;
+NNBrain.HIDDEN_SIZE      = HIDDEN_SIZE;
+NNBrain.OUTPUT_SIZE      = OUTPUT_SIZE;
+NNBrain.N_PERCEPT_TYPES  = N_PERCEPT_TYPES;
+NNBrain.N_EYE_DIRECTIONS = N_EYE_DIRECTIONS;
+NNBrain.PERCEPT_INDEX    = PERCEPT_INDEX;
+NNBrain.EPSILON_START    = EPSILON_START;
+NNBrain.EPSILON_END      = EPSILON_END;
+
+module.exports = NNBrain;

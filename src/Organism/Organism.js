@@ -291,7 +291,8 @@ class Organism {
         for (var cell of this.anatomy.cells) {
             var real_c = this.c + cell.rotatedCol(this.rotation);
             var real_r = this.r + cell.rotatedRow(this.rotation);
-            this.env.changeCell(real_c, real_r, CellStates.food, null);
+            // For learning experiment, dead organisms disappear (don't become food)
+            this.env.changeCell(real_c, real_r, CellStates.empty, null);
         }
         this.species.decreasePop();
         this.living = false;

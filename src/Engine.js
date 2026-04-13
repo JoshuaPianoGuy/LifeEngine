@@ -2,6 +2,7 @@ const WorldEnvironment = require('./Environments/WorldEnvironment');
 const ControlPanel = require('./Controllers/ControlPanel');
 const OrganismEditor = require('./Environments/OrganismEditor');
 const {ColorScheme} = require('./Rendering/ColorScheme');
+const WorldConfig = require('./WorldConfig');
 
 const MIN_TIMER_MS = 1;
 let SAFE_STEPS_PER_TICK = 5;// soft upper limit, can be bypassed when we have extra time
@@ -16,7 +17,16 @@ class Engine {
         this.controlpanel = new ControlPanel(this);
         ColorScheme.setEnvironment(this.env, this.organism_editor);
         ColorScheme.loadColorScheme();
-        this.env.OriginOfLife();
+        
+        // Generate initial world with food, obstacles, landmarks, caves
+        this.env.generateWorld();
+        
+        // Initialize founding population using GA manager (always used for generation tracking)
+        // Do this AFTER ColorScheme.loadColorScheme() so rendering is properly initialized
+        this.env.ga_manager.spawnGeneration();
+        
+        // Render the organisms on the canvas
+        this.env.renderFull();
         
         this.sim_last_update = Date.now();
         this.sim_delta_time = 0;

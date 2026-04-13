@@ -260,7 +260,8 @@ input:hover,input:active {
 }
 #cell-legend {
     display: flex;
-    width: max-content;
+    flex-wrap: wrap;
+    max-width: 400px;
     padding: 10px;
     align-items: center;
     background-color: #121D29;

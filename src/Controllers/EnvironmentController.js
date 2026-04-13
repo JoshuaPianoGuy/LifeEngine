@@ -137,6 +137,8 @@ class EnvironmentController extends CanvasController{
                     }
                     if (this.cur_org != null){
                         this.control_panel.setEditorOrganism(this.cur_org);
+                        // Also display organism info in stats panel
+                        this.control_panel.stats_panel.setSelectedOrganism(this.cur_org);
                     }
                     break;
 

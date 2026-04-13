@@ -4,6 +4,7 @@ const WorldConfig = {
     auto_reset: true,
     auto_pause: false,
     brush_size: 2,
+    learning_enabled: true,  // Set to true to run RL experiment with AdvancedOrganism
 }
 
 module.exports = WorldConfig;

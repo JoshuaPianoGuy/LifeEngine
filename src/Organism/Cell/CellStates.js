@@ -21,9 +21,44 @@ class Food extends CellState {
         super('food');
     }
 }
+class LowFood extends CellState{
+    constructor(){
+        super('low food');
+    }
+}
+class MediumFood extends CellState{
+    constructor(){
+        super('medium food');
+    }
+}
+class PrestigeFood extends CellState{
+    constructor(){
+        super('prestige food');
+    }
+}
 class Wall extends CellState {
     constructor() {
         super('wall');
+    }
+}
+class Cave extends CellState{
+    constructor(){
+        super('cave');
+    }
+}
+class LowFoodLandmark extends CellState{
+    constructor(){
+        super('low food landmark')
+    }
+}
+class MediumFoodLandmark extends CellState{
+    constructor(){
+        super('medium food landmark')
+    }
+}
+class PrestigeFoodLandmark extends CellState{
+    constructor(){
+        super('prestige food landmark')
     }
 }
 class Mouth extends CellState {
@@ -77,7 +112,14 @@ class Eye extends CellState {
 const CellStates = {
     empty: new Empty(),
     food: new Food(),
+    lowFood: new LowFood(),
+    mediumFood: new MediumFood(),
+    prestigeFood: new PrestigeFood(),
     wall: new Wall(),
+    cave: new Cave(),
+    lowFoodLandmark: new LowFoodLandmark(),
+    mediumFoodLandmark: new MediumFoodLandmark(),
+    prestigeFoodLandmark: new PrestigeFoodLandmark(),
     mouth: new Mouth(),
     producer: new Producer(),
     mover: new Mover(),
@@ -85,7 +127,7 @@ const CellStates = {
     armor: new Armor(),
     eye: new Eye(),
     defineLists() {
-        this.all = [this.empty, this.food, this.wall, this.mouth, this.producer, this.mover, this.killer, this.armor, this.eye]
+        this.all = [this.empty, this.food, this.lowFood, this.mediumFood, this.prestigeFood, this.wall, this.cave, this.lowFoodLandmark, this.mediumFoodLandmark, this.prestigeFoodLandmark, this.mouth, this.producer, this.mover, this.killer, this.armor, this.eye]
         this.living = [this.mouth, this.producer, this.mover, this.killer, this.armor, this.eye];
     },
     getRandomName: function() {

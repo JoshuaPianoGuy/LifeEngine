@@ -29,8 +29,7 @@
 				<button class="headless" title="Toggle rendering. Hotkey: H"><i class="fa fa-eye-slash"></i></button>
 				<input id="slider" type="range" min="1" max="100" value="25">
 				<p id='fps'>Target FPS: 60</p>
-				<p id='fps-actual'></p>
-				<button id='reset-env' title='Restarts simulation with default organism.'>Reset</button>
+				<p id='fps-actual'></p>			<p id='day-night-indicator' style="font-weight: bold; font-size: 1.1em;"></p>				<button id='reset-env' title='Restarts simulation with default organism.'>Reset</button>				<button id='download-logs' title='Download experiment logs as CSV file.'>📥 Logs</button>
 				<button id='clear-env' title="Removes all organisms.">Clear</button>
 				<div id="brush-size-container">
 					<label id="brush-slider-label" for="brush-slider" title='Size of the brush for food, walls, and killing'><i class="fa fa-brush"></i> Brush Size </label>
@@ -46,6 +45,7 @@
 					<p class='tabnav-item' id='world-controls'>World Controls</p>
 					<p class='tabnav-item' id='hyperparameters'>Evolution Controls</p>
 					<p class='tabnav-item' id='stats'>Statistics</p>
+					<p class='tabnav-item' id='organism-info'>Organism Info</p>
 					<button id="minimize" title="Minimze Control Panel."><i class="fa fa-minus-square"></i></button>
 				</div>
 
@@ -53,6 +53,7 @@
 					<div class='left-half'>
 						<h3>The Life Engine</h3>
 						<p>The Life Engine is a virtual ecosystem that allows organisms to reproduce, compete, and evolve.</p>
+						<p id='learning-status' style='font-weight: bold; color: #0066cc;'>Learning Status: Loading...</p>
 						<p>Each organism is made up of different colored cells. Hover over each color to learn what it does.</p>
 						<div id='cell-legend'>
 							<div class='cell-legend-type' id='mouth' title="Mouth: Eats adjacent food."></div>
@@ -61,8 +62,15 @@
 							<div class='cell-legend-type' id='killer' title="Killer: Harms organisms in adjacent cells."></div>
 							<div class='cell-legend-type' id='armor' title="Armor: Negates affects of killer cell."></div>
 							<div class='cell-legend-type' id='eye' title="Eye: Observes cells and decides movement."></div>
-							<div class='cell-legend-type' id='food' title="Food: Not part of an organism. Once an organism has eaten enough food, it will reproduce."></div>
-							<div class='cell-legend-type' id='wall' title="Wall: Not part of an organism. Blocks movement and reproduction."></div>
+							<div class='cell-legend-type' id='food' title="Food: Not part of an organism."></div>
+							<div class='cell-legend-type' id='low food' title="Low Food: Energy value 0.5."></div>
+							<div class='cell-legend-type' id='medium food' title="Medium Food: Energy value 1.0."></div>
+							<div class='cell-legend-type' id='prestige food' title="Prestige Food: Energy value 2.0. Rare!"></div>
+							<div class='cell-legend-type' id='wall' title="Wall: Not part of an organism. Blocks movement."></div>
+							<div class='cell-legend-type' id='cave' title="Cave: Safe refuge at night. Energy frozen inside."></div>
+							<div class='cell-legend-type' id='low food landmark' title="Landmark: Indicates low food nearby."></div>
+							<div class='cell-legend-type' id='medium food landmark' title="Landmark: Indicates medium food nearby."></div>
+							<div class='cell-legend-type' id='prestige food landmark' title="Landmark: Indicates prestige food nearby."></div>
 						</div>
 						<div id="color-scheme-container">
 							<label for="color-scheme-select">Color Scheme:</label>
@@ -70,13 +78,10 @@
 						</div><br>
 					</div>
 					<div class='right-half'>
-						<iframe id="video" src="https://www.youtube.com/embed/iSAKEnRfles"></iframe>
-					</div>
-					<div class='icon-links'>
-						<a href=https://github.com/MaxRobinsonTheGreat/EvolutionSimulatorV2 title='View the code'><i class="fa-brands fa-github"></i></a>
-						<a href="https://discord.gg/ZsrAAByEnr" title='Join the community'><i class="fa-brands fa-discord"></i></a>
-						<a href=" https://www.patreon.com/emergentgarden" title='Support the project'><i class="fa-brands fa-patreon"></i></a>
-
+							<div class='icon-links'>
+								<a href=https://github.com/MaxRobinsonTheGreat/EvolutionSimulatorV2 title='View the code'><i class="fa-brands fa-github"></i></a>
+								<a href=" https://www.patreon.com/emergentgarden" title='Support the project'><i class="fa-brands fa-patreon"></i></a>
+							</div>
 					</div>
 				</div>
 
@@ -264,6 +269,32 @@
 					</div>
 					<div class='right-half'>
 						<div id="chartContainer"></div>
+					</div>
+				</div>
+				<div id='organism-info' class='tab'>
+					<div class='left-half'>
+						<h2>Selected Organism</h2>
+						<p id='org-info-message'>(Click "Select" mode in toolbar and click an organism to view details)</p>
+						<div id='organism-details' style='display: none;'>
+							<p id='org-position'><strong>Position:</strong> </p>
+							<p id='org-lifetime'><strong>Lifetime:</strong> </p>
+							<p id='org-food-collected'><strong>Food Collected:</strong> </p>
+							<p id='org-energy'><strong>Energy:</strong> </p>
+							<p id='org-direction'><strong>Current Direction:</strong> </p>
+							<h3>Cell Inventory</h3>
+							<div id='org-cell-inventory'></div>
+							<h3>Neural Network Brain</h3>
+							<p id='org-brain-type'><strong>Type:</strong> Neural Network (33→8→4)</p>
+							<p id='org-brain-rl'><strong>RL Status:</strong> </p>
+							<p id='org-brain-last-action'><strong>Last Action:</strong> </p>
+							<p id='org-brain-action-probs'><strong>Action Probabilities:</strong> </p>
+							<p id='org-brain-weights' style='display: none; font-size: 0.9em; color: #666;'><strong>Weight Status:</strong> </p>
+						</div>
+					</div>
+					<div class='right-half'>
+						<div id='organism-visual' style='text-align: center; padding: 20px;'>
+							<p>(Organism state will appear here)</p>
+						</div>
 					</div>
 				</div>
 			</div>

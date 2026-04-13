@@ -29,6 +29,12 @@ class ControlPanel {
         this.paused=false;
         this.setHyperparamDefaults();
         LoadController.control_panel = this;
+        
+        // Display learning status in About tab
+        const learning_status = WorldConfig.learning_enabled 
+            ? "🟢 ENABLED (Reinforcement Learning Active)" 
+            : "🔴 DISABLED (Genetic Algorithm Only)";
+        $('#learning-status').text('Learning Status: ' + learning_status);
     }
 
     defineMinMaxControls(){
@@ -519,6 +525,9 @@ class ControlPanel {
             env.reset();
             this.stats_panel.reset();
         }.bind(this));
+        $('#download-logs').click( function() {
+            this.stats_panel.downloadLogs();
+        }.bind(this));
         $('#clear-env').click( () => {
             env.reset(true, false);
             this.stats_panel.reset();
@@ -667,6 +676,13 @@ class ControlPanel {
         $('#fps-actual').text("Actual FPS: " + Math.floor(this.engine.actual_fps));
         $('#fps-hot').text(Math.floor(this.engine.actual_fps)+' FPS');
         $('#reset-count').text("Auto reset count: " + this.engine.env.reset_count);
+        
+        // Update day/night indicator
+        const is_night = this.engine.env.isNight();
+        const day_night_text = is_night ? '🌙 NIGHT' : '☀️  DAY';
+        const day_night_color = is_night ? '#4040ff' : '#ffcc00';
+        $('#day-night-indicator').text(day_night_text).css('color', day_night_color);
+        
         this.stats_panel.updateDetails();
         if (WorldConfig.headless)
             this.updateHeadlessIcon(delta_time);
