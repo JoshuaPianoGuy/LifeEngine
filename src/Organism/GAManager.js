@@ -39,7 +39,7 @@
 const NNBrain         = require('./Perception/NNBrain');
 const AdvancedOrganism = require('./AdvancedOrganism');
 const CellStates      = require('./Cell/CellStates');
-const logger          = require('../Utils/Logger');
+const logger          = require('../Logger');
 
 // ── GA hyper-parameters ───────────────────────────────────────────────────────
 
@@ -159,7 +159,7 @@ class GAManager {
         }
 
         this.generation++;
-        logger.log('GA', `Gen ${this.generation} started | ${POPULATION_SIZE} founders | RL=${this.rl_enabled}`);
+        logger.logEvent('GA', `Gen ${this.generation} started | ${POPULATION_SIZE} founders | RL=${this.rl_enabled}`);
     }
 
     /**
@@ -214,7 +214,7 @@ class GAManager {
         const parents = sorted.slice(0, num_parents);
         const next_pool = [];
         
-        logger.log('GA', `Gen ${this.generation - 1} size: ${sorted.length} agents, selecting top ${num_parents} parents`);
+        logger.logEvent('GA', `Gen ${this.generation - 1} size: ${sorted.length} agents, selecting top ${num_parents} parents`);
 
         // Fill entire next generation with crossover offspring — no elitism.
         // Every genome comes from uniform crossover between two parents drawn
@@ -275,71 +275,32 @@ class GAManager {
     _recordMetrics(sorted_agents) {
         if (sorted_agents.length === 0) return;
 
+        // Delegate all logging and analysis to Logger — it computes drift,
+        // genome variance, per-food counts, and writes both summary and
+        // per-organism rows in one call.
+        logger.logGeneration(this, sorted_agents);
+
+        // Keep a lightweight local copy for exportMetricsCSV() backward compat
         const n = sorted_agents.length;
-
-        // avg_energy_early: average of each agent's energy at their 20% tick
-        // (null if agent died before reaching that tick)
-        const early_samples = sorted_agents
-            .map(a => a.energy_at_early_sample)
-            .filter(e => e !== null);
-        const avg_energy_early = early_samples.length > 0
-            ? early_samples.reduce((s, e) => s + e, 0) / early_samples.length
-            : 0;
-
-        // avg_energy_end: average energy at death or lifetime end
-        const avg_energy_end = sorted_agents.reduce(
-            (s, a) => s + (a.energy || 0), 0
-        ) / n;
-
-        // top5_fitness: average cumulative food score of top-5 (per spec)
-        const top5 = sorted_agents.slice(0, N_PARENTS);
+        const top5 = sorted_agents.slice(0, Math.min(N_PARENTS, n));
         const top5_fitness = top5.reduce((s, a) => s + a.getFitness(), 0) / top5.length;
+        const avg_lifetime = sorted_agents.reduce((s, a) => s + (a.lifetime || 0), 0) / n;
+        const early_samples = sorted_agents.map(a => a.energy_at_early_sample).filter(e => e != null);
+        const avg_energy_early = early_samples.length > 0
+            ? early_samples.reduce((s, e) => s + e, 0) / early_samples.length : 0;
 
-        // avg_lifetime: average ticks lived
-        const avg_lifetime = sorted_agents.reduce(
-            (s, a) => s + a.lifetime, 0
-        ) / n;
-
-        const entry = {
+        this.metrics.push({
             generation:       this.generation,
             condition:        this.rl_enabled ? 'learning' : 'natural_selection',
             generation_ticks: this.tick_count,
             total_agents:     n,
             peak_population:  this.peak_population,
-            avg_energy_early,
-            avg_energy_end,
-            top5_fitness,
-            best_fitness:     sorted_agents[0].getFitness(),
+            avg_energy_early: avg_energy_early.toFixed(3),
+            avg_energy_end:   (sorted_agents.reduce((s, a) => s + (a.energy || 0), 0) / n).toFixed(3),
+            top5_fitness:     top5_fitness.toFixed(4),
+            best_fitness:     sorted_agents[0].getFitness().toFixed(4),
             avg_lifetime:     avg_lifetime.toFixed(1),
-        };
-
-        this.metrics.push(entry);
-
-        const summary = {
-            generation: this.generation,
-            ticks: this.tick_count,
-            total_agents: n,
-            peak_population: this.peak_population,
-            avg_energy_early: avg_energy_early.toFixed(1),
-            avg_energy_end: avg_energy_end.toFixed(1),
-            top5_fitness: top5_fitness.toFixed(2),
-            avg_lifetime: avg_lifetime.toFixed(0)
-        };
-        logger.log('GA', `Gen ${this.generation} done`, summary);
-        
-        // Log top agents and their learning drift
-        for (let i = 0; i < Math.min(5, top5.length); i++) {
-            const agent = top5[i];
-            let drift = 'N/A';
-            if (agent.brain && agent.brain.active_weights && agent.brain.genome_weights) {
-                let total_drift = 0;
-                for (let j = 0; j < agent.brain.genome_weights.length; j++) {
-                    total_drift += Math.abs(agent.brain.active_weights[j] - agent.brain.genome_weights[j]);
-                }
-                drift = (total_drift / agent.brain.genome_weights.length).toFixed(4);
-            }
-            logger.log('GA', `Top${i+1}`, {fitness: agent.getFitness().toFixed(2), lifetime: agent.lifetime, drift});
-        }
+        });
     }
 
     // ── Export ────────────────────────────────────────────────────────────────

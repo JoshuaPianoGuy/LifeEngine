@@ -4,6 +4,7 @@ const StatsPanel = require("../Stats/StatsPanel");
 const WorldConfig = require("../WorldConfig");
 const LoadController = require("./LoadController");
 const {ColorScheme, color_scheme_names} = require("../Rendering/ColorScheme");
+const logger = require("../Logger");
 
 class ControlPanel {
     constructor(engine) {
@@ -527,6 +528,7 @@ class ControlPanel {
         }.bind(this));
         $('#download-logs').click( function() {
             this.stats_panel.downloadLogs();
+            logger.downloadAll();
         }.bind(this));
         $('#clear-env').click( () => {
             env.reset(true, false);

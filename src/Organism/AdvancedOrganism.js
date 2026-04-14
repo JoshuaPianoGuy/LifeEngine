@@ -132,6 +132,9 @@ class AdvancedOrganism extends Organism {
         // Metrics: energy snapshots at 20% of MAX_LIFETIME (per spec)
         this.energy_at_early_sample = null;
         this._early_sample_tick     = Math.floor(MAX_LIFETIME * 0.20);  // tick 300
+
+        // Per-food-type counts for Logger detail rows
+        this.food_by_type = {};
     }
 
     // ── Lifespan ──────────────────────────────────────────────────────────────
@@ -228,15 +231,16 @@ class AdvancedOrganism extends Organism {
     // ── Food → energy conversion ──────────────────────────────────────────────
 
     _processFoodEaten(units) {
-        // Each unit of food eaten: add energy, add to fitness score, add reward.
-        // food_collected is in units of "cells eaten" not typed energy values.
-        // Until you add typed food, each unit = DEFAULT_FOOD_ENERGY.
         for (let i = 0; i < units; i++) {
             const value  = this._foodValue();
             const gained = Math.min(value, this.max_energy - this.energy);
             this.energy                += gained;
-            this.cumulative_food_score += value;   // fitness: raw score, not capped
-            this.pending_reward        += value;   // RL reward proportional to food value
+            this.cumulative_food_score += value;
+            this.pending_reward        += value;
+
+            // Track per-food-type counts for Logger
+            const type = this.last_eaten_state || 'food';
+            this.food_by_type[type] = (this.food_by_type[type] || 0) + 1;
         }
     }
 
@@ -303,16 +307,13 @@ class AdvancedOrganism extends Organism {
         this._mutateGenome(child_genome);
         child.brain.setGenome(child_genome);
 
-        // Find a valid spawn location using base Organism's placement logic
-        const direction  = Directions.getRandomScalar();
-        const offset     = Math.floor(Math.random() * 3);
-        const base_dist  = this.anatomy.birth_distance;
-        const new_c      = this.c + direction[0] * (base_dist + offset);
-        const new_r      = this.r + direction[1] * (base_dist + offset);
+        // Spawn at fixed location (same as founders) so all organisms start from
+        // the same place regardless of parent location
+        const new_c = this.ga_manager ? this.ga_manager.spawn_col : 0;
+        const new_r = this.ga_manager ? this.ga_manager.spawn_row : 0;
 
         if (
             child.isClear(new_c, new_r, child.rotation, true) &&
-            child.isStraightPath(new_c, new_r, this.c, this.r, this) &&
             this.env.canAddOrganism()
         ) {
             child.c = new_c;
