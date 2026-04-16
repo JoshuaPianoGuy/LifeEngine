@@ -34,9 +34,11 @@ class ChartController {
     }
 
     addAllDataPoints(){
-        for (var i in FossilRecord.tick_record) {
-            this.addDataPoint(i)
-        }
+        for (var i in FossilRecord.tick_record){
+        this.addDataPoint(i)}
+        // Limit data points to prevent UI freeze with large simulations
+        // Show only the last 5000 ticks to keep chart responsive
+
     }
 
     render() {

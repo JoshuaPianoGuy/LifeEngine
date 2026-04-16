@@ -5,11 +5,11 @@
  * learning influences the rate at which effective food-seeking behaviours become
  * encoded in heritable neural network weights across generations.
  *
- * Architecture:  33 -> 8 -> 4
+ * Architecture:  33 -> 32 -> 4
  *   Input  (33): 4 eye directions x 8 one-hot percept types  +  1 energy scalar
- *   Hidden  (8): ReLU
+ *   Hidden (32): ReLU
  *   Output  (4): softmax -> up / right / down / left
- *   Genome: 33x8 + 8 + 8x4 + 4 = 264 + 8 + 32 + 4 = 308 weights
+ *   Genome: 33x32 + 32 + 32x4 + 4 = 1056 + 32 + 128 + 4 = 1220 weights
  *
  * Perception:
  *   Uses the existing EyeCell.look() raycast (lookRange = 30 by default).
@@ -80,14 +80,14 @@ const N_EYE_DIRECTIONS = 4;
 // Network topology
 const N_SCALARS   = 1;   // energy
 const STATE_SIZE  = N_EYE_DIRECTIONS * N_PERCEPT_TYPES + N_SCALARS;  // 33
-const HIDDEN_SIZE = 8;
+const HIDDEN_SIZE = 32;
 const OUTPUT_SIZE = 4;
 
-const W1_SIZE     = STATE_SIZE  * HIDDEN_SIZE;   // 264
-const B1_SIZE     = HIDDEN_SIZE;                 //   8
-const W2_SIZE     = HIDDEN_SIZE * OUTPUT_SIZE;   //  32
+const W1_SIZE     = STATE_SIZE  * HIDDEN_SIZE;   // 1056
+const B1_SIZE     = HIDDEN_SIZE;                 //   32
+const W2_SIZE     = HIDDEN_SIZE * OUTPUT_SIZE;   //  128
 const B2_SIZE     = OUTPUT_SIZE;                 //   4
-const GENOME_SIZE = W1_SIZE + B1_SIZE + W2_SIZE + B2_SIZE;  // 308
+const GENOME_SIZE = W1_SIZE + B1_SIZE + W2_SIZE + B2_SIZE;  // 1220
 
 // RL hyper-parameters
 const RL_LR       = 0.02;
@@ -289,8 +289,8 @@ class NNBrain {
         const observations = this._collectObservations();
         const state        = this.buildStateVector(observations, max_energy);
 
-        // Epsilon-greedy: linear decay from EPSILON_START to EPSILON_END
-        const epsilon = EPSILON_START + (EPSILON_END - EPSILON_START) * lifetime_frac;
+        // Epsilon-greedy: quadratic decay from EPSILON_START to EPSILON_END (faster decay)
+        const epsilon = EPSILON_START + (EPSILON_END - EPSILON_START) * (lifetime_frac ** 2);
         let action;
         if (Math.random() < epsilon) {
             // Explore: random action, but still run forward to cache activations

@@ -11,7 +11,7 @@ const MAX_STEPS_PER_TICK = 100; // hard upper limit to prevent stalling the UI
 class Engine {
     constructor(){
         this.fps = 60;
-        this.env = new WorldEnvironment(this, 5);
+        this.env = new WorldEnvironment(this, 2);
         this.organism_editor = new OrganismEditor();
         this.organism_editor.engine = this;
         this.controlpanel = new ControlPanel(this);

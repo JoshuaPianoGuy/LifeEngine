@@ -306,7 +306,7 @@ class StatsPanel {
                                           : '● Active learning';
                 
                 // Log to console for debugging
-                console.log(`[ORG] Org at (${org.c}, ${org.r}): lifetime=${org.lifetime}, drift=${avg_drift.toFixed(4)}, max=${max_drift.toFixed(4)}, mean=${mean.toFixed(4)}, std=${std.toFixed(4)}, rl_enabled=${org.rl_enabled}`);
+                console.log(`[ORG] Org at (${org.c}, ${org.r}): lifetime=${org.lifetime}, drift=${avg_drift.toFixed(4)}, max=${max_drift.toFixed(4)}, mean=${mean.toFixed(4)}, std=${std.toFixed(4)}, rl_enabled=${org.env.learning_enabled}`);
                 
                 $('#org-brain-weights').html(
                     `<strong>Weight Status:</strong> ${learning_indicator}<br/>` +

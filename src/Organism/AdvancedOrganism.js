@@ -50,7 +50,7 @@ const FossilRecord = require('../Stats/FossilRecord');
 
 // ── Energy constants ──────────────────────────────────────────────────────────
 
-const MAX_LIFETIME      = 5000;  // increased from 1500 to allow more time for learning
+const MAX_LIFETIME      = 1000000;  // increased from 1500 to allow more time for learning
 const ENERGY_CAPACITY   = 200;   // maximum energy
 const START_ENERGY      = 150;   // increased from 100 to give organisms buffer for reproduction
 const ENERGY_DECAY_RATE = 1;     // energy lost per decay event
@@ -86,10 +86,13 @@ const EXPLORE_BONUS  = 0.02;  // positive reward for visiting a new cell
 
 // ── GA mutation constants (within-generation asexual reproduction) ────────────
 // Applied when an agent reproduces mid-generation.
-// DISABLED: only testing within-lifetime learning, not morphological changes
+// Enabled: Gaussian mutation allows natural exploration and prevents local maxima
 
-const ASEXUAL_MUT_PROB  = 0.0;   // DISABLED: per-weight mutation probability
-const ASEXUAL_MUT_SIGMA = 0.1;   // Gaussian noise std-dev (unused when ASEXUAL_MUT_PROB = 0)
+const ASEXUAL_MUT_PROB  = 0.05;  // 5% per-weight mutation probability
+const ASEXUAL_MUT_SIGMA = 0.1;   // Gaussian noise std-dev
+
+// ── Reproduction control ──────────────────────────────────────────────────────
+const REPRODUCTION_SUCCESS_RATE = 0.8;  // 80% chance a child successfully spawns
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -135,6 +138,9 @@ class AdvancedOrganism extends Organism {
 
         // Per-food-type counts for Logger detail rows
         this.food_by_type = {};
+
+        // Energy-based reproduction: child spawns when parent gains 10 energy
+        this.energyGainedSinceReproduction = 0;
     }
 
     // ── Lifespan ──────────────────────────────────────────────────────────────
@@ -144,12 +150,10 @@ class AdvancedOrganism extends Organism {
     }
 
     // ── Reproduction Threshold ─────────────────────────────────────────────────
-    // Override to reduce reproduction cost for faster population growth.
-    // Base: anatomy.cells.length = 10 food needed.
-    // Adjusted: 4 food needed for a 10-cell organism.
-    // This allows children to achieve reproduction more easily and build stable pops.
+    // [LEGACY] Left for base Organism compatibility, but not used functionally.
+    // Reproduction is now triggered by energy gain (10 points), not food count.
     foodNeeded() {
-        return 4;  // reduced from this.anatomy.cells.length (10)
+        return 4;  // unused; reproduction based on energy gain instead
     }
 
     // ── Core update loop ──────────────────────────────────────────────────────
@@ -201,10 +205,10 @@ class AdvancedOrganism extends Organism {
             return false;
         }
 
-        // Check if enough food collected to reproduce (standard LifeEngine trigger)
+        // Check if enough energy gained to reproduce (energy-based trigger)
         // This happens before cell functions so the parent isn't mid-move when it
-        // spawns a child.
-        if (this.food_collected >= this.foodNeeded()) {
+        // spawns a child. Decouples reproduction from specific food items.
+        if (this.energyGainedSinceReproduction >= 3.5) {
             this.reproduce();
         }
 
@@ -234,9 +238,10 @@ class AdvancedOrganism extends Organism {
         for (let i = 0; i < units; i++) {
             const value  = this._foodValue();
             const gained = Math.min(value, this.max_energy - this.energy);
-            this.energy                += gained;
-            this.cumulative_food_score += value;
-            this.pending_reward        += value;
+            this.energy                     += gained;
+            this.cumulative_food_score      += value;
+            this.pending_reward             += value;
+            this.energyGainedSinceReproduction += gained;  // track for reproduction trigger
 
             // Track per-food-type counts for Logger
             const type = this.last_eaten_state || 'food';
@@ -307,19 +312,23 @@ class AdvancedOrganism extends Organism {
         this._mutateGenome(child_genome);
         child.brain.setGenome(child_genome);
 
-        // Spawn at fixed location (same as founders) so all organisms start from
-        // the same place regardless of parent location
-        const new_c = this.ga_manager ? this.ga_manager.spawn_col : 0;
-        const new_r = this.ga_manager ? this.ga_manager.spawn_row : 0;
+        // Spawn at randomized location within spawn radius
+        let new_c, new_r;
+        if (this.ga_manager) {
+            [new_c, new_r] = this.ga_manager._getRandomSpawnPosition();
+        } else {
+            new_c = 0;
+            new_r = 0;
+        }
 
         if (
             child.isClear(new_c, new_r, child.rotation, true) &&
-            this.env.canAddOrganism()
+            this.env.canAddOrganism() &&
+            Math.random() < REPRODUCTION_SUCCESS_RATE
         ) {
             child.c = new_c;
             child.r = new_r;
             this.env.addOrganism(child);
-            child.updateGrid();
 
             // Register with GAManager so it's tracked for fitness/generation end
             if (this.ga_manager) {
@@ -333,8 +342,8 @@ class AdvancedOrganism extends Organism {
             }
         }
 
-        // Deduct food cost whether or not placement succeeded (base LifeEngine behaviour)
-        this.food_collected = Math.max(0, this.food_collected - this.foodNeeded());
+        // Reset energy gain counter whether or not placement succeeded
+        this.energyGainedSinceReproduction = 0;
     }
 
     // Gaussian additive mutation on a genome array, in-place.
@@ -365,6 +374,19 @@ class AdvancedOrganism extends Organism {
         for (const cell of this.anatomy.cells) {
             const real_c = this.c + cell.rotatedCol(this.rotation);
             const real_r = this.r + cell.rotatedRow(this.rotation);
+            const existing_cell = this.env.grid_map.cellAt(real_c, real_r);
+            
+            // Don't clear landmarks or caves when organism dies — keep the landscape intact
+            if (existing_cell) {
+                const name = existing_cell.state.name;
+                if (name === 'low food landmark'
+                    || name === 'medium food landmark'
+                    || name === 'prestige food landmark'
+                    || name === 'cave') {
+                    continue; // Skip clearing this cell
+                }
+            }
+            
             this.env.changeCell(real_c, real_r, CellStates.empty, null);
         }
         if (this.species) this.species.decreasePop();
@@ -390,10 +412,149 @@ class AdvancedOrganism extends Organism {
             || name === 'cave';
     }
 
+    // ── Spawn position override ───────────────────────────────────────────────
+    // Override isClear() to allow spawning on landmarks and caves, since they
+    // are passable for movement. This prevents reproduction failures when
+    // spawn areas are densely populated with landmarks/caves.
+
+    isClear(col, row, rotation = this.rotation) {
+        for (const loccell of this.anatomy.cells) {
+            const cell = this.getRealCell(loccell, col, row, rotation);
+            if (cell == null) {
+                return false;
+            }
+            // Allow empty, owned, food, landmarks, and caves
+            const name = cell.state.name;
+            if (cell.owner === this || name === 'empty'
+                || (!Hyperparams.foodBlocksReproduction && (name === 'food' || name === 'low food' || name === 'medium food' || name === 'prestige food'))
+                || name === 'low food landmark'
+                || name === 'medium food landmark'
+                || name === 'prestige food landmark'
+                || name === 'cave') {
+                continue;
+            }
+            return false;
+        }
+        return true;
+    }
+
+    // ── Movement override ────────────────────────────────────────────────────
+    // Override attemptMove() to preserve landmarks and caves when clearing old
+    // cell positions. Base Organism clears everything without checking, which
+    // overwrites landscape features.
+
+    attemptMove() {
+        const Directions = require('./Directions');
+        const direction = Directions.scalars[this.direction];
+        const direction_c = direction[0];
+        const direction_r = direction[1];
+        const new_c = this.c + direction_c;
+        const new_r = this.r + direction_r;
+        
+        if (this.isClear(new_c, new_r)) {
+            // Clear old cell positions, but preserve landmarks and caves
+            for (const cell of this.anatomy.cells) {
+                const real_c = this.c + cell.rotatedCol(this.rotation);
+                const real_r = this.r + cell.rotatedRow(this.rotation);
+                const existing_cell = this.env.grid_map.cellAt(real_c, real_r);
+                
+                // Only clear if NOT a landmark or cave
+                if (existing_cell) {
+                    const name = existing_cell.state.name;
+                    if (name === 'low food landmark'
+                        || name === 'medium food landmark'
+                        || name === 'prestige food landmark'
+                        || name === 'cave') {
+                        continue; // Keep landscape intact
+                    }
+                }
+                
+                this.env.changeCell(real_c, real_r, CellStates.empty, null);
+            }
+            
+            this.c = new_c;
+            this.r = new_r;
+            this.updateGrid();
+            return true;
+        }
+        return false;
+    }
+
+    // ── Rotation override ────────────────────────────────────────────────────
+    // Same as attemptMove — preserve landmarks when rotating.
+
+    attemptRotate(rotation = null) {
+        const Directions = require('./Directions');
+        if (!Hyperparams.rotationEnabled) {
+            this.direction = Directions.getRandomDirection();
+            this.move_count = 0;
+            return true;
+        }
+        if (rotation == null) {
+            rotation = Directions.getRandomDirection();
+        }
+        if (this.isClear(this.c, this.r, rotation)) {
+            // Clear old cell positions, but preserve landmarks and caves
+            for (const cell of this.anatomy.cells) {
+                const real_c = this.c + cell.rotatedCol(this.rotation);
+                const real_r = this.r + cell.rotatedRow(this.rotation);
+                const existing_cell = this.env.grid_map.cellAt(real_c, real_r);
+                
+                // Only clear if NOT a landmark or cave
+                if (existing_cell) {
+                    const name = existing_cell.state.name;
+                    if (name === 'low food landmark'
+                        || name === 'medium food landmark'
+                        || name === 'prestige food landmark'
+                        || name === 'cave') {
+                        continue; // Keep landscape intact
+                    }
+                }
+                
+                this.env.changeCell(real_c, real_r, CellStates.empty, null);
+            }
+            
+            this.rotation = rotation;
+            this.direction = Directions.getRandomDirection();
+            this.updateGrid();
+            this.move_count = 0;
+            return true;
+        }
+        return false;
+    }
+
     // ── Fitness accessor ──────────────────────────────────────────────────────
 
     getFitness() {
         return this.cumulative_food_score;
+    }
+
+    // ── Grid update override ──────────────────────────────────────────────────
+    // Override updateGrid() to preserve landmarks and caves when organisms move
+    // over them. This prevents landscape cells from being overwritten by organism
+    // body cells, allowing organisms to walk through while keeping the terrain.
+
+    updateGrid() {
+        for (const cell of this.anatomy.cells) {
+            const real_c = this.c + cell.rotatedCol(this.rotation);
+            const real_r = this.r + cell.rotatedRow(this.rotation);
+            const existing_cell = this.env.grid_map.cellAt(real_c, real_r);
+            
+            // If the space has a landmark or cave, preserve it - don't overwrite
+            if (existing_cell) {
+                const name = existing_cell.state.name;
+                if (name === 'low food landmark'
+                    || name === 'medium food landmark'
+                    || name === 'prestige food landmark'
+                    || name === 'cave') {
+                    // Skip updating this cell to preserve the landscape
+                    continue;
+                }
+            }
+            
+            // Otherwise, place the organism cell as normal
+            this.env.changeCell(real_c, real_r, cell.state, cell);
+        }
     }
 
     // ── GA genome accessors ───────────────────────────────────────────────────

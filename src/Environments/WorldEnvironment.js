@@ -29,9 +29,9 @@ class WorldEnvironment extends Environment {
         this.total_ticks = 0;
         this.data_update_rate = 100;
 
-        // Day/night cycle
+        // Day/night cycle — equal length
         this.day_length   = 150;
-        this.night_length = 75;
+        this.night_length = 150;
         this.cycle_length = this.day_length + this.night_length;
 
         // Snapshot of the initial map layout — restored at the start of each
@@ -41,8 +41,8 @@ class WorldEnvironment extends Environment {
 
         this.learning_enabled = WorldConfig.learning_enabled;
         const center    = this.grid_map.getCenter();
-        const spawn_col = center[0];
-        const spawn_row = center[1];
+        const spawn_col = center[0] + 15;
+        const spawn_row = center[1] + 15;
         this.ga_manager = new GAManager(this, true, spawn_col, spawn_row);
 
         FossilRecord.setEnv(this);
@@ -61,6 +61,10 @@ class WorldEnvironment extends Environment {
             this.generateFood();
         }
         this.total_ticks++;
+        // Regenerate food every 50,000 ticks with 20% spawn probability
+        if (this.total_ticks % 50000 == 0) {
+            this._restoreWorldSnapshotWithProbability(0.2);
+        }
         if (this.total_ticks % this.data_update_rate == 0) {
             FossilRecord.updateData();
         }
@@ -122,38 +126,21 @@ class WorldEnvironment extends Environment {
     createExperimentOrganism(col, row, parent = null) {
         const org = new AdvancedOrganism(col, row, this, parent, this.learning_enabled, this.ga_manager);
 
-        // Mover in the middle
-        org.anatomy.addDefaultCell(CellStates.mover, 0, 0);
+        org.anatomy.addDefaultCell(CellStates.mouth, 0, 0);
 
-        // Two mouth cells stacked on each edge
-        // Up edge
-        org.anatomy.addDefaultCell(CellStates.mouth, 0, -1);
-        org.anatomy.addDefaultCell(CellStates.mouth, 0, -2);
+        const eye_up = org.anatomy.addDefaultCell(CellStates.eye, 0, -1);
+        if (eye_up) eye_up.direction = 0;
 
-        // Right edge
-        org.anatomy.addDefaultCell(CellStates.mouth, 1, 0);
-        org.anatomy.addDefaultCell(CellStates.mouth, 2, 0);
+        const eye_right = org.anatomy.addDefaultCell(CellStates.eye, 1, 0);
+        if (eye_right) eye_right.direction = 1;
 
-        // Down edge
-        org.anatomy.addDefaultCell(CellStates.mouth, 0, 1);
-        org.anatomy.addDefaultCell(CellStates.mouth, 0, 2);
+        org.anatomy.addDefaultCell(CellStates.mover, 0, 1);
 
-        // Left edge
-        org.anatomy.addDefaultCell(CellStates.mouth, -1, 0);
-        org.anatomy.addDefaultCell(CellStates.mouth, -2, 0);
+        const eye_left = org.anatomy.addDefaultCell(CellStates.eye, -1, 1);
+        if (eye_left) eye_left.direction = 3;
 
-        // Eyes on the four corners between mouth cells
-        const eye_top_left = org.anatomy.addDefaultCell(CellStates.eye, -1, -1);
-        if (eye_top_left) eye_top_left.direction = 3;  // left direction
-
-        const eye_top_right = org.anatomy.addDefaultCell(CellStates.eye, 1, -1);
-        if (eye_top_right) eye_top_right.direction = 0;  // up direction
-
-        const eye_bottom_right = org.anatomy.addDefaultCell(CellStates.eye, 1, 1);
-        if (eye_bottom_right) eye_bottom_right.direction = 1;  // right direction
-
-        const eye_bottom_left = org.anatomy.addDefaultCell(CellStates.eye, -1, 1);
-        if (eye_bottom_left) eye_bottom_left.direction = 2;  // down direction
+        const eye_down = org.anatomy.addDefaultCell(CellStates.eye, 0, 2);
+        if (eye_down) eye_down.direction = 2;
 
         org.anatomy.checkTypeChange();
         return org;
@@ -172,124 +159,196 @@ class WorldEnvironment extends Environment {
     // All positions are jittered so the map looks organic, not grid-like.
 
     generateWorld() {
-        const cols     = this.grid_map.cols;
-        const rows     = this.grid_map.rows;
-        const cx       = Math.floor(cols / 2);
-        const cy       = Math.floor(rows / 2);
-        const rng      = () => Math.random(); //FIX THIS; HARDCODE FOR NOW
+        const cols = this.grid_map.cols;
+        const rows = this.grid_map.rows;
+        const cx   = Math.floor(cols / 2);
+        const cy   = Math.floor(rows / 2);
+        const rng  = () => Math.random();
 
-        // ── Spawn-area food: low density default + sparse low food ─────────────
-        // Default food (near-zero score) gives organisms a survival floor near
-        // spawn so they don't starve before finding anything meaningful.
-        // Low food is also placed here at low density as a gentle first reward.
-        this._scatterFood(cx, cy,  0, 20, CellStates.food,    80,  rng);   // default food, dense near centre
-        this._scatterFood(cx, cy, 10, 30, CellStates.lowFood, 40,  rng);   // low food, sparse inner ring
-
-        // ── Mid-range: low food clusters + landmarks ───────────────────────────
-        // 8 organic clusters at radius 35–65, each 25–45 cells, with landmark
-        // trails pointing back toward them from slightly further out.
-        const mid_angles = [0, 45, 90, 135, 180, 225, 270, 315].map(d => d * Math.PI / 180);
-        for (const angle of mid_angles) {
-            const r   = 40 + rng() * 25;          // radius 40–65
-            const jit = (rng() - 0.5) * 15;       // ±7.5° jitter
-            const ac  = angle + jit * Math.PI / 180;
-            const cc  = Math.round(cx + r * Math.cos(ac));
-            const cr  = Math.round(cy + r * Math.sin(ac));
-            const sz  = 25 + Math.floor(rng() * 20);  // cluster size 25–45
-
-            this._placeCluster(cc, cr, 14, CellStates.lowFood, sz, rng);
-
-            // Landmark trail: 4–6 cells at radius+10 pointing back to this cluster
-            const lm_r = r + 10 + rng() * 8;
-            const lm_c = Math.round(cx + lm_r * Math.cos(ac));
-            const lm_r2 = Math.round(cy + lm_r * Math.sin(ac));
-            this._placeCluster(lm_c, lm_r2, 5, CellStates.lowFoodLandmark, 5, rng);
-        }
-
-        // ── Outer ring: prestige food clusters ────────────────────────────────
-        // 6 clusters at radius 70–95, small (10–18 cells each), rare and valuable.
-        // Each cluster has a landmark halo 12–18 cells outward so agents that
-        // wander far can learn to recognise "prestige zone ahead".
-        const prestige_count = 6;
-        for (let i = 0; i < prestige_count; i++) {
-            const angle = (i / prestige_count) * 2 * Math.PI + (rng() - 0.5) * 0.4;
-            const r     = 70 + rng() * 25;
-            const cc    = Math.round(cx + r * Math.cos(angle));
-            const cr    = Math.round(cy + r * Math.sin(angle));
-            const sz    = 10 + Math.floor(rng() * 9);
-
-            this._placeCluster(cc, cr, 10, CellStates.prestigeFood, sz, rng);
-
-            // Landmark ring slightly beyond the cluster
-            const halo_count = 6 + Math.floor(rng() * 4);
-            for (let h = 0; h < halo_count; h++) {
-                const ha  = angle + (rng() - 0.5) * 1.2;
-                const hr  = r + 12 + rng() * 8;
-                const hc  = Math.round(cx + hr * Math.cos(ha));
-                const hrr = Math.round(cy + hr * Math.sin(ha));
-                const cell = this.grid_map.cellAt(hc, hrr);
-                if (cell && cell.state === CellStates.empty) {
-                    this.changeCell(hc, hrr, CellStates.prestigeFoodLandmark, null);
-                }
+        // Helper: pick a position at a given radius from centre, with minimum
+        // separation from all already-placed patch centres.
+        // Returns {c, r} or null if no valid position found after max attempts.
+        const pickPosition = (min_r, max_r, existing, min_sep) => {
+            for (let attempt = 0; attempt < 60; attempt++) {
+                const angle = rng() * 2 * Math.PI;
+                const r     = min_r + rng() * (max_r - min_r);
+                const c     = Math.round(cx + r * Math.cos(angle));
+                const row   = Math.round(cy + r * Math.sin(angle));
+                if (c < 8 || row < 8 || c > cols - 8 || row > rows - 8) continue;
+                const too_close = existing.some(p => Math.hypot(p.c - c, p.r - row) < min_sep);
+                if (!too_close) return { c, r: row };
             }
+            return null;
+        };
+
+        const placed_centres = [];
+
+        // ── Default food: tight cluster at spawn ──────────────────────────────
+        // Dense but small — just enough for the founding agent to survive a few
+        // ticks and reproduce once. Not worth seeking after the first generation.
+        this._placeBlob(cx, cy, 18, CellStates.food, 150, rng);
+        placed_centres.push({ c: cx, r: cy });
+
+        // ── Low food: 8–10 distinct separated patches, mid-range ───────────────
+        // Increased count and size for larger world. Small sigma (15) keeps tight.
+        // min_sep=80 ensures genuine empty corridors between patches.
+        // Each patch has one diagonal landmark line placed 12–20 cells closer
+        // to spawn, angled toward the patch.
+        const low_positions = [];
+        const low_patch_count = 8 + Math.floor(rng() * 3);
+        for (let i = 0; i < low_patch_count; i++) {
+            const pos = pickPosition(80, 150, placed_centres, 80);
+            if (!pos) continue;
+            placed_centres.push(pos);
+            low_positions.push(pos);
+
+            const patch_size = 130 + Math.floor(rng() * 80);  // 130–210 cells
+            this._placeBlob(pos.c, pos.r, 15, CellStates.lowFood, patch_size, rng);
+
+            // Landmark line: midpoint between spawn and patch, pointing at patch
+            const dx    = pos.c - cx;
+            const dy    = pos.r - cy;
+            const dist  = Math.hypot(dx, dy);
+            const frac  = (0.45 + rng() * 0.2);  // 45–65% of the way
+            const lm_c  = Math.round(cx + dx * frac);
+            const lm_r  = Math.round(cy + dy * frac);
+            const angle = Math.atan2(dy, dx) + (rng() - 0.5) * 0.5;
+            const len   = 18 + Math.floor(rng() * 14);
+            this._placeLine(lm_c, lm_r, angle, len, CellStates.lowFoodLandmark);
         }
 
-        // ── Medium food: scattered across map as intermediate reward ───────────
-        // Not clustered — individual cells dotted everywhere so there's always
-        // something to find when wandering between clusters.
-        const medium_count = 120;
-        let placed = 0;
-        for (let attempt = 0; attempt < medium_count * 4 && placed < medium_count; attempt++) {
-            const c = 5 + Math.floor(rng() * (cols - 10));
-            const r = 5 + Math.floor(rng() * (rows - 10));
-            // Prefer mid-range distances (30–80) from centre
-            const dist = Math.hypot(c - cx, r - cy);
-            if (dist < 25 || dist > 90) continue;
-            const cell = this.grid_map.cellAt(c, r);
-            if (cell && cell.state === CellStates.empty) {
-                this.changeCell(c, r, CellStates.mediumFood, null);
-                placed++;
-            }
+        // ── Prestige food: 6–8 tight patches, outer ring ────────────────
+        // Moderate sigma (12), scaled patch sizes for larger world.
+        // min_sep=100 from everything so they're clearly isolated.
+        const prestige_patch_count = 6 + Math.floor(rng() * 3);
+        for (let i = 0; i < prestige_patch_count; i++) {
+            const pos = pickPosition(140, 220, placed_centres, 100);
+            if (!pos) continue;
+            placed_centres.push(pos);
+
+            const patch_size = 60 + Math.floor(rng() * 40);  // 60–100 cells
+            this._placeBlob(pos.c, pos.r, 12, CellStates.prestigeFood, patch_size, rng);
+
+            // Landmark line: placed at 50–70% of distance from spawn to patch
+            const dx   = pos.c - cx;
+            const dy   = pos.r - cy;
+            const frac = 0.50 + rng() * 0.20;
+            const lm_c = Math.round(cx + dx * frac);
+            const lm_r = Math.round(cy + dy * frac);
+            const angle = Math.atan2(dy, dx) + (rng() - 0.5) * 0.4;
+            const len   = 20 + Math.floor(rng() * 16);
+            this._placeLine(lm_c, lm_r, angle, len, CellStates.prestigeFoodLandmark);
         }
 
-        // ── Caves: clumps of 12–20 cells ──────────────────────────────────────
-        // Placed at navigable distances — not too close to spawn (agents would
-        // just hide immediately) and not at the very edge.
-        // 7 caves total: 2 near-mid, 3 mid, 2 outer.
+        // ── Medium food: scattered patches, gap-filling ─────────────────
+        // 7–10 medium-sized patches at mid-range (not outer), each well-separated.
+        // These fill the navigational space between low and prestige food zones
+        // so there's always a reward signal for exploring outward.
+        // Each patch has a landmark line placed 40–60% of distance from spawn.
+        const med_patch_count = 7 + Math.floor(rng() * 4);
+        for (let i = 0; i < med_patch_count; i++) {
+            const pos = pickPosition(70, 140, placed_centres, 70);
+            if (!pos) continue;
+            placed_centres.push(pos);
+
+            const patch_size = 90 + Math.floor(rng() * 60);  // 90–150 cells
+            this._placeBlob(pos.c, pos.r, 14, CellStates.mediumFood, patch_size, rng);
+
+            // Landmark line: placed at 40–60% of distance from spawn to patch
+            const dx   = pos.c - cx;
+            const dy   = pos.r - cy;
+            const frac = 0.40 + rng() * 0.20;
+            const lm_c = Math.round(cx + dx * frac);
+            const lm_r = Math.round(cy + dy * frac);
+            const angle = Math.atan2(dy, dx) + (rng() - 0.5) * 0.4;
+            const len   = 16 + Math.floor(rng() * 14);
+            this._placeLine(lm_c, lm_r, angle, len, CellStates.mediumFoodLandmark);
+        }
+
+        // ── Caves: solid rectangles, well-separated ────────────────────────────
+        // 10–15 cave rectangles at varied distances. Large enough to stand in (10×10
+        // minimum). Placed with min_sep=60 from food patches so they don't
+        // visually merge with food clusters.
         const cave_specs = [
-            { min_r: 25, max_r: 40,  count: 2 },  // near-mid
-            { min_r: 45, max_r: 65,  count: 3 },  // mid
-            { min_r: 70, max_r: 90,  count: 2 },  // outer
+            { min_r: 50, max_r: 100, count: 3 },
+            { min_r: 100, max_r: 160, count: 4 },
+            { min_r: 160, max_r: 240, count: 3 + Math.floor(rng() * 3) },
         ];
         for (const spec of cave_specs) {
             for (let i = 0; i < spec.count; i++) {
-                const angle = rng() * 2 * Math.PI;
-                const r     = spec.min_r + rng() * (spec.max_r - spec.min_r);
-                const cc    = Math.round(cx + r * Math.cos(angle));
-                const cr    = Math.round(cy + r * Math.sin(angle));
-                const sz    = 12 + Math.floor(rng() * 9);  // 12–20 cells per cave
-                this._placeCluster(cc, cr, 5, CellStates.cave, sz, rng);
+                const pos = pickPosition(spec.min_r, spec.max_r, placed_centres, 60);
+                if (!pos) continue;
+                placed_centres.push(pos);
+                const w = 10 + Math.floor(rng() * 10);   // 10–20 wide
+                const h = 10 + Math.floor(rng() * 10);   // 10–20 tall
+                this._placeRect(pos.c - Math.floor(w/2), pos.r - Math.floor(h/2), w, h, CellStates.cave);
             }
         }
 
-        // ── Obstacles: short wall segments ────────────────────────────────────
-        // 12 small clusters of walls (3–6 cells each) to break up navigation
-        // without creating impassable barriers.
-        for (let i = 0; i < 12; i++) {
-            const angle = rng() * 2 * Math.PI;
-            const r     = 30 + rng() * 55;
-            const cc    = Math.round(cx + r * Math.cos(angle));
-            const cr    = Math.round(cy + r * Math.sin(angle));
-            const sz    = 3 + Math.floor(rng() * 4);
-            this._placeCluster(cc, cr, 4, CellStates.wall, sz, rng);
+        // ── Obstacles: wall rectangles, like reference image ──────────────────
+        // 10–15 wall blocks placed at mid-range, well away from food patches.
+        // Centred on their position like caves.
+        const obstacle_count = 10 + Math.floor(rng() * 6);
+        for (let i = 0; i < obstacle_count; i++) {
+            const pos = pickPosition(50, 180, placed_centres, 50);
+            if (!pos) continue;
+            placed_centres.push(pos);
+            const w = 8 + Math.floor(rng() * 10);
+            const h = 8 + Math.floor(rng() * 10);
+            this._placeRect(pos.c - Math.floor(w/2), pos.r - Math.floor(h/2), w, h, CellStates.wall);
         }
 
-        // Take a snapshot of this layout so all subsequent generations can
-        // restore it exactly. Called once per run (or after a manual reset).
+        // Take a snapshot so all subsequent generations restore this exact layout.
         this._takeWorldSnapshot();
     }
 
-    // Scatter food randomly within an annulus [min_r, max_r] around (cx, cy)
+    // Place a food patch using 2D Gaussian spread — organic, irregular shape.
+    // Keep sigma small (5–8) for distinct patches, larger (12+) for diffuse areas.
+    _placeBlob(cx, cy, sigma, state, count, rng) {
+        let placed = 0;
+        for (let attempt = 0; attempt < count * 8 && placed < count; attempt++) {
+            const u1 = Math.max(1e-10, rng());
+            const u2 = rng();
+            const z0 = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+            const z1 = Math.sqrt(-2 * Math.log(u1)) * Math.sin(2 * Math.PI * u2);
+            const c  = Math.round(cx + z0 * sigma);
+            const r  = Math.round(cy + z1 * sigma);
+            const cell = this.grid_map.cellAt(c, r);
+            if (cell && cell.state === CellStates.empty) {
+                this.changeCell(c, r, state, null);
+                placed++;
+            }
+        }
+    }
+
+    // Draw a straight diagonal line of cells from midpoint (cx, cy).
+    _placeLine(cx, cy, direction, length, state) {
+        const dx   = Math.cos(direction);
+        const dy   = Math.sin(direction);
+        const half = Math.floor(length / 2);
+        for (let i = -half; i <= half; i++) {
+            const c    = Math.round(cx + dx * i);
+            const r    = Math.round(cy + dy * i);
+            const cell = this.grid_map.cellAt(c, r);
+            if (cell && cell.state === CellStates.empty) {
+                this.changeCell(c, r, state, null);
+            }
+        }
+    }
+
+    // Place a solid filled rectangle centred approximately at (cx, cy).
+    _placeRect(cx, cy, width, height, state) {
+        for (let dc = 0; dc < width; dc++) {
+            for (let dr = 0; dr < height; dr++) {
+                const cell = this.grid_map.cellAt(cx + dc, cy + dr);
+                if (cell && cell.state === CellStates.empty) {
+                    this.changeCell(cx + dc, cy + dr, state, null);
+                }
+            }
+        }
+    }
+
+    // Scatter food randomly within an annulus — kept for backward compat
     _scatterFood(cx, cy, min_r, max_r, state, count, rng) {
         let placed = 0;
         for (let attempt = 0; attempt < count * 4 && placed < count; attempt++) {
@@ -305,32 +364,9 @@ class WorldEnvironment extends Environment {
         }
     }
 
-    // Place a cluster of cells using 2D Gaussian spread around (cx, cy)
-    // sigma controls how tightly packed the cluster is
+    // Alias kept for any external callers
     _placeCluster(cx, cy, sigma, state, count, rng) {
-        let placed = 0;
-        for (let attempt = 0; attempt < count * 6 && placed < count; attempt++) {
-            // Box-Muller for Gaussian offset
-            const u1 = Math.max(1e-10, rng());
-            const u2 = rng();
-            const z0 = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
-            const z1 = Math.sqrt(-2 * Math.log(u1)) * Math.sin(2 * Math.PI * u2);
-            const c  = Math.round(cx + z0 * sigma);
-            const r  = Math.round(cy + z1 * sigma);
-            const cell = this.grid_map.cellAt(c, r);
-            if (cell && cell.state === CellStates.empty) {
-                this.changeCell(c, r, state, null);
-                placed++;
-            }
-        }
-    }
-
-    // Legacy helpers kept for backward compatibility
-    _drawFoodRing(cx, cy, min_radius, max_radius, food_state, count) {
-        this._scatterFood(cx, cy, min_radius, max_radius, food_state, count, Math.random.bind(Math));
-    }
-    _drawLandmarkRing(cx, cy, min_radius, max_radius, landmark_state, count) {
-        this._scatterFood(cx, cy, min_radius, max_radius, landmark_state, count, Math.random.bind(Math));
+        this._placeBlob(cx, cy, sigma, state, count, rng);
     }
 
     // ── World snapshot ───────────────────────────────────────────────────────
@@ -389,6 +425,48 @@ class WorldEnvironment extends Environment {
             if (state) {
                 this.changeCell(entry.c, entry.r, state, null);
             }
+        }
+    }
+
+    // Restore world snapshot but only respawn food cells with a given probability.
+    // Landmarks and caves are always restored. Walls are never touched (already excluded).
+    // This limits resources while keeping structure intact.
+    //
+    // @param {number} food_respawn_prob - probability (0-1) that each food cell respawns
+    _restoreWorldSnapshotWithProbability(food_respawn_prob) {
+        if (!this._world_snapshot) {
+            this.grid_map.fillGrid(CellStates.empty, true);
+            this.generateWorld();
+            return;
+        }
+
+        // Clear all non-wall cells
+        this.grid_map.fillGrid(CellStates.empty, true);
+
+        const stateMap = {
+            'food':                    CellStates.food,
+            'low food':                CellStates.lowFood,
+            'medium food':             CellStates.mediumFood,
+            'prestige food':           CellStates.prestigeFood,
+            'wall':                    CellStates.wall,
+            'cave':                    CellStates.cave,
+            'low food landmark':       CellStates.lowFoodLandmark,
+            'medium food landmark':    CellStates.mediumFoodLandmark,
+            'prestige food landmark':  CellStates.prestigeFoodLandmark,
+        };
+
+        for (const entry of this._world_snapshot) {
+            const state = stateMap[entry.name];
+            if (!state) continue;
+
+            // For food types, roll the dice; always restore landmarks and caves
+            const name = entry.name;
+            const is_food = name.includes('food') && !name.includes('landmark');
+            if (is_food && Math.random() > food_respawn_prob) {
+                continue; // Skip this food cell
+            }
+
+            this.changeCell(entry.c, entry.r, state, null);
         }
     }
 

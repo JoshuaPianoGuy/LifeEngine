@@ -45,8 +45,9 @@ const logger          = require('../Logger');
 
 const POPULATION_SIZE = 1;   // founding population per generation; raised for larger experiments
 const N_PARENTS       = 5;     // top-5 per spec
-const MUT_PROB        = 0.0;   // DISABLED: only testing within-lifetime learning, not morphological changes
-const MUT_SIGMA       = 0.1;   // Gaussian noise std-dev (unused when MUT_PROB = 0)
+const MUT_PROB        = 0.03;  // 3% per-weight mutation probability between generations
+const MUT_SIGMA       = 0.1;   // Gaussian noise std-dev
+const SPAWN_RADIUS    = 5;     // spawn organisms within a 5-cell radius of spawn point
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -88,7 +89,7 @@ class GAManager {
     /**
      * Spawn POPULATION_SIZE founding agents from gene_pool (or Xavier-random
      * if gene_pool is null, i.e. generation 0).
-     * All founders start at (spawn_col, spawn_row).
+     * Founders spawn within SPAWN_RADIUS of the base spawn location.
      */
     spawnGeneration() {
         this.all_agents      = [];
@@ -97,9 +98,10 @@ class GAManager {
         this.peak_population = 0;
 
         for (let i = 0; i < POPULATION_SIZE; i++) {
+            const [spawn_c, spawn_r] = this._getRandomSpawnPosition();
             const org = new AdvancedOrganism(
-                this.spawn_col,
-                this.spawn_row,
+                spawn_c,
+                spawn_r,
                 this.env,
                 null,             // no parent — genome set below
                 this.rl_enabled,
@@ -268,6 +270,29 @@ class GAManager {
         const u1 = 1 - Math.random();
         const u2 = 1 - Math.random();
         return mean + sigma * Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+    }
+
+    /**
+     * Generate a random spawn position within SPAWN_RADIUS of the base spawn point.
+     * Clamps to grid bounds to prevent out-of-bounds spawns.
+     *
+     * @returns {[number, number]} [col, row] spawn position
+     */
+    _getRandomSpawnPosition() {
+        const offset_c = Math.floor(Math.random() * (2 * SPAWN_RADIUS + 1)) - SPAWN_RADIUS;
+        const offset_r = Math.floor(Math.random() * (2 * SPAWN_RADIUS + 1)) - SPAWN_RADIUS;
+        
+        let col = this.spawn_col + offset_c;
+        let row = this.spawn_row + offset_r;
+        
+        // Clamp to grid bounds
+        const grid = this.env.grid_map;
+        if (grid) {
+            col = Math.max(0, Math.min(col, grid.cols - 1));
+            row = Math.max(0, Math.min(row, grid.rows - 1));
+        }
+        
+        return [col, row];
     }
 
     // ── Metrics ───────────────────────────────────────────────────────────────
