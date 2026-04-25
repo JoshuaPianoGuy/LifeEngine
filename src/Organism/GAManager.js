@@ -43,7 +43,7 @@ const logger          = require('../Logger');
 
 // ── GA hyper-parameters ───────────────────────────────────────────────────────
 
-const POPULATION_SIZE = 1;   // founding population per generation; raised for larger experiments
+const POPULATION_SIZE = 100;   // founding population per generation; raised for larger experiments
 const N_PARENTS       = 5;     // top-5 per spec
 const MUT_PROB        = 0.03;  // 3% per-weight mutation probability between generations
 const MUT_SIGMA       = 0.1;   // Gaussian noise std-dev

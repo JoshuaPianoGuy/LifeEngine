@@ -94,7 +94,7 @@ const RL_LR       = 0.02;
 const TRACE_DECAY = 0.90;
 
 // Exploration
-const EPSILON_START = 0.2;
+const EPSILON_START = 0.8; //initially 0.2
 const EPSILON_END   = 0.05;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
