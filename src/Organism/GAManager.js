@@ -44,7 +44,7 @@ const logger          = require('../Logger');
 // ── GA hyper-parameters ───────────────────────────────────────────────────────
 
 const POPULATION_SIZE = 100;   // founding population per generation; raised for larger experiments
-const N_PARENTS       = 5;     // top-5 per spec
+const N_PARENTS       = 20;     // top-20 GA selection
 const MUT_PROB        = 0.03;  // 3% per-weight mutation probability between generations
 const MUT_SIGMA       = 0.1;   // Gaussian noise std-dev
 const SPAWN_RADIUS    = 5;     // spawn organisms within a 5-cell radius of spawn point
@@ -98,10 +98,9 @@ class GAManager {
         this.peak_population = 0;
 
         for (let i = 0; i < POPULATION_SIZE; i++) {
-            const [spawn_c, spawn_r] = this._getRandomSpawnPosition();
             const org = new AdvancedOrganism(
-                spawn_c,
-                spawn_r,
+                0,
+                0,
                 this.env,
                 null,             // no parent — genome set below
                 this.rl_enabled,
@@ -156,6 +155,13 @@ class GAManager {
                 org.setGenome(this.gene_pool[i % this.gene_pool.length]);
             }
 
+            const spawn = this._findSpawnPosition(org);
+            if (!spawn) {
+                continue;
+            }
+            org.c = spawn[0];
+            org.r = spawn[1];
+
             this.env.addOrganism(org);
             this.registerAgent(org);
         }
@@ -190,10 +196,14 @@ class GAManager {
         this.tick_count++;
 
         // Remove agents that died this tick
+        const dead_agents = [];
         for (const agent of this.living_agents) {
             if (!agent.living) {
-                this.living_agents.delete(agent);
+                dead_agents.push(agent);
             }
+        }
+        for (const agent of dead_agents) {
+            this.living_agents.delete(agent);
         }
 
         // Generation ends when no living agents remain
@@ -222,9 +232,17 @@ class GAManager {
         // Every genome comes from uniform crossover between two parents drawn
         // randomly from the top-5, then mutated.
         while (next_pool.length < POPULATION_SIZE) {
-            const pa    = parents[Math.floor(Math.random() * parents.length)];
-            const pb    = parents[Math.floor(Math.random() * parents.length)];
-            const child = this._uniformCrossover(pa.getGenome(), pb.getGenome());
+            const pa_idx = Math.floor(Math.random() * parents.length);
+            let pb_idx;
+            //id only one organism survives pa_idx === pb_idx
+            do {
+                pb_idx = Math.floor(Math.random() * parents.length);
+            } while (pb_idx === pa_idx && parents.length > 1);
+
+            const child = this._uniformCrossover(
+                parents[pa_idx].getGenome(), 
+                parents[pb_idx].getGenome()
+            );
             this._mutate(child);
             next_pool.push(child);
         }
@@ -238,11 +256,14 @@ class GAManager {
      * Uniform crossover: each weight independently from parent A or B at 50/50.
      * Preferred over single-point for neural weight arrays — avoids the
      * permutation problem where neuron j in A may not match neuron j in B.
+     * Weights are clipped to [-1, 1] after crossover.
      */
     _uniformCrossover(genome_a, genome_b) {
         const child = new Float32Array(NNBrain.GENOME_SIZE);
         for (let i = 0; i < NNBrain.GENOME_SIZE; i++) {
-            child[i] = Math.random() < 0.5 ? genome_a[i] : genome_b[i];
+            const weight = Math.random() < 0.5 ? genome_a[i] : genome_b[i];
+            // Clip to [-1, 1]
+            child[i] = Math.max(-1, Math.min(1, weight));
         }
         return child;
     }
@@ -251,6 +272,7 @@ class GAManager {
      * Gaussian additive mutation, in-place.
      * Each weight has MUT_PROB chance of being perturbed by N(0, MUT_SIGMA).
      * Applied to every genome entering the next generation's founding pool.
+     * Weights are clipped to [-1, 1] after mutation.
      *
      * Note: AdvancedOrganism.reproduce() applies a SEPARATE mutation step
      * (ASEXUAL_MUT_PROB / ASEXUAL_MUT_SIGMA) when spawning children within
@@ -262,6 +284,8 @@ class GAManager {
         for (let i = 0; i < genome.length; i++) {
             if (Math.random() < MUT_PROB) {
                 genome[i] += this._gaussianSample(0, MUT_SIGMA);
+                // Clip to [-1, 1]
+                genome[i] = Math.max(-1, Math.min(1, genome[i]));
             }
         }
     }
@@ -273,26 +297,28 @@ class GAManager {
     }
 
     /**
-     * Generate a random spawn position within SPAWN_RADIUS of the base spawn point.
-     * Clamps to grid bounds to prevent out-of-bounds spawns.
+     * Generate a random spawn position anywhere on the grid.
      *
      * @returns {[number, number]} [col, row] spawn position
      */
     _getRandomSpawnPosition() {
-        const offset_c = Math.floor(Math.random() * (2 * SPAWN_RADIUS + 1)) - SPAWN_RADIUS;
-        const offset_r = Math.floor(Math.random() * (2 * SPAWN_RADIUS + 1)) - SPAWN_RADIUS;
-        
-        let col = this.spawn_col + offset_c;
-        let row = this.spawn_row + offset_r;
-        
-        // Clamp to grid bounds
         const grid = this.env.grid_map;
-        if (grid) {
-            col = Math.max(0, Math.min(col, grid.cols - 1));
-            row = Math.max(0, Math.min(row, grid.rows - 1));
+        if (!grid) {
+            return [this.spawn_col, this.spawn_row];
         }
-        
+        const col = Math.floor(Math.random() * grid.cols);
+        const row = Math.floor(Math.random() * grid.rows);
         return [col, row];
+    }
+
+    _findSpawnPosition(org, attempts = 200) {
+        for (let i = 0; i < attempts; i++) {
+            const [col, row] = this._getRandomSpawnPosition();
+            if (org.isClear(col, row, org.rotation)) {
+                return [col, row];
+            }
+        }
+        return null;
     }
 
     // ── Metrics ───────────────────────────────────────────────────────────────

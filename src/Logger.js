@@ -8,12 +8,12 @@
  *   1. Generation summary  — one row per generation, written to generation_log
  *      Fields: generation, condition, ticks, total_agents, peak_pop,
  *              avg_energy_early, avg_energy_end, top5_fitness, best_fitness,
- *              avg_lifetime, avg_genetic_drift, genome_variance
+ *              avg_lifetime, avg_learned_weight_diff, genome_variance
  *
  *   2. Top-5 organism detail — one row per top organism per generation
  *      Fields: generation, rank, fitness, lifetime, energy_at_death,
- *              energy_at_early_sample, foods_eaten, genetic_drift,
- *              genome_l2_norm, day_night_cycle_count
+ *              energy_at_early_sample, foods_eaten, learned_weight_diff,
+ *              network_weight_magnitude, day_night_cycle_count
  *
  *   3. Event log — timestamped freeform events (deaths, reproductions, etc.)
  *      Used for real-time console output and debugging.
@@ -55,7 +55,7 @@ class Logger {
         const n_parents  = Math.min(5, n);
         const top5       = sorted.slice(0, n_parents);
 
-        // Average energy at 20% lifetime mark (only agents that reached it)
+        // Average energy at tick 1000 (fixed early-game sample)
         const early_samples = sorted.map(a => a.energy_at_early_sample).filter(e => e !== null && e !== undefined);
         const avg_energy_early = early_samples.length > 0
             ? early_samples.reduce((s, e) => s + e, 0) / early_samples.length
@@ -70,10 +70,11 @@ class Logger {
         // Average lifetime
         const avg_lifetime = sorted.reduce((s, a) => s + (a.lifetime || 0), 0) / n;
 
-        // Genetic drift: mean absolute deviation between active_weights and
-        // genome_weights across all top-5 agents. Only meaningful in Condition A.
+        // Learned weight difference: mean absolute deviation between active_weights and
+        // genome_weights across all top-5 agents. Only meaningful in Condition A (RL enabled).
+        // Measures how much within-lifetime learning has modified the starting weights.
         const drifts = top5.map(a => this._calcDrift(a)).filter(d => d !== null);
-        const avg_drift = drifts.length > 0
+        const avg_learned_weight_diff = drifts.length > 0
             ? drifts.reduce((s, d) => s + d, 0) / drifts.length
             : 0;
 
@@ -81,24 +82,26 @@ class Logger {
         // Computed as mean variance per weight position across all genomes.
         const genome_variance = this._calcGenomeVariance(sorted);
 
-        // Mean genome L2 norm across all agents
-        const avg_genome_norm = sorted.reduce((s, a) => s + this._calcL2Norm(a), 0) / n;
+        // Mean network weight magnitude (RMS - Root Mean Square) across all agents.
+        // Normalized by dividing L2 norm by sqrt(num_weights) to show typical weight magnitude.
+        // With [-1, 1] bounds, this typically ranges [0, 1].
+        const avg_network_weight_mag = sorted.reduce((s, a) => s + this._calcRMSWeight(a), 0) / n;
 
         const entry = {
-            generation:        ga.generation,
-            condition:         ga.rl_enabled ? 'learning' : 'natural_selection',
-            wall_clock_s:      ((Date.now() - this._start_time) / 1000).toFixed(1),
-            generation_ticks:  ga.tick_count,
-            total_agents:      n,
-            peak_population:   ga.peak_population,
-            avg_energy_early:  avg_energy_early.toFixed(3),
-            avg_energy_end:    avg_energy_end.toFixed(3),
-            top5_fitness:      top5_fitness.toFixed(4),
-            best_fitness:      sorted[0].getFitness().toFixed(4),
-            avg_lifetime:      avg_lifetime.toFixed(1),
-            avg_genetic_drift: avg_drift.toFixed(6),
-            genome_variance:   genome_variance.toFixed(6),
-            avg_genome_l2:     avg_genome_norm.toFixed(4),
+            generation:              ga.generation,
+            condition:               ga.rl_enabled ? 'learning' : 'natural_selection',
+            wall_clock_s:            ((Date.now() - this._start_time) / 1000).toFixed(1),
+            generation_ticks:        ga.tick_count,
+            total_agents:            n,
+            peak_population:         ga.peak_population,
+            avg_energy_at_tick_1000: avg_energy_early.toFixed(3),
+            avg_energy_end:          avg_energy_end.toFixed(3),
+            top5_fitness:            top5_fitness.toFixed(4),
+            best_fitness:            sorted[0].getFitness().toFixed(4),
+            avg_lifetime:            avg_lifetime.toFixed(1),
+            avg_learned_weight_diff: avg_learned_weight_diff.toFixed(6),
+            genome_variance:         genome_variance.toFixed(6),
+            avg_network_weight_mag:  avg_network_weight_mag.toFixed(4),
         };
 
         this.generation_log.push(entry);
@@ -112,9 +115,9 @@ class Logger {
         console.log(
             `[Gen ${ga.generation}] ${ga.rl_enabled ? 'LEARN' : 'NSEL'} | ` +
             `ticks=${ga.tick_count} agents=${n} peak=${ga.peak_population} | ` +
-            `early_E=${entry.avg_energy_early} end_E=${entry.avg_energy_end} | ` +
+            `E@tick1000=${entry.avg_energy_at_tick_1000} E_end=${entry.avg_energy_end} | ` +
             `top5_fit=${entry.top5_fitness} best=${entry.best_fitness} | ` +
-            `drift=${entry.avg_genetic_drift} var=${entry.genome_variance}`
+            `learned_diff=${entry.avg_learned_weight_diff} var=${entry.genome_variance}`
         );
     }
 
@@ -125,8 +128,8 @@ class Logger {
      * Called automatically by logGeneration() for the top-5.
      */
     logOrganism(generation, rank, agent, rl_enabled) {
-        const drift     = this._calcDrift(agent);
-        const l2_norm   = this._calcL2Norm(agent);
+        const learned_weight_diff = this._calcDrift(agent);
+        const network_weight_mag  = this._calcRMSWeight(agent);
 
         // Count food eaten by type if tracked
         const food_counts = agent.food_by_type || {};
@@ -134,21 +137,21 @@ class Logger {
         const entry = {
             generation,
             rank,
-            condition:             rl_enabled ? 'learning' : 'natural_selection',
-            fitness:               agent.getFitness().toFixed(4),
-            lifetime:              agent.lifetime || 0,
-            energy_at_death:       (agent.energy || 0).toFixed(2),
-            energy_at_early_20pct: agent.energy_at_early_sample !== null && agent.energy_at_early_sample !== undefined
+            condition:                rl_enabled ? 'learning' : 'natural_selection',
+            fitness:                  agent.getFitness().toFixed(4),
+            lifetime:                 agent.lifetime || 0,
+            energy_at_death:          (agent.energy || 0).toFixed(2),
+            energy_at_tick_1000:      agent.energy_at_early_sample !== null && agent.energy_at_early_sample !== undefined
                 ? agent.energy_at_early_sample.toFixed(2)
                 : 'n/a',
-            cumulative_food_score: (agent.cumulative_food_score || 0).toFixed(4),
-            food_low:              food_counts['low food']      || 0,
-            food_medium:           food_counts['medium food']   || 0,
-            food_prestige:         food_counts['prestige food'] || 0,
-            food_default:          food_counts['food']          || 0,
-            cells_visited:         agent.visited_cells ? agent.visited_cells.size : 0,
-            genetic_drift:         drift !== null ? drift.toFixed(6) : 'n/a',
-            genome_l2_norm:        l2_norm.toFixed(4),
+            cumulative_food_score:    (agent.cumulative_food_score || 0).toFixed(4),
+            food_low:                 food_counts['low food']      || 0,
+            food_medium:              food_counts['medium food']   || 0,
+            food_prestige:            food_counts['prestige food'] || 0,
+            food_default:             food_counts['food']          || 0,
+            cells_visited:            agent.visited_cells ? agent.visited_cells.size : 0,
+            learned_weight_diff:      learned_weight_diff !== null ? learned_weight_diff.toFixed(6) : 'n/a',
+            network_weight_magnitude: network_weight_mag.toFixed(4),
         };
 
         this.organism_log.push(entry);
@@ -176,8 +179,9 @@ class Logger {
     // ── Genetic analysis helpers ──────────────────────────────────────────────
 
     /**
-     * Mean absolute weight drift between active_weights and genome_weights.
-     * Returns null if RL is disabled (no drift possible) or brain unavailable.
+     * Mean absolute difference between active_weights and genome_weights.
+     * Measures within-lifetime learning-induced weight changes.
+     * Returns null if RL is disabled (no learning) or brain unavailable.
      */
     _calcDrift(agent) {
         if (!agent.brain || !agent.brain.active_weights || !agent.brain.genome_weights) return null;
@@ -190,7 +194,23 @@ class Logger {
     }
 
     /**
-     * L2 norm of genome_weights — a scalar summary of how "large" the weights are.
+     * RMS (Root Mean Square) weight magnitude of genome_weights.
+     * Normalized L2 norm: sqrt(sum of squares) / sqrt(num_weights).
+     * Shows typical/average weight magnitude. With [-1, 1] bounds, typically [0, 1].
+     */
+    _calcRMSWeight(agent) {
+        if (!agent.brain || !agent.brain.genome_weights) return 0;
+        const gw = agent.brain.genome_weights;
+        let sum = 0;
+        for (let i = 0; i < gw.length; i++) sum += gw[i] * gw[i];
+        const l2_norm = Math.sqrt(sum);
+        const rms = l2_norm / Math.sqrt(gw.length);
+        return rms;
+    }
+
+    /**
+     * Raw L2 norm (Euclidean magnitude) of genome_weights (for reference).
+     * Returns the un-normalized L2 norm.
      */
     _calcL2Norm(agent) {
         if (!agent.brain || !agent.brain.genome_weights) return 0;

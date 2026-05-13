@@ -5,11 +5,11 @@
  * learning influences the rate at which effective food-seeking behaviours become
  * encoded in heritable neural network weights across generations.
  *
- * Architecture:  33 -> 32 -> 4
- *   Input  (33): 4 eye directions x 8 one-hot percept types  +  1 energy scalar
+ * Architecture:  46 -> 32 -> 6
+ *   Input  (46): 4 eye directions x 11 one-hot percept types  +  1 energy scalar + 1 rotation scalar
  *   Hidden (32): ReLU
- *   Output  (4): softmax -> up / right / down / left
- *   Genome: 33x32 + 32 + 32x4 + 4 = 1056 + 32 + 128 + 4 = 1220 weights
+ *   Output  (6): softmax -> up / right / down / left / rotate-left / rotate-right
+ *   Genome: 42x32 + 32 + 32x6 + 6 = 1344 + 32 + 192 + 6 = 1574 weights
  *
  * Perception:
  *   Uses the existing EyeCell.look() raycast (lookRange = 30 by default).
@@ -17,7 +17,7 @@
  *   range. NNBrain reads those observations directly rather than going through
  *   the Brain.observe() / Brain.decide() pipeline.
  *
- *   Percept types (one-hot, 8 classes):
+ *   Percept types (one-hot, 11 classes):
  *     0 - nothing / empty / out-of-bounds
  *     1 - food_red       (energy 0.5)
  *     2 - food_orange    (energy 1.0)
@@ -26,6 +26,9 @@
  *     5 - landmark_red   (red food nearby)
  *     6 - landmark_orange
  *     7 - landmark_teal
+ *     8 - cave
+ *     9 - base food (fallback)
+ *    10 - organism body (mouth/producer/mover/killer/armor/eye)
  *
  * GA / inheritance (non-Lamarckian):
  *   genome_weights -- starting weights; what the GA reads and crossovers.
@@ -63,10 +66,16 @@ const PERCEPT_INDEX = {
     'low food landmark':        5,   // CellStates.lowFoodLandmark.name
     'medium food landmark':     6,   // CellStates.mediumFoodLandmark.name
     'prestige food landmark':   7,   // CellStates.prestigeFoodLandmark.name
-    'food':                     2,   // base LifeEngine food -> medium tier as fallback
-    'cave':                     0,   // caves not a navigation target; treated as empty
+    'food':                     9,   // base LifeEngine food -> medium tier as fallback
+    'cave':                     8,   // cshelter during night cycle; important navigation target
+    'mouth':                    10,
+    'producer':                 10,
+    'mover':                    10,
+    'killer':                   10,
+    'armor':                    10,
+    'eye':                      10,
 };
-const N_PERCEPT_TYPES = 8;
+const N_PERCEPT_TYPES = 11;
 
 // Fixed iteration order for the 4 eye directions
 const EYE_DIRECTIONS = [
@@ -78,24 +87,30 @@ const EYE_DIRECTIONS = [
 const N_EYE_DIRECTIONS = 4;
 
 // Network topology
-const N_SCALARS   = 1;   // energy
-const STATE_SIZE  = N_EYE_DIRECTIONS * N_PERCEPT_TYPES + N_SCALARS;  // 33
+const N_SCALARS   = 2;   // energy + rotation
+const STATE_SIZE  = N_EYE_DIRECTIONS * N_PERCEPT_TYPES + N_SCALARS;  // 46
 const HIDDEN_SIZE = 32;
-const OUTPUT_SIZE = 4;
+const OUTPUT_SIZE = 6;   // up, right, down, left, rotate-left, rotate-right
 
-const W1_SIZE     = STATE_SIZE  * HIDDEN_SIZE;   // 1056
+const DEBUG_STATE_VECTOR = false;  // Set to true to log the 42-element input vector
+
+const W1_SIZE     = STATE_SIZE  * HIDDEN_SIZE;   // 1472
 const B1_SIZE     = HIDDEN_SIZE;                 //   32
-const W2_SIZE     = HIDDEN_SIZE * OUTPUT_SIZE;   //  128
-const B2_SIZE     = OUTPUT_SIZE;                 //   4
-const GENOME_SIZE = W1_SIZE + B1_SIZE + W2_SIZE + B2_SIZE;  // 1220
+const W2_SIZE     = HIDDEN_SIZE * OUTPUT_SIZE;   //  192
+const B2_SIZE     = OUTPUT_SIZE;                 //    6
+const GENOME_SIZE = W1_SIZE + B1_SIZE + W2_SIZE + B2_SIZE;  // 1702
 
 // RL hyper-parameters
-const RL_LR       = 0.02;
-const TRACE_DECAY = 0.90;
+const RL_LR            = 0.02;
+const TRACE_DECAY      = 0.90;
+const BASELINE_DECAY   = 0.9;   // exponential moving average decay for running mean baseline (0.9 * mean + 0.1 * reward)
 
 // Exploration
-const EPSILON_START = 0.8; //initially 0.2
+const EPSILON_START = 0.5; //initially 0.2
 const EPSILON_END   = 0.05;
+
+// ── Debugging ─────────────────────────────────────────────────────────────────
+const DEBUG_OBSERVATIONS = false;  // Set to true to log what each eye observes per tick
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -134,11 +149,13 @@ class NNBrain {
             ? new Float32Array(this.genome_weights)
             : this.genome_weights;
 
-        this.traces       = rl_enabled ? new Float32Array(GENOME_SIZE) : null;
-        this._hidden      = new Float32Array(HIDDEN_SIZE);
-        this._input       = new Float32Array(STATE_SIZE);
-        this._last_probs  = null;
-        this._last_action = null;
+        this.traces           = rl_enabled ? new Float32Array(GENOME_SIZE) : null;
+        this.running_baseline = 0;       // running mean of rewards for variance reduction
+        this._baseline_count  = 0;       // count of reward samples for baseline
+        this._hidden          = new Float32Array(HIDDEN_SIZE);
+        this._input           = new Float32Array(STATE_SIZE);
+        this._last_probs      = null;
+        this._last_action     = null;
     }
 
     _initGenome() {
@@ -169,7 +186,7 @@ class NNBrain {
 
     // ── Perception ────────────────────────────────────────────────────────────
 
-    // Build 33-element state vector from 4 eye observations + energy.
+    // Build 42-element state vector from 4 eye observations + energy + rotation.
     // observations: array of 4 Observation objects in [up, right, down, left] order.
     buildStateVector(observations, max_energy) {
         const state = this._input;
@@ -189,6 +206,10 @@ class NNBrain {
             ? Math.min(1, Math.max(0, (this.owner.energy || 0) / max_energy))
             : 0;
         state[N_EYE_DIRECTIONS * N_PERCEPT_TYPES] = energy_norm;
+
+        // Add rotation as normalized scalar (0->0.0, 1->0.33, 2->0.67, 3->1.0)
+        const rotation_norm = this.owner.rotation / 3;
+        state[N_EYE_DIRECTIONS * N_PERCEPT_TYPES + 1] = rotation_norm;
 
         return state;
     }
@@ -234,10 +255,18 @@ class NNBrain {
 
     // ── RL update ─────────────────────────────────────────────────────────────
 
-    // REINFORCE with eligibility traces.
+    // REINFORCE with eligibility traces and running mean baseline.
     // Only updates active_weights — genome_weights is never touched.
+    // The baseline reduces variance by subtracting the running mean of past rewards.
     reinforce(reward) {
         if (!this.rl_enabled || !this.traces || !this._last_probs) return;
+
+        // Update running baseline using exponential moving average
+        this._baseline_count++;
+        this.running_baseline = BASELINE_DECAY * this.running_baseline + (1 - BASELINE_DECAY) * reward;
+        
+        // Baseline-adjusted reward for variance reduction
+        const adjusted_reward = reward - this.running_baseline;
 
         const w      = this.active_weights;
         const traces = this.traces;
@@ -271,7 +300,9 @@ class NNBrain {
         }
 
         for (let idx = 0; idx < GENOME_SIZE; idx++) {
-            w[idx] += RL_LR * reward * traces[idx];
+            w[idx] += RL_LR * adjusted_reward * traces[idx];
+            // Clip weights to [-1, 1]
+            w[idx] = Math.max(-1, Math.min(1, w[idx]));
         }
     }
 
@@ -283,28 +314,66 @@ class NNBrain {
      * @param {number} reward        reward signal this tick
      * @param {number} max_energy    for normalising energy input
      * @param {number} lifetime_frac 0.0 at birth -> 1.0 at max lifespan, for epsilon decay
-     * @returns {number}  Directions constant 0-3
+     * @returns {number}  Action index 0-5 (0-3: movement directions, 4-5: rotations)
      */
     decide(reward, max_energy, lifetime_frac) {
         const observations = this._collectObservations();
         const state        = this.buildStateVector(observations, max_energy);
 
+        // Debug: log what each eye observes
+        if (DEBUG_OBSERVATIONS) {
+            const dirNames = ['UP', 'RIGHT', 'DOWN', 'LEFT'];
+            let obsLog = `[Org #${this.owner.id} tick ${this.owner.lifetime}] Eyes: `;
+            for (let d = 0; d < N_EYE_DIRECTIONS; d++) {
+                const obs = observations[d];
+                const dirName = dirNames[d];
+                if (obs && obs.cell && obs.cell.state) {
+                    const cellName = obs.cell.state.name || 'unknown';
+                    const distance = obs.distance || '?';
+                    const perceptIdx = perceptIndex(cellName);
+                    obsLog += `${dirName}(${cellName}@${distance}🔍${perceptIdx}) `;
+                } else {
+                    obsLog += `${dirName}(empty) `;
+                }
+            }
+            console.log(obsLog);
+        }
+
+        if (DEBUG_STATE_VECTOR) {
+            const dirNames = ['UP', 'RIGHT', 'DOWN', 'LEFT'];
+            const parts = [];
+            for (let d = 0; d < N_EYE_DIRECTIONS; d++) {
+                const base = d * N_PERCEPT_TYPES;
+                const slice = Array.from(state.slice(base, base + N_PERCEPT_TYPES)).map(v => v.toFixed(3));
+                const obs = observations[d];
+                const cellName = obs && obs.cell && obs.cell.state ? obs.cell.state.name : 'empty';
+                parts.push(`${dirNames[d]}:${cellName} [${slice.join(', ')}]`);
+            }
+            const energy = state[N_EYE_DIRECTIONS * N_PERCEPT_TYPES].toFixed(3);
+            const rotation = state[N_EYE_DIRECTIONS * N_PERCEPT_TYPES + 1].toFixed(3);
+            parts.push(`energy:${energy}`);
+            parts.push(`rotation:${rotation}`);
+            console.log(`[Org #${this.owner.id} tick ${this.owner.lifetime}] State: ${parts.join(' | ')}`);
+        }
+
         // Epsilon-greedy: quadratic decay from EPSILON_START to EPSILON_END (faster decay)
         const epsilon = EPSILON_START + (EPSILON_END - EPSILON_START) * (lifetime_frac ** 2);
         let action;
+        //only REINFORCE policy actions?
+        //let was_random = false;
         if (Math.random() < epsilon) {
-            // Explore: random action, but still run forward to cache activations
-            this.forward(state);
+            this.forward(state); // cache hidden activations
             action = Math.floor(Math.random() * OUTPUT_SIZE);
             this._last_action = action;
+            // override probs with uniform distribution
+            this._last_probs = new Array(OUTPUT_SIZE).fill(1 / OUTPUT_SIZE);
         } else {
             action = this.forward(state);
         }
 
-        if (this.rl_enabled && reward !== 0) {
+        if (this.rl_enabled) {
             this.reinforce(reward);
         }
-
         return action;
     }
 

@@ -30,8 +30,8 @@ class WorldEnvironment extends Environment {
         this.data_update_rate = 100;
 
         // Day/night cycle — equal length
-        this.day_length   = 150;
-        this.night_length = 150;
+        this.day_length   = 300;
+        this.night_length = 300;
         this.cycle_length = this.day_length + this.night_length;
 
         // Snapshot of the initial map layout — restored at the start of each
@@ -43,7 +43,8 @@ class WorldEnvironment extends Environment {
         const center    = this.grid_map.getCenter();
         const spawn_col = center[0] + 15;
         const spawn_row = center[1] + 15;
-        this.ga_manager = new GAManager(this, true, spawn_col, spawn_row);
+        //reference?
+        this.ga_manager = new GAManager(this, this.learning_enabled, spawn_col, spawn_row);
 
         FossilRecord.setEnv(this);
     }
@@ -62,7 +63,8 @@ class WorldEnvironment extends Environment {
         }
         this.total_ticks++;
         // Regenerate food every 50,000 ticks with 20% spawn probability
-        if (this.total_ticks % 50000 == 0) {
+        // Disabled for GA runs to prevent food accumulation between generations
+        if (this.total_ticks % 50000 == 0 && !this.ga_manager) {
             this._restoreWorldSnapshotWithProbability(0.2);
         }
         if (this.total_ticks % this.data_update_rate == 0) {
@@ -90,13 +92,14 @@ class WorldEnvironment extends Environment {
             this.organisms.splice(i, 1);
         }
         if (this.organisms.length === 0 && start_pop > 0) {
-            if (this.learning_enabled && this.ga_manager) {
+            // Always manage generation lifecycle via GA manager, regardless of learning condition
+            // This ensures proper cleanup of dead agents and memory management
+            if (this.ga_manager) {
                 const gen_ended = this.ga_manager.tick();
                 if (gen_ended) {
                     this.ga_manager.evolve();
-                    // Restore the fixed map snapshot — food replenished to exactly
-                    // the same layout as generation 1 so all generations are comparable.
-                    this._restoreWorldSnapshot();
+                    // Generate a fresh random map for each new generation
+                    this.generateWorld();
                     this.renderFull();
                     this.ga_manager.spawnGeneration();
                     return;
@@ -115,12 +118,11 @@ class WorldEnvironment extends Environment {
         var center = this.grid_map.getCenter();
         var org = this.createExperimentOrganism(center[0], center[1], null);
         this.addOrganism(org);
-        if (this.learning_enabled && this.ga_manager) {
+        // Always register agent with GA manager for proper generation lifecycle management
+        if (this.ga_manager) {
             this.ga_manager.registerAgent(org);
-            FossilRecord.addSpecies(org, null);
-        } else {
-            FossilRecord.addSpecies(org, null);
         }
+        FossilRecord.addSpecies(org, null);
     }
 
     createExperimentOrganism(col, row, parent = null) {
@@ -159,6 +161,12 @@ class WorldEnvironment extends Environment {
     // All positions are jittered so the map looks organic, not grid-like.
 
     generateWorld() {
+        // Clear all walls from previous generation
+        this.clearWalls();
+        // Clear all cells including walls for each new generation to prevent accumulation
+        this.grid_map.fillGrid(CellStates.empty, false);
+        this.walls = [];  // Clear the walls array as well
+
         const cols = this.grid_map.cols;
         const rows = this.grid_map.rows;
         const cx   = Math.floor(cols / 2);

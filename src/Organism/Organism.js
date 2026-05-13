@@ -9,6 +9,7 @@ const SerializeHelper = require("../Utils/SerializeHelper");
 
 class Organism {
     constructor(col, row, env, parent=null) {
+        this.id = Organism._nextId++;
         this.c = col;
         this.r = row;
         this.env = env;
@@ -425,5 +426,7 @@ class Organism {
     }
 
 }
+
+Organism._nextId = 1;
 
 module.exports = Organism;

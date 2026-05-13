@@ -51,8 +51,8 @@ const FossilRecord = require('../Stats/FossilRecord');
 // ── Energy constants ──────────────────────────────────────────────────────────
 
 const MAX_LIFETIME      = 1000000;  // increased from 1500 to allow more time for learning
-const ENERGY_CAPACITY   = 200;   // maximum energy
-const START_ENERGY      = 150;   // increased from 100 to give organisms buffer for reproduction
+const ENERGY_CAPACITY   = 500;   // maximum energy set to 500
+const START_ENERGY      = 300;   // increased from 100 to give organisms buffer for reproduction
 const ENERGY_DECAY_RATE = 1;     // energy lost per decay event
 const ENERGY_DECAY_INTERVAL = 10; // ticks between decay events (per spec: lose energy every 10 ticks)
 
@@ -81,8 +81,13 @@ const DEFAULT_FOOD_ENERGY = FOOD_ENERGY.food || 0.01;
 
 // ── Reward constants ──────────────────────────────────────────────────────────
 
-const DECAY_PENALTY  = 0.1;   // negative reward each time energy decays
-const EXPLORE_BONUS  = 0.02;  // positive reward for visiting a new cell
+const DECAY_PENALTY  = 0.05;   // negative reward each time energy decays
+//try 0.01--0.1?
+const EXPLORE_BONUS  = 0.15;  // positive reward for visiting a new cell
+//try 0.1--0.3? initially 0.02, but organisms had less incentive to explore after eating high tier food
+
+// ── Debugging ───────────────────────────────────────────────────────────────
+const DEBUG_ACTIONS = false;  // Set to true to log NN actions and movement outcomes
 
 // ── GA mutation constants (within-generation asexual reproduction) ────────────
 // Applied when an agent reproduces mid-generation.
@@ -275,12 +280,41 @@ class AdvancedOrganism extends Organism {
         }
 
         const action = this.brain.decide(reward, this.max_energy, lifetime_frac);
-        this.direction = action;
+        let moved = false;
+        let rotated = false;
+        
+        // Actions 0-3: movement (up, right, down, left)
+        // Actions 4-5: rotation (rotate-left, rotate-right)
+        if (action === 4) {
+            // Rotate left
+            rotated = this.attemptRotate(Directions.getLeftDirection(this.rotation));
+        } else if (action === 5) {
+            // Rotate right
+            rotated = this.attemptRotate(Directions.getRightDirection(this.rotation));
+        } else {
+            // Movement action
+            this.direction = action;
+            moved = this.attemptMove();
+            if (!moved) {
+                this.direction = Directions.getRandomDirection();
+                moved = this.attemptMove();
+            }
+        }
 
-        const moved = this.attemptMove();
-        if (!moved) {
-            this.direction = Directions.getRandomDirection();
-            this.attemptMove();
+        if (DEBUG_ACTIONS) {
+            const actionName = action <= 3 ? ['UP', 'RIGHT', 'DOWN', 'LEFT'][action] : (action === 4 ? 'ROTATE_LEFT' : 'ROTATE_RIGHT');
+            console.log(`[Org #${this.id} tick ${this.lifetime}] Action:${actionName} moved:${moved} rotated:${rotated} pos:(${this.c},${this.r}) energy:${(this.energy || 0).toFixed(2)}`);
+            if (action <= 3 && !moved) {
+                const dir = Directions.scalars[this.direction];
+                const block_c = this.c + dir[0];
+                const block_r = this.r + dir[1];
+                const block_cell = this.env.grid_map.cellAt(block_c, block_r);
+                const block_state = block_cell && block_cell.state ? block_cell.state.name : 'out-of-bounds';
+                console.log(`[Org #${this.id} tick ${this.lifetime}] Move blocked by ${block_state} at (${block_c},${block_r})`);
+            }
+            if (action >= 4 && !rotated) {
+                console.log(`[Org #${this.id} tick ${this.lifetime}] Rotation blocked at pos:(${this.c},${this.r})`);
+            }
         }
     }
 
@@ -348,6 +382,7 @@ class AdvancedOrganism extends Organism {
 
     // Gaussian additive mutation on a genome array, in-place.
     // Same scheme as GAManager._mutate() but using asexual-specific rate constants.
+    // Weights are clipped to [-1, 1] after mutation.
     _mutateGenome(genome) {
         for (let i = 0; i < genome.length; i++) {
             if (Math.random() < ASEXUAL_MUT_PROB) {
@@ -355,6 +390,8 @@ class AdvancedOrganism extends Organism {
                 const u2 = 1 - Math.random();
                 const z  = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
                 genome[i] += ASEXUAL_MUT_SIGMA * z;
+                // Clip to [-1, 1]
+                genome[i] = Math.max(-1, Math.min(1, genome[i]));
             }
         }
     }

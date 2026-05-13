@@ -49,6 +49,7 @@ class Renderer {
     }
 
     renderCell(cell) {
+        if (!cell) return;
         cell.state.render(this.ctx, cell, this.cell_size);
     }
 
