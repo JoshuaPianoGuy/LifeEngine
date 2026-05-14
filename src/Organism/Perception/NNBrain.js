@@ -186,6 +186,14 @@ class NNBrain {
 
     // ── Perception ────────────────────────────────────────────────────────────
 
+    resetTraces() {
+        if (this.traces) {
+            this.traces.fill(0);
+        }
+        this._last_probs = null;
+        this._last_action = null;
+    }
+
     // Build 42-element state vector from 4 eye observations + energy + rotation.
     // observations: array of 4 Observation objects in [up, right, down, left] order.
     buildStateVector(observations, max_energy) {

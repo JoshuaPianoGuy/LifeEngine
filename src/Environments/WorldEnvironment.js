@@ -62,11 +62,28 @@ class WorldEnvironment extends Environment {
             this.generateFood();
         }
         this.total_ticks++;
-        // Regenerate food every 50,000 ticks with 20% spawn probability
-        // Disabled for GA runs to prevent food accumulation between generations
-        if (this.total_ticks % 50000 == 0 && !this.ga_manager) {
-            this._restoreWorldSnapshotWithProbability(0.2);
+
+        // Delegate generation/map lifecycle check to the GA Manager if present
+        if (this.ga_manager) {
+            const status = this.ga_manager.tick();
+            if (status === 'NEXT_MAP') {
+                this.generateWorld();
+                this.ga_manager.startNextMap();
+                this.renderFull();
+            } else if (status === 'NEXT_GENERATION') {
+                this.ga_manager.evolve();
+                this.generateWorld();
+                this.ga_manager.spawnGeneration();
+                this.renderFull();
+                return;
+            }
+        } else {
+            // Regenerate food every 50,000 ticks with 20% spawn probability for non-GA
+            if (this.total_ticks % 50000 == 0) {
+                this._restoreWorldSnapshotWithProbability(0.2);
+            }
         }
+        
         if (this.total_ticks % this.data_update_rate == 0) {
             FossilRecord.updateData();
         }
@@ -91,20 +108,7 @@ class WorldEnvironment extends Environment {
             this.total_mutability -= this.organisms[i].mutability;
             this.organisms.splice(i, 1);
         }
-        if (this.organisms.length === 0 && start_pop > 0) {
-            // Always manage generation lifecycle via GA manager, regardless of learning condition
-            // This ensures proper cleanup of dead agents and memory management
-            if (this.ga_manager) {
-                const gen_ended = this.ga_manager.tick();
-                if (gen_ended) {
-                    this.ga_manager.evolve();
-                    // Generate a fresh random map for each new generation
-                    this.generateWorld();
-                    this.renderFull();
-                    this.ga_manager.spawnGeneration();
-                    return;
-                }
-            }
+        if (this.organisms.length === 0 && start_pop > 0 && !this.ga_manager) {
             if (WorldConfig.auto_pause)
                 $('.pause-button')[0].click();
             else if (WorldConfig.auto_reset) {

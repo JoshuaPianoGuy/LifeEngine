@@ -47,7 +47,10 @@ const POPULATION_SIZE = 100;   // founding population per generation; raised for
 const N_PARENTS       = 20;     // top-20 GA selection
 const MUT_PROB        = 0.03;  // 3% per-weight mutation probability between generations
 const MUT_SIGMA       = 0.1;   // Gaussian noise std-dev
-const SPAWN_RADIUS    = 5;     // spawn organisms within a 5-cell radius of spawn point
+const SPAWN_RADIUS    = 30;    // spawn organisms within a 30-cell radius to fit 100 organisms
+
+const TICKS_PER_MAP   = 2000;
+const MAPS_PER_GEN    = 5;
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -65,7 +68,9 @@ class GAManager {
         this.spawn_row  = spawn_row;
 
         this.generation    = 0;
-        this.tick_count    = 0;   // world ticks elapsed in the current generation
+        this.current_map_index = 0;
+        this.map_tick_count    = 0;   // world ticks elapsed in the current map
+        this.tick_count        = 0;   // total world ticks this generation
 
         // All agents ever registered this generation (founders + descendants).
         // Agents are never removed from this list — dead agents stay here so
@@ -95,7 +100,12 @@ class GAManager {
         this.all_agents      = [];
         this.living_agents   = new Set();
         this.tick_count      = 0;
+        this.map_tick_count  = 0;
+        this.current_map_index = 0;
         this.peak_population = 0;
+
+        // Clear any leftover organisms in env to be safe
+        this.env.organisms = [];
 
         for (let i = 0; i < POPULATION_SIZE; i++) {
             const org = new AdvancedOrganism(
@@ -188,12 +198,12 @@ class GAManager {
     /**
      * Call once per world tick (after WorldEnvironment.update()).
      * Removes newly-dead agents from living_agents.
-     * Returns true when the entire lineage has died out and evolve() should run.
-     *
-     * @returns {boolean}
+     * Returns 'NEXT_MAP' when map epoch ends, 'NEXT_GENERATION' when max maps reached or all dead.
+     * Returns null otherwise.
      */
     tick() {
         this.tick_count++;
+        this.map_tick_count++;
 
         // Remove agents that died this tick
         const dead_agents = [];
@@ -206,8 +216,48 @@ class GAManager {
             this.living_agents.delete(agent);
         }
 
-        // Generation ends when no living agents remain
-        return this.living_agents.size === 0 && this.all_agents.length > 0;
+        // Map ends early if everyone dies, or exactly at TICKS_PER_MAP
+        if (this.living_agents.size === 0) {
+            return 'NEXT_GENERATION'; // If they die, whole gen is over
+        } else if (this.map_tick_count >= TICKS_PER_MAP) {
+            this.current_map_index++;
+            if (this.current_map_index >= MAPS_PER_GEN) {
+                return 'NEXT_GENERATION'; // Reached map limit -> Evolve
+            } else {
+                return 'NEXT_MAP'; // Move to next map snippet
+            }
+        }
+        return null;
+    }
+
+    startNextMap() {
+        this.map_tick_count = 0;
+        logger.logEvent('GA', `Gen ${this.generation} -> starting Map ${this.current_map_index + 1}/${MAPS_PER_GEN}`);
+
+        // Keep living agents in the environment array but reposition them and reset traces
+        const survivors = Array.from(this.living_agents);
+        this.env.organisms = []; // Temporarily clear list to let addOrganism work cleanly without duplicates
+        
+        for (const org of survivors) {
+            // Reset energy to max
+            org.energy = org.max_energy;
+
+            if (org.brain && org.brain.resetTraces) {
+                org.brain.resetTraces();
+            }
+
+            // Find a new valid position
+            const spawn = this._findSpawnPosition(org);
+            if (spawn) {
+                org.c = spawn[0];
+                org.r = spawn[1];
+                this.env.addOrganism(org);
+            } else {
+                // If we couldn't place them, they die
+                org.living = false;
+                this.living_agents.delete(org);
+            }
+        }
     }
 
     /**
@@ -297,7 +347,7 @@ class GAManager {
     }
 
     /**
-     * Generate a random spawn position anywhere on the grid.
+     * Generate a random spawn position within SPAWN_RADIUS of the centre.
      *
      * @returns {[number, number]} [col, row] spawn position
      */
@@ -306,9 +356,23 @@ class GAManager {
         if (!grid) {
             return [this.spawn_col, this.spawn_row];
         }
-        const col = Math.floor(Math.random() * grid.cols);
-        const row = Math.floor(Math.random() * grid.rows);
-        return [col, row];
+
+        // Try a few times to get a point strictly inside the circular radius
+        for (let i = 0; i < 50; i++) {
+            const rx = (Math.random() * 2 - 1) * SPAWN_RADIUS;
+            const ry = (Math.random() * 2 - 1) * SPAWN_RADIUS;
+            
+            if (rx * rx + ry * ry <= SPAWN_RADIUS * SPAWN_RADIUS) {
+                const col = Math.floor(this.spawn_col + rx);
+                const row = Math.floor(this.spawn_row + ry);
+                
+                if (col >= 0 && col < grid.cols && row >= 0 && row < grid.rows) {
+                    return [col, row];
+                }
+            }
+        }
+
+        return [this.spawn_col, this.spawn_row];
     }
 
     _findSpawnPosition(org, attempts = 200) {
