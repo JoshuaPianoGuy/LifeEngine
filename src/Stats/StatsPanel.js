@@ -77,7 +77,7 @@ class StatsPanel {
             organism_count: orgs.length,
             species_count: FossilRecord.numExtantSpecies(),
             organisms: [],
-            top5: []  // Add top 5 organisms
+            top20pct: []  // Add top 20% organisms
         };
 
         // Capture detailed data for each living organism
@@ -112,12 +112,15 @@ class StatsPanel {
             organisms_with_fitness.push({ org_data, original_org: org });
         });
 
-        // Sort by fitness and capture top 5
+        // Sort by fitness and capture top 20%
         organisms_with_fitness.sort((a, b) => b.org_data.fitness - a.org_data.fitness);
-        for (let i = 0; i < Math.min(5, organisms_with_fitness.length); i++) {
+        let num_top = Math.floor(organisms_with_fitness.length * 0.2);
+        num_top = Math.max(1, Math.min(num_top, organisms_with_fitness.length));
+
+        for (let i = 0; i < num_top; i++) {
             const top_org = organisms_with_fitness[i].org_data;
             top_org.rank = i + 1;
-            generation_data.top5.push({
+            generation_data.top20pct.push({
                 rank: i + 1,
                 fitness: parseFloat(top_org.fitness.toFixed(2)),
                 lifetime: top_org.lifetime,
@@ -362,13 +365,13 @@ class StatsPanel {
         });
         csv += '\n';
 
-        // === TOP 5 ORGANISMS PER GENERATION ===
-        csv += '=== TOP 5 ORGANISMS BY GENERATION ===\n';
+        // === TOP 20% ORGANISMS PER GENERATION ===
+        csv += '=== TOP 20% ORGANISMS BY GENERATION ===\n';
         csv += 'generation,rank,fitness,lifetime,species,cell_count,genetic_drift\n';
         
         this.all_generations.forEach(gen => {
-            if (gen.top5 && gen.top5.length > 0) {
-                gen.top5.forEach(org => {
+            if (gen.top20pct && gen.top20pct.length > 0) {
+                gen.top20pct.forEach(org => {
                     csv += `${gen.generation_number},${org.rank},${org.fitness},${org.lifetime},"${org.species}",${org.cell_count},${org.genetic_drift || 'N/A'}\n`;
                 });
             }

@@ -29,7 +29,7 @@
  * Metrics recorded per generation (per spec):
  *   avg_energy_early  — average energy of all agents at their 20% lifetime mark
  *   avg_energy_end    — average energy of all agents at death / end of lifetime
- *   top5_fitness      — average cumulative food score of the top 5 agents
+ *   top20percent_fitness — average cumulative food score of the top 20% agents
  *   generation_ticks  — how many world ticks the generation lasted
  *   population_peak   — largest simultaneous population during the generation
  */
@@ -44,7 +44,7 @@ const logger          = require('../Logger');
 // ── GA hyper-parameters ───────────────────────────────────────────────────────
 
 const POPULATION_SIZE = 100;   // founding population per generation; raised for larger experiments
-const N_PARENTS       = 20;     // top-20 GA selection
+const SELECTION_PERCENT = 0.2; // top 20% GA selection
 const MUT_PROB        = 0.03;  // 3% per-weight mutation probability between generations
 const MUT_SIGMA       = 0.1;   // Gaussian noise std-dev
 const SPAWN_RADIUS    = 30;    // spawn organisms within a 30-cell radius to fit 100 organisms
@@ -239,24 +239,16 @@ class GAManager {
         this.env.organisms = []; // Temporarily clear list to let addOrganism work cleanly without duplicates
         
         for (const org of survivors) {
-            // Reset energy to max
-            org.energy = org.max_energy;
+            // Do not reset energy or position between maps as requested
+            // Keep the exact same state, just register them back with the new map
 
             if (org.brain && org.brain.resetTraces) {
                 org.brain.resetTraces();
             }
 
-            // Find a new valid position
-            const spawn = this._findSpawnPosition(org);
-            if (spawn) {
-                org.c = spawn[0];
-                org.r = spawn[1];
-                this.env.addOrganism(org);
-            } else {
-                // If we couldn't place them, they die
-                org.living = false;
-                this.living_agents.delete(org);
-            }
+            // Keep existing position
+            // Ensure they are registered in the new environment's grid
+            this.env.addOrganism(org);
         }
     }
 
@@ -271,12 +263,14 @@ class GAManager {
 
         this._recordMetrics(sorted);
 
-        // Use min(N_PARENTS, population_size) to handle small populations
-        const num_parents = Math.min(N_PARENTS, sorted.length);
+        // Use top 20% of population (at least 1, at most the whole population)
+        let num_parents = Math.floor(sorted.length * SELECTION_PERCENT);
+        num_parents = Math.max(1, Math.min(num_parents, sorted.length));
+        
         const parents = sorted.slice(0, num_parents);
         const next_pool = [];
         
-        logger.logEvent('GA', `Gen ${this.generation - 1} size: ${sorted.length} agents, selecting top ${num_parents} parents`);
+        logger.logEvent('GA', `Gen ${this.generation - 1} size: ${sorted.length} agents, selecting top ${num_parents} (20%) parents`);
 
         // Fill entire next generation with crossover offspring — no elitism.
         // Every genome comes from uniform crossover between two parents drawn
@@ -397,8 +391,10 @@ class GAManager {
 
         // Keep a lightweight local copy for exportMetricsCSV() backward compat
         const n = sorted_agents.length;
-        const top5 = sorted_agents.slice(0, Math.min(N_PARENTS, n));
-        const top5_fitness = top5.reduce((s, a) => s + a.getFitness(), 0) / top5.length;
+        let num_top = Math.floor(n * SELECTION_PERCENT);
+        num_top = Math.max(1, Math.min(num_top, n));
+        const top_parents = sorted_agents.slice(0, num_top);
+        const top_parents_fitness = top_parents.reduce((s, a) => s + a.getFitness(), 0) / top_parents.length;
         const avg_lifetime = sorted_agents.reduce((s, a) => s + (a.lifetime || 0), 0) / n;
         const early_samples = sorted_agents.map(a => a.energy_at_early_sample).filter(e => e != null);
         const avg_energy_early = early_samples.length > 0
@@ -412,7 +408,7 @@ class GAManager {
             peak_population:  this.peak_population,
             avg_energy_early: avg_energy_early.toFixed(3),
             avg_energy_end:   (sorted_agents.reduce((s, a) => s + (a.energy || 0), 0) / n).toFixed(3),
-            top5_fitness:     top5_fitness.toFixed(4),
+            top20percent_fitness: top_parents_fitness.toFixed(4),
             best_fitness:     sorted_agents[0].getFitness().toFixed(4),
             avg_lifetime:     avg_lifetime.toFixed(1),
         });
@@ -440,7 +436,7 @@ class GAManager {
 }
 
 GAManager.POPULATION_SIZE = POPULATION_SIZE;
-GAManager.N_PARENTS       = N_PARENTS;
+GAManager.SELECTION_PERCENT = SELECTION_PERCENT;
 GAManager.MUT_PROB        = MUT_PROB;
 GAManager.MUT_SIGMA       = MUT_SIGMA;
 

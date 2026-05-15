@@ -7,7 +7,7 @@
  *
  *   1. Generation summary  — one row per generation, written to generation_log
  *      Fields: generation, condition, ticks, total_agents, peak_pop,
- *              avg_energy_early, avg_energy_end, top5_fitness, best_fitness,
+ *              avg_energy_early, avg_energy_end, top20percent_fitness, best_fitness,
  *              avg_lifetime, avg_learned_weight_diff, genome_variance
  *
  *   2. Top-5 organism detail — one row per top organism per generation
@@ -52,8 +52,10 @@ class Logger {
         if (!sorted || sorted.length === 0) return;
 
         const n          = sorted.length;
-        const n_parents  = Math.min(5, n);
-        const top5       = sorted.slice(0, n_parents);
+        // Use 20% for top-performing tracked metric
+        let num_top = Math.floor(n * 0.2);
+        num_top = Math.max(1, Math.min(num_top, n));
+        const top20pct = sorted.slice(0, num_top);
 
         // Average energy at tick 1000 (fixed early-game sample)
         const early_samples = sorted.map(a => a.energy_at_early_sample).filter(e => e !== null && e !== undefined);
@@ -64,16 +66,16 @@ class Logger {
         // Average energy at end of life
         const avg_energy_end = sorted.reduce((s, a) => s + (a.energy || 0), 0) / n;
 
-        // Top-5 fitness average
-        const top5_fitness = top5.reduce((s, a) => s + a.getFitness(), 0) / top5.length;
+        // Top 20% fitness average
+        const top20percent_fitness = top20pct.reduce((s, a) => s + a.getFitness(), 0) / top20pct.length;
 
         // Average lifetime
         const avg_lifetime = sorted.reduce((s, a) => s + (a.lifetime || 0), 0) / n;
 
         // Learned weight difference: mean absolute deviation between active_weights and
-        // genome_weights across all top-5 agents. Only meaningful in Condition A (RL enabled).
+        // genome_weights across all top 20% agents. Only meaningful in Condition A (RL enabled).
         // Measures how much within-lifetime learning has modified the starting weights.
-        const drifts = top5.map(a => this._calcDrift(a)).filter(d => d !== null);
+        const drifts = top20pct.map(a => this._calcDrift(a)).filter(d => d !== null);
         const avg_learned_weight_diff = drifts.length > 0
             ? drifts.reduce((s, d) => s + d, 0) / drifts.length
             : 0;
@@ -96,7 +98,7 @@ class Logger {
             peak_population:         ga.peak_population,
             avg_energy_at_tick_1000: avg_energy_early.toFixed(3),
             avg_energy_end:          avg_energy_end.toFixed(3),
-            top5_fitness:            top5_fitness.toFixed(4),
+            top20percent_fitness:    top20percent_fitness.toFixed(4),
             best_fitness:            sorted[0].getFitness().toFixed(4),
             avg_lifetime:            avg_lifetime.toFixed(1),
             avg_learned_weight_diff: avg_learned_weight_diff.toFixed(6),
@@ -106,9 +108,9 @@ class Logger {
 
         this.generation_log.push(entry);
 
-        // Log top-5 organisms individually
-        for (let i = 0; i < top5.length; i++) {
-            this.logOrganism(ga.generation, i + 1, top5[i], ga.rl_enabled);
+        // Log top 20% organisms individually
+        for (let i = 0; i < top20pct.length; i++) {
+            this.logOrganism(ga.generation, i + 1, top20pct[i], ga.rl_enabled);
         }
 
         // Console summary
@@ -116,7 +118,7 @@ class Logger {
             `[Gen ${ga.generation}] ${ga.rl_enabled ? 'LEARN' : 'NSEL'} | ` +
             `ticks=${ga.tick_count} agents=${n} peak=${ga.peak_population} | ` +
             `E@tick1000=${entry.avg_energy_at_tick_1000} E_end=${entry.avg_energy_end} | ` +
-            `top5_fit=${entry.top5_fitness} best=${entry.best_fitness} | ` +
+            `top20pct_fit=${entry.top20percent_fitness} best=${entry.best_fitness} | ` +
             `learned_diff=${entry.avg_learned_weight_diff} var=${entry.genome_variance}`
         );
     }
