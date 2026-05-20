@@ -51,8 +51,9 @@ class WorldEnvironment extends Environment {
 
     update() {
         var to_remove = [];
-        for (var i in this.organisms) {
-            var org = this.organisms[i];
+        const orgs = this.organisms;
+        for (var i = 0; i < orgs.length; i++) {
+            var org = orgs[i];
             if (!org.living || !org.update()) {
                 to_remove.push(i);
             }
@@ -77,11 +78,11 @@ class WorldEnvironment extends Environment {
                 this.renderFull();
                 return;
             }
-        } else {
-            // Regenerate food every 50,000 ticks with 20% spawn probability for non-GA
-            if (this.total_ticks % 50000 == 0) {
-                this._restoreWorldSnapshotWithProbability(0.2);
-            }
+        }
+        
+        // Randomly respawn food periodically
+        if (this.total_ticks % 1200 == 0) {
+            this._restoreWorldSnapshotWithProbability(0.2);
         }
         
         if (this.total_ticks % this.data_update_rate == 0) {

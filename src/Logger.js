@@ -69,6 +69,9 @@ class Logger {
         // Top 20% fitness average
         const top20percent_fitness = top20pct.reduce((s, a) => s + a.getFitness(), 0) / top20pct.length;
 
+        // Overall population average fitness
+        const avg_fitness = sorted.reduce((s, a) => s + a.getFitness(), 0) / n;
+
         // Average lifetime
         const avg_lifetime = sorted.reduce((s, a) => s + (a.lifetime || 0), 0) / n;
 
@@ -89,6 +92,13 @@ class Logger {
         // With [-1, 1] bounds, this typically ranges [0, 1].
         const avg_network_weight_mag = sorted.reduce((s, a) => s + this._calcRMSWeight(a), 0) / n;
 
+        // How weights change between generations: difference from previous generation RMS weight
+        let inter_gen_weight_change = 0;
+        if (this.generation_log.length > 0) {
+            const prev_mag = parseFloat(this.generation_log[this.generation_log.length - 1].avg_network_weight_mag);
+            inter_gen_weight_change = avg_network_weight_mag - prev_mag;
+        }
+
         const entry = {
             generation:              ga.generation,
             condition:               ga.rl_enabled ? 'learning' : 'natural_selection',
@@ -107,6 +117,10 @@ class Logger {
         };
 
         this.generation_log.push(entry);
+
+        // Track in FossilRecord for UI Charts
+        const FossilRecord = require('./Stats/FossilRecord');
+        FossilRecord.updateGenData(ga.generation, ga.peak_population, avg_learned_weight_diff, inter_gen_weight_change, genome_variance, top20percent_fitness, avg_fitness);
 
         // Log top 20% organisms individually
         for (let i = 0; i < top20pct.length; i++) {

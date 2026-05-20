@@ -8,6 +8,7 @@ class EyeCell extends BodyCell{
     constructor(org, loc_col, loc_row){
         super(CellStates.eye, org, loc_col, loc_row);
         this.org.anatomy.has_eyes = true;
+        this._cached_obs = new Observation(null, 0, 0);
     }
 
     initInherit(parent) {
@@ -34,6 +35,7 @@ class EyeCell extends BodyCell{
     }
 
     performFunction() {
+        if (this.org.brain && this.org.brain.is_nnbrain) return; // NNBrain does its own explicit raycasts, avoid double work
         var obs = this.look();
         this.org.brain.observe(obs);
     }
@@ -44,18 +46,10 @@ class EyeCell extends BodyCell{
         var addCol = 0;
         var addRow = 0;
         switch(direction) {
-            case Directions.up:
-                addRow = -1;
-                break;
-            case Directions.down:
-                addRow = 1;
-                break;
-            case Directions.right:
-                addCol = 1;
-                break;
-            case Directions.left:
-                addCol = -1;
-                break;
+            case Directions.up:    addRow = -1; break;
+            case Directions.down:  addRow = 1; break;
+            case Directions.right: addCol = 1; break;
+            case Directions.left:  addCol = -1; break;
         }
         var start_col = this.getRealCol();
         var start_row = this.getRealRow();
@@ -73,11 +67,16 @@ class EyeCell extends BodyCell{
                 continue;
             }
             if (cell.state !== CellStates.empty) {
-                var distance = Math.abs(start_col-col) + Math.abs(start_row-row);
-                return new Observation(cell, distance, direction);
+                this._cached_obs.cell = cell;
+                this._cached_obs.distance = Math.abs(start_col-col) + Math.abs(start_row-row);
+                this._cached_obs.direction = direction;
+                return this._cached_obs;
             }
         }
-        return new Observation(cell, Hyperparams.lookRange, direction);
+        this._cached_obs.cell = cell;
+        this._cached_obs.distance = Hyperparams.lookRange;
+        this._cached_obs.direction = direction;
+        return this._cached_obs;
     }
 }
 

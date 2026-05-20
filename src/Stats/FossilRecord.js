@@ -79,6 +79,16 @@ const FossilRecord = {
         this.av_mut_rates = [];
         this.av_cells = [];
         this.av_cell_counts = [];
+        
+        // Generation records
+        this.gen_record = [];
+        this.gen_peak_pops = [];
+        this.gen_intra_weights = [];
+        this.gen_inter_weights = [];
+        this.gen_variances = [];
+        this.gen_top20_fitnesses = [];
+        this.gen_avg_fitnesses = [];
+
         this.updateData();
     },
 
@@ -141,6 +151,26 @@ const FossilRecord = {
             }
         }
         return max_species;
+    },
+
+    updateGenData(gen_number, peak_pop, intra_weight, inter_weight, variance, top20_fitness, avg_fitness) {
+        this.gen_record.push(gen_number);
+        this.gen_peak_pops.push(peak_pop);
+        this.gen_intra_weights.push(intra_weight);
+        this.gen_inter_weights.push(inter_weight);
+        this.gen_variances.push(variance);
+        this.gen_top20_fitnesses.push(top20_fitness);
+        this.gen_avg_fitnesses.push(avg_fitness);
+        
+        while (this.gen_record.length > this.record_size_limit) {
+            this.gen_record.shift();
+            this.gen_peak_pops.shift();
+            this.gen_intra_weights.shift();
+            this.gen_inter_weights.shift();
+            this.gen_variances.shift();
+            this.gen_top20_fitnesses.shift();
+            this.gen_avg_fitnesses.shift();
+        }
     },
 
     clear_record() {

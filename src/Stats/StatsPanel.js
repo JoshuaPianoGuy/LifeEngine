@@ -2,11 +2,16 @@ const PopulationChart = require("./Charts/PopulationChart");
 const SpeciesChart = require("./Charts/SpeciesChart");
 const MutationChart = require("./Charts/MutationChart");
 const CellsChart = require("./Charts/CellsChart");
+const PeakPopChart = require("./Charts/PeakPopChart");
+const IntraGenWeightChart = require("./Charts/IntraGenWeightChart");
+const InterGenWeightChart = require("./Charts/InterGenWeightChart");
+const GenVarianceChart = require("./Charts/GenVarianceChart");
+const Top20FitnessChart = require("./Charts/Top20FitnessChart");
 const FossilRecord = require("./FossilRecord");
 const NNBrain = require("../Organism/Perception/NNBrain");
 
 
-const ChartSelections = [PopulationChart, SpeciesChart, CellsChart, MutationChart];
+const ChartSelections = [PopulationChart, SpeciesChart, CellsChart, MutationChart, PeakPopChart, IntraGenWeightChart, InterGenWeightChart, GenVarianceChart, Top20FitnessChart];
 
 class StatsPanel {
     constructor(env) {

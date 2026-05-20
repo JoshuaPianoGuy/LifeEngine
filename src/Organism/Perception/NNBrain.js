@@ -121,11 +121,21 @@ function xavierRandom(fan_in, fan_out) {
 
 function relu(x) { return x > 0 ? x : 0; }
 
-function softmax(arr) {
-    const max  = Math.max(...arr);
-    const exps = arr.map(v => Math.exp(v - max));
-    const sum  = exps.reduce((a, b) => a + b, 0);
-    return exps.map(v => v / sum);
+function softmax(arr, out_probs) {
+    let max = -Infinity;
+    for (let i = 0; i < arr.length; i++) {
+        if (arr[i] > max) max = arr[i];
+    }
+    let sum = 0;
+    for (let i = 0; i < arr.length; i++) {
+        const e = Math.exp(arr[i] - max);
+        out_probs[i] = e;
+        sum += e;
+    }
+    for (let i = 0; i < arr.length; i++) {
+        out_probs[i] /= sum;
+    }
+    return out_probs;
 }
 
 function perceptIndex(name) {
@@ -139,6 +149,7 @@ class NNBrain {
     constructor(owner, rl_enabled = true) {
         this.owner      = owner;
         this.rl_enabled = rl_enabled;
+        this.is_nnbrain = true;
 
         this.genome_weights = new Float32Array(GENOME_SIZE);
         this._initGenome();
@@ -154,6 +165,9 @@ class NNBrain {
         this._baseline_count  = 0;       // count of reward samples for baseline
         this._hidden          = new Float32Array(HIDDEN_SIZE);
         this._input           = new Float32Array(STATE_SIZE);
+        this._logits          = new Float32Array(OUTPUT_SIZE);
+        this._probs           = new Float32Array(OUTPUT_SIZE);
+        this._obs_buffer      = new Array(4);
         this._last_probs      = null;
         this._last_action     = null;
     }
@@ -170,6 +184,7 @@ class NNBrain {
     // Non-Lamarckian: RL drift in the parent is discarded.
     copy(parent_brain) {
         this.rl_enabled     = parent_brain.rl_enabled;
+        this.is_nnbrain     = true;
         this.genome_weights = new Float32Array(parent_brain.genome_weights);
         if (this.rl_enabled) {
             this.active_weights = new Float32Array(this.genome_weights);
@@ -180,6 +195,9 @@ class NNBrain {
         }
         this._hidden      = new Float32Array(HIDDEN_SIZE);
         this._input       = new Float32Array(STATE_SIZE);
+        this._logits      = new Float32Array(OUTPUT_SIZE);
+        this._probs       = new Float32Array(OUTPUT_SIZE);
+        this._obs_buffer  = new Array(4);
         this._last_probs  = null;
         this._last_action = null;
     }
@@ -239,7 +257,7 @@ class NNBrain {
         // Output layer
         const W2_off = W1_SIZE + B1_SIZE;
         const b2_off = W2_off + W2_SIZE;
-        const logits = new Array(OUTPUT_SIZE);
+        const logits = this._logits;
         for (let k = 0; k < OUTPUT_SIZE; k++) {
             let sum = w[b2_off + k];
             const base = W2_off + k * HIDDEN_SIZE;
@@ -247,7 +265,7 @@ class NNBrain {
             logits[k] = sum;
         }
 
-        this._last_probs  = softmax(logits);
+        this._last_probs  = softmax(logits, this._probs);
         this._last_action = this._sampleCategorical(this._last_probs);
         return this._last_action;
     }
@@ -307,10 +325,13 @@ class NNBrain {
             }
         }
 
+        const delta_w = RL_LR * adjusted_reward;
         for (let idx = 0; idx < GENOME_SIZE; idx++) {
-            w[idx] += RL_LR * adjusted_reward * traces[idx];
+            let val = w[idx] + delta_w * traces[idx];
             // Clip weights to [-1, 1]
-            w[idx] = Math.max(-1, Math.min(1, w[idx]));
+            if (val > 1.0) val = 1.0;
+            else if (val < -1.0) val = -1.0;
+            w[idx] = val;
         }
     }
 
@@ -374,7 +395,8 @@ class NNBrain {
             action = Math.floor(Math.random() * OUTPUT_SIZE);
             this._last_action = action;
             // override probs with uniform distribution
-            this._last_probs = new Array(OUTPUT_SIZE).fill(1 / OUTPUT_SIZE);
+            this._probs.fill(1 / OUTPUT_SIZE);
+            this._last_probs = this._probs;
         } else {
             action = this.forward(state);
         }
@@ -389,11 +411,22 @@ class NNBrain {
     // Expects the anatomy to have 4 eye cells, one per direction.
     // Slots without an eye cell return null (encoded as "nothing" in buildStateVector).
     _collectObservations() {
-        const obs_by_dir = [null, null, null, null];
-        for (const cell of this.owner.anatomy.cells) {
+        const obs_by_dir = this._obs_buffer;
+        obs_by_dir[0] = null;
+        obs_by_dir[1] = null;
+        obs_by_dir[2] = null;
+        obs_by_dir[3] = null;
+        
+        const cells = this.owner.anatomy.cells;
+        for (let i = 0; i < cells.length; i++) {
+            const cell = cells[i];
             if (typeof cell.look === 'function') {
                 const abs_dir = cell.getAbsoluteDirection();
-                const slot    = EYE_DIRECTIONS.indexOf(abs_dir);
+                let slot = -1;
+                if (abs_dir === Directions.up) slot = 0;
+                else if (abs_dir === Directions.right) slot = 1;
+                else if (abs_dir === Directions.down) slot = 2;
+                else if (abs_dir === Directions.left) slot = 3;
                 if (slot !== -1) obs_by_dir[slot] = cell.look();
             }
         }
