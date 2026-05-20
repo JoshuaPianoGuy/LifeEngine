@@ -201,80 +201,50 @@ class WorldEnvironment extends Environment {
         this._placeBlob(cx, cy, 18, CellStates.food, 150, rng);
         placed_centres.push({ c: cx, r: cy });
 
-        // ── Low food: 8–10 distinct separated patches, mid-range ───────────────
-        // Increased count and size for larger world. Small sigma (15) keeps tight.
-        // min_sep=80 ensures genuine empty corridors between patches.
-        // Each patch has one diagonal landmark line placed 12–20 cells closer
-        // to spawn, angled toward the patch.
+        const pickRandomPosition = (existing, min_sep) => {
+            for (let attempt = 0; attempt < 150; attempt++) {
+                const c = 8 + Math.floor(rng() * (cols - 16));
+                const r = 8 + Math.floor(rng() * (rows - 16));
+                if (Math.hypot(c - cx, r - cy) < 40) continue;
+                const too_close = existing.some(p => Math.hypot(p.c - c, p.r - r) < min_sep);
+                if (!too_close) return { c, r };
+            }
+            return null;
+        };
+
+        // ── Low food: 8–10 distinct separated patches, randomly placed ───────────────
         const low_positions = [];
         const low_patch_count = 8 + Math.floor(rng() * 3);
         for (let i = 0; i < low_patch_count; i++) {
-            const pos = pickPosition(80, 150, placed_centres, 80);
+            const pos = pickRandomPosition(placed_centres, 80);
             if (!pos) continue;
             placed_centres.push(pos);
             low_positions.push(pos);
 
             const patch_size = 130 + Math.floor(rng() * 80);  // 130–210 cells
             this._placeBlob(pos.c, pos.r, 15, CellStates.lowFood, patch_size, rng);
-
-            // Landmark line: midpoint between spawn and patch, pointing at patch
-            const dx    = pos.c - cx;
-            const dy    = pos.r - cy;
-            const dist  = Math.hypot(dx, dy);
-            const frac  = (0.45 + rng() * 0.2);  // 45–65% of the way
-            const lm_c  = Math.round(cx + dx * frac);
-            const lm_r  = Math.round(cy + dy * frac);
-            const angle = Math.atan2(dy, dx) + (rng() - 0.5) * 0.5;
-            const len   = 18 + Math.floor(rng() * 14);
-            this._placeLine(lm_c, lm_r, angle, len, CellStates.lowFoodLandmark);
         }
 
-        // ── Prestige food: 6–8 tight patches, outer ring ────────────────
-        // Moderate sigma (12), scaled patch sizes for larger world.
-        // min_sep=100 from everything so they're clearly isolated.
+        // ── Prestige food: 6–8 tight patches, randomly placed ────────────────
         const prestige_patch_count = 6 + Math.floor(rng() * 3);
         for (let i = 0; i < prestige_patch_count; i++) {
-            const pos = pickPosition(140, 220, placed_centres, 100);
+            const pos = pickRandomPosition(placed_centres, 100);
             if (!pos) continue;
             placed_centres.push(pos);
 
             const patch_size = 60 + Math.floor(rng() * 40);  // 60–100 cells
             this._placeBlob(pos.c, pos.r, 12, CellStates.prestigeFood, patch_size, rng);
-
-            // Landmark line: placed at 50–70% of distance from spawn to patch
-            const dx   = pos.c - cx;
-            const dy   = pos.r - cy;
-            const frac = 0.50 + rng() * 0.20;
-            const lm_c = Math.round(cx + dx * frac);
-            const lm_r = Math.round(cy + dy * frac);
-            const angle = Math.atan2(dy, dx) + (rng() - 0.5) * 0.4;
-            const len   = 20 + Math.floor(rng() * 16);
-            this._placeLine(lm_c, lm_r, angle, len, CellStates.prestigeFoodLandmark);
         }
 
-        // ── Medium food: scattered patches, gap-filling ─────────────────
-        // 7–10 medium-sized patches at mid-range (not outer), each well-separated.
-        // These fill the navigational space between low and prestige food zones
-        // so there's always a reward signal for exploring outward.
-        // Each patch has a landmark line placed 40–60% of distance from spawn.
+        // ── Medium food: scattered patches, randomly placed ─────────────────
         const med_patch_count = 7 + Math.floor(rng() * 4);
         for (let i = 0; i < med_patch_count; i++) {
-            const pos = pickPosition(70, 140, placed_centres, 70);
+            const pos = pickRandomPosition(placed_centres, 70);
             if (!pos) continue;
             placed_centres.push(pos);
 
             const patch_size = 90 + Math.floor(rng() * 60);  // 90–150 cells
             this._placeBlob(pos.c, pos.r, 14, CellStates.mediumFood, patch_size, rng);
-
-            // Landmark line: placed at 40–60% of distance from spawn to patch
-            const dx   = pos.c - cx;
-            const dy   = pos.r - cy;
-            const frac = 0.40 + rng() * 0.20;
-            const lm_c = Math.round(cx + dx * frac);
-            const lm_r = Math.round(cy + dy * frac);
-            const angle = Math.atan2(dy, dx) + (rng() - 0.5) * 0.4;
-            const len   = 16 + Math.floor(rng() * 14);
-            this._placeLine(lm_c, lm_r, angle, len, CellStates.mediumFoodLandmark);
         }
 
         // ── Caves: solid rectangles, well-separated ────────────────────────────
