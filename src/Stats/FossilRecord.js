@@ -83,6 +83,7 @@ const FossilRecord = {
         // Generation records
         this.gen_record = [];
         this.gen_peak_pops = [];
+        this.gen_total_agents = [];
         this.gen_intra_weights = [];
         this.gen_inter_weights = [];
         this.gen_variances = [];
@@ -153,9 +154,10 @@ const FossilRecord = {
         return max_species;
     },
 
-    updateGenData(gen_number, peak_pop, intra_weight, inter_weight, variance, top20_fitness, avg_fitness) {
+    updateGenData(gen_number, peak_pop, total_agents, intra_weight, inter_weight, variance, top20_fitness, avg_fitness) {
         this.gen_record.push(gen_number);
         this.gen_peak_pops.push(peak_pop);
+        this.gen_total_agents.push(total_agents);
         this.gen_intra_weights.push(intra_weight);
         this.gen_inter_weights.push(inter_weight);
         this.gen_variances.push(variance);
@@ -165,6 +167,7 @@ const FossilRecord = {
         while (this.gen_record.length > this.record_size_limit) {
             this.gen_record.shift();
             this.gen_peak_pops.shift();
+            this.gen_total_agents.shift();
             this.gen_intra_weights.shift();
             this.gen_inter_weights.shift();
             this.gen_variances.shift();

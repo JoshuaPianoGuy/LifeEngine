@@ -47,21 +47,22 @@ class ChartController {
     }
 
     updateData() {
-        let record_size = FossilRecord.tick_record.length;
-        let data_points = this.data[0].dataPoints;
-        let newest_t = -1;
-        if (data_points.length>0) {
-            newest_t = this.data[0].dataPoints[data_points.length-1].x;
+        const record_size = FossilRecord.tick_record.length;
+        const data_points = this.data[0].dataPoints;
+        if (record_size === 0) return;
+
+        // Find where to resume from the existing chart tail. If the tail tick is
+        // no longer present in the rolling record, rebuild from the current window.
+        let start_index = 0;
+        if (data_points.length > 0) {
+            const newest_t = data_points[data_points.length - 1].x;
+            const last_seen_idx = FossilRecord.tick_record.lastIndexOf(newest_t);
+            start_index = last_seen_idx >= 0 ? last_seen_idx + 1 : 0;
         }
-        let to_add = 0;
-        let cur_t = FossilRecord.tick_record[record_size-1];
-        // first count up the number of new datapoints the chart is missing
-        while (cur_t !== newest_t) {
-            to_add++;
-            cur_t = FossilRecord.tick_record[record_size-to_add-1]
+
+        for (let i = start_index; i < record_size; i++) {
+            this.addDataPoint(i);
         }
-        // then add them in order
-        this.addNewest(to_add)
 
         // remove oldest datapoints until the chart is the same size as the saved records
         while (data_points.length > FossilRecord.tick_record.length) {

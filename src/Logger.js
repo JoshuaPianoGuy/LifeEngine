@@ -31,12 +31,66 @@
 
 'use strict';
 
+const NNBrain = require('./Organism/Perception/NNBrain');
+const WorldConfig = require('./WorldConfig');
+
+let fs = null;
+let path = null;
+const isNodeRuntime = typeof process !== 'undefined' && !!(process.versions && process.versions.node);
+if (isNodeRuntime) {
+    try {
+        const req = eval('require');
+        fs = req('fs');
+        path = req('path');
+    } catch (err) {
+        fs = null;
+        path = null;
+    }
+}
+
+const WEIGHT_SNAPSHOT_PRECISION = 6;
+const LOG_W1_SNAPSHOT = true;
+const LOG_ACTIVE_SNAPSHOT = true;
+const LOG_FULL_GENOME_SNAPSHOT = false;
+
+// Maximum number of organism rows to hold in RAM between flushes.
+// At 100 organisms/gen × AUTO_SAVE_EVERY_N_GENS=5 = 500 rows per flush cycle.
+// Cap at 2000 as a safety backstop (e.g. if the server is unreachable).
+const MAX_ORGANISM_LOG_ROWS = 2000;
+
+const AUTO_SAVE_ENABLED = true;
+const AUTO_SAVE_EVERY_N_GENS = 5;
+const AUTO_SAVE_DIR = 'logs';
+const AUTO_SAVE_RUN_FOLDER = 'auto-run';
+const AUTO_SAVE_APPEND = true;
+const AUTO_DOWNLOAD_ENABLED = false;
+const AUTO_DOWNLOAD_EVERY_TICKS = 50000;
+const LOG_SERVER_ENABLED = true;
+const LOG_SERVER_ENDPOINT = '/api/logs/append';
+
 class Logger {
     constructor() {
         this.generation_log = [];   // one entry per generation
         this.organism_log   = [];   // one entry per top-5 organism per generation
         this.event_log      = [];   // freeform timestamped events
         this._start_time    = Date.now();
+        this._auto_save_enabled = AUTO_SAVE_ENABLED;
+        this._auto_save_fs_enabled = AUTO_SAVE_ENABLED && !!fs && !!path;
+        // Save every window for tick-based conditions; every N gens otherwise.
+        const tick_based = WorldConfig.experiment_mode === 'frozen_pg' ||
+                           WorldConfig.experiment_mode === 'pure_rl';
+        this._auto_save_every_n = tick_based ? 1 : AUTO_SAVE_EVERY_N_GENS;
+        this._auto_save_dir = AUTO_SAVE_DIR;
+        this._auto_save_tag = `autosave_${Date.now()}`;
+        this._auto_save_run_dir = null;
+        this._auto_save_append = AUTO_SAVE_APPEND;
+        this._last_saved_gen_idx = 0;
+        this._last_saved_org_idx = 0;
+        this._last_saved_evt_idx = 0;
+        this._auto_download_enabled = AUTO_DOWNLOAD_ENABLED;
+        this._auto_download_every_ticks = AUTO_DOWNLOAD_EVERY_TICKS;
+        this._last_auto_download_tick = 0;
+        this._server_enabled = LOG_SERVER_ENABLED;
     }
 
     // ── Generation summary ────────────────────────────────────────────────────
@@ -101,17 +155,19 @@ class Logger {
 
         const entry = {
             generation:              ga.generation,
-            condition:               ga.rl_enabled ? 'learning' : 'natural_selection',
+            condition:               ga.condition_label || (ga.rl_enabled ? 'learning' : 'natural_selection'),
             wall_clock_s:            ((Date.now() - this._start_time) / 1000).toFixed(1),
             generation_ticks:        ga.tick_count,
             total_agents:            n,
             peak_population:         ga.peak_population,
             avg_energy_at_tick_1000: avg_energy_early.toFixed(3),
             avg_energy_end:          avg_energy_end.toFixed(3),
+            avg_fitness:             avg_fitness.toFixed(4),
             top20percent_fitness:    top20percent_fitness.toFixed(4),
             best_fitness:            sorted[0].getFitness().toFixed(4),
             avg_lifetime:            avg_lifetime.toFixed(1),
             avg_learned_weight_diff: avg_learned_weight_diff.toFixed(6),
+            inter_gen_weight_change: inter_gen_weight_change.toFixed(6),
             genome_variance:         genome_variance.toFixed(6),
             avg_network_weight_mag:  avg_network_weight_mag.toFixed(4),
         };
@@ -120,12 +176,24 @@ class Logger {
 
         // Track in FossilRecord for UI Charts
         const FossilRecord = require('./Stats/FossilRecord');
-        FossilRecord.updateGenData(ga.generation, ga.peak_population, avg_learned_weight_diff, inter_gen_weight_change, genome_variance, top20percent_fitness, avg_fitness);
+        FossilRecord.updateGenData(
+            ga.generation, 
+            ga.peak_population, 
+            n, // total agents
+            avg_learned_weight_diff, 
+            inter_gen_weight_change, 
+            genome_variance, 
+            top20percent_fitness, 
+            avg_fitness
+        );
 
-        // Log top 20% organisms individually
+        // Log top-20% organisms — full population with weight snapshots is ~20 MB/flush
         for (let i = 0; i < top20pct.length; i++) {
             this.logOrganism(ga.generation, i + 1, top20pct[i], ga.rl_enabled);
         }
+
+        this._autoSaveIfNeeded(ga.generation, ga.rl_enabled);
+        this._autoDownloadIfNeeded(ga);
 
         // Console summary
         console.log(
@@ -153,7 +221,9 @@ class Logger {
         const entry = {
             generation,
             rank,
-            condition:                rl_enabled ? 'learning' : 'natural_selection',
+            condition:                (agent && agent.ga_manager && agent.ga_manager.condition_label)
+                ? agent.ga_manager.condition_label
+                : (rl_enabled ? 'learning' : 'natural_selection'),
             fitness:                  agent.getFitness().toFixed(4),
             lifetime:                 agent.lifetime || 0,
             energy_at_death:          (agent.energy || 0).toFixed(2),
@@ -168,9 +238,22 @@ class Logger {
             cells_visited:            agent.visited_cells ? agent.visited_cells.size : 0,
             learned_weight_diff:      learned_weight_diff !== null ? learned_weight_diff.toFixed(6) : 'n/a',
             network_weight_magnitude: network_weight_mag.toFixed(4),
+            w1_weights:               LOG_W1_SNAPSHOT ? this._snapshotW1(agent) : '',
+            active_weights:           LOG_ACTIVE_SNAPSHOT ? this._snapshotActive(agent) : '',
+            genome_weights:           LOG_FULL_GENOME_SNAPSHOT ? this._snapshotGenome(agent) : '',
         };
 
         this.organism_log.push(entry);
+
+        // Guard against unbounded growth between flushes (e.g. if the server
+        // is unreachable and auto-save has silently disabled itself).
+        if (this.organism_log.length > MAX_ORGANISM_LOG_ROWS) {
+            // Drop the oldest half so we keep recent generations.
+            const keep = Math.floor(MAX_ORGANISM_LOG_ROWS / 2);
+            this.organism_log = this.organism_log.slice(-keep);
+            this._last_saved_org_idx = 0;  // treat remainder as unsaved
+            console.warn(`[Logger] organism_log trimmed to ${keep} rows (cap=${MAX_ORGANISM_LOG_ROWS})`);
+        }
     }
 
     // ── Freeform event log ────────────────────────────────────────────────────
@@ -224,6 +307,31 @@ class Logger {
         return rms;
     }
 
+    _formatWeights(weights) {
+        if (!weights || weights.length === 0) return '';
+        return Array.from(weights)
+            .map(v => Number(v).toFixed(WEIGHT_SNAPSHOT_PRECISION))
+            .join(' ');
+    }
+
+    _snapshotW1(agent) {
+        if (!agent.brain || !agent.brain.genome_weights) return '';
+        const gw = agent.brain.genome_weights;
+        const w1_size = NNBrain.STATE_SIZE * NNBrain.HIDDEN_SIZE;
+        if (gw.length < w1_size) return '';
+        return this._formatWeights(gw.slice(0, w1_size));
+    }
+
+    _snapshotActive(agent) {
+        if (!agent.brain || !agent.brain.active_weights) return '';
+        return this._formatWeights(agent.brain.active_weights);
+    }
+
+    _snapshotGenome(agent) {
+        if (!agent.brain || !agent.brain.genome_weights) return '';
+        return this._formatWeights(agent.brain.genome_weights);
+    }
+
     /**
      * Raw L2 norm (Euclidean magnitude) of genome_weights (for reference).
      * Returns the un-normalized L2 norm.
@@ -259,12 +367,95 @@ class Logger {
         return total_var / len;
     }
 
+    // ── Auto-save (Node.js only) ────────────────────────────────────────────
+
+    _autoSaveIfNeeded(generation, rl_enabled) {
+        if (!this._auto_save_enabled) return;
+        if (!this._auto_save_every_n || this._auto_save_every_n <= 0) return;
+        if (generation % this._auto_save_every_n !== 0) return;
+
+        try {
+            if (this._auto_save_fs_enabled) {
+                const out_dir = this._getRunDir(rl_enabled);
+                if (!out_dir) return;
+                fs.mkdirSync(out_dir, { recursive: true });
+
+                const genPath = path.join(out_dir, 'generations.csv');
+                const orgPath = path.join(out_dir, 'organisms.csv');
+                const evtPath = path.join(out_dir, 'events.csv');
+
+                if (this._auto_save_append) {
+                    this._appendCSVRows(this.generation_log, this._last_saved_gen_idx, genPath);
+                    this._appendCSVRows(this.organism_log, this._last_saved_org_idx, orgPath);
+                    this._appendCSVRows(this.event_log, this._last_saved_evt_idx, evtPath);
+                } else {
+                    fs.writeFileSync(genPath, this.generationsCSV(), 'utf8');
+                    fs.writeFileSync(orgPath, this.organismsCSV(), 'utf8');
+                    fs.writeFileSync(evtPath, this.eventsCSV(), 'utf8');
+                }
+            } else if (this._server_enabled) {
+                const condition = rl_enabled ? 'learning' : 'evolution';
+                const mode = this._getModeLabel();
+                this._postAppendRows(this.generation_log, this._last_saved_gen_idx, 'generations.csv', condition, mode);
+                this._postAppendRows(this.organism_log, this._last_saved_org_idx, 'organisms.csv', condition, mode);
+                this._postAppendRows(this.event_log, this._last_saved_evt_idx, 'events.csv', condition, mode);
+            }
+
+            this._last_saved_gen_idx = this.generation_log.length;
+            this._last_saved_org_idx = this.organism_log.length;
+            this._last_saved_evt_idx = this.event_log.length;
+
+            // ── Trim in-memory arrays after a successful flush ─────────────────
+            // Keep only the last generation entry so inter_gen_weight_change can
+            // still read the previous generation's RMS magnitude.  Everything
+            // before that has already been persisted.
+            if (this.generation_log.length > 1) {
+                this.generation_log = this.generation_log.slice(-1);
+                // The one kept entry was already flushed — mark it saved so it
+                // is NOT re-sent on the next flush cycle (fixes duplicate rows).
+                this._last_saved_gen_idx = 1;
+            }
+            if (this.organism_log.length > 0) {
+                this.organism_log = [];
+                this._last_saved_org_idx = 0;
+            }
+            if (this.event_log.length > 0) {
+                this.event_log = [];
+                this._last_saved_evt_idx = 0;
+            }
+        } catch (err) {
+            this._auto_save_enabled = false;
+            console.warn('[Logger] Auto-save disabled:', err && err.message ? err.message : err);
+        }
+    }
+
+    _autoDownloadIfNeeded(ga) {
+        if (!this._auto_download_enabled) return;
+        if (typeof document === 'undefined') return;
+        if (!ga) return;
+        const total_ticks = ga.env && typeof ga.env.total_ticks === 'number'
+            ? ga.env.total_ticks
+            : ga.tick_count;
+        if (typeof total_ticks !== 'number') return;
+        if (!this._auto_download_every_ticks || this._auto_download_every_ticks <= 0) return;
+        if (total_ticks - this._last_auto_download_tick < this._auto_download_every_ticks) return;
+
+        this._last_auto_download_tick = total_ticks;
+        this._downloadAllImmediate(`autosave_${Date.now()}`);
+        this.clear();
+    }
+
     // ── CSV export ────────────────────────────────────────────────────────────
 
     _toCSV(rows) {
         if (rows.length === 0) return 'no data';
+        return this._toCSVLines(rows, true);
+    }
+
+    _toCSVLines(rows, includeHeader) {
+        if (!rows || rows.length === 0) return '';
         const headers = Object.keys(rows[0]);
-        const lines   = rows.map(row =>
+        const lines = rows.map(row =>
             headers.map(h => {
                 const v = row[h] === null || row[h] === undefined ? '' : String(row[h]);
                 return v.includes(',') || v.includes('"') || v.includes('\n')
@@ -272,7 +463,92 @@ class Logger {
                     : v;
             }).join(',')
         );
-        return headers.join(',') + '\n' + lines.join('\n');
+        const headerLine = includeHeader ? headers.join(',') + '\n' : '';
+        return headerLine + lines.join('\n');
+    }
+
+    _postAppendRows(rows, startIndex, filename, condition, mode) {
+        if (!rows || rows.length <= startIndex) return;
+        if (typeof fetch === 'undefined') return;
+        const slice = rows.slice(startIndex);
+        if (slice.length === 0) return;
+
+        const header = Object.keys(slice[0]).join(',');
+
+        // Organism rows contain two full weight snapshots (~25 KB each).
+        // Browsers enforce a 64 KB hard limit on keepalive fetch bodies and
+        // silently drop the request without any error if it is exceeded — so
+        // keepalive must NOT be used for organism payloads.
+        // generations/events rows are tiny and safe to send with keepalive.
+        const isLargePayload = filename === 'organisms.csv';
+
+        // Keep chunks small enough that even organism rows don't hit limits.
+        // 2 rows × 25 KB = 50 KB < 64 KB keepalive ceiling (used for others).
+        // For organisms (no keepalive) a larger chunk is fine — use 10 rows.
+        const CHUNK_SIZE = isLargePayload ? 10 : 50;
+
+        for (let i = 0; i < slice.length; i += CHUNK_SIZE) {
+            const chunk = slice.slice(i, i + CHUNK_SIZE);
+            const lines = this._toCSVLines(chunk, false);
+            if (!lines) continue;
+
+            fetch(LOG_SERVER_ENDPOINT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    condition,
+                    mode,
+                    filename,
+                    header,
+                    rows: lines
+                }),
+                // keepalive must be false for large payloads (organism weight snapshots).
+                // keepalive is only useful for page-unload scenarios anyway; mid-run
+                // flushes don't need it.
+                keepalive: !isLargePayload
+            }).catch(() => {});
+        }
+    }
+
+    _getModeLabel() {
+        const mode = WorldConfig.experiment_mode;
+        if (mode === 'frozen_pg' || mode === 'pure_rl') return mode;
+        return 'standard';
+    }
+
+    _getRunDir(rl_enabled) {
+        if (!this._auto_save_fs_enabled) return null;
+
+        const base = path.resolve(process.cwd(), this._auto_save_dir);
+        const condition_dir = rl_enabled ? 'learning' : 'evolution';
+        const mode_dir = this._getModeLabel();
+        const auto_dir = path.join(base, condition_dir, mode_dir, AUTO_SAVE_RUN_FOLDER);
+
+        if (!this._auto_save_run_dir) {
+            fs.mkdirSync(auto_dir, { recursive: true });
+            const entries = fs.readdirSync(auto_dir, { withFileTypes: true })
+                .filter(d => d.isDirectory() && /^run_\d+$/.test(d.name))
+                .map(d => parseInt(d.name.replace('run_', ''), 10))
+                .filter(n => Number.isFinite(n));
+            const next = entries.length > 0 ? Math.max(...entries) + 1 : 1;
+            this._auto_save_run_dir = path.join(auto_dir, `run_${next}`);
+        }
+
+        return this._auto_save_run_dir;
+    }
+
+    _appendCSVRows(rows, startIndex, filePath) {
+        if (!rows || rows.length <= startIndex) return;
+        const slice = rows.slice(startIndex);
+        if (slice.length === 0) return;
+
+        const hasFile = fs.existsSync(filePath);
+        const hasContent = hasFile && fs.statSync(filePath).size > 0;
+        const csv = this._toCSVLines(slice, !hasContent);
+        if (!csv) return;
+
+        const prefix = hasContent ? '\n' : '';
+        fs.appendFileSync(filePath, prefix + csv, 'utf8');
     }
 
     generationsCSV()  { return this._toCSV(this.generation_log); }
@@ -291,22 +567,27 @@ class Logger {
         URL.revokeObjectURL(url);
     }
 
+    _downloadAllImmediate(prefix) {
+        const date = new Date().toISOString().split('T')[0];
+        const p    = prefix ? `${prefix}_` : '';
+        this._download(this.generationsCSV(), `${p}generations_${date}.csv`);
+        this._download(this.organismsCSV(), `${p}organisms_${date}.csv`);
+        this._download(this.eventsCSV(), `${p}events_${date}.csv`);
+    }
+
     /** Download the generation summary CSV */
     downloadGenerations(filename) {
-        const date = new Date().toISOString().split('T')[0];
-        this._download(this.generationsCSV(), filename || `generations_${date}.csv`);
+        this._download(this.generationsCSV(), filename || 'generations.csv');
     }
 
     /** Download the per-organism detail CSV */
     downloadOrganisms(filename) {
-        const date = new Date().toISOString().split('T')[0];
-        this._download(this.organismsCSV(), filename || `organisms_${date}.csv`);
+        this._download(this.organismsCSV(), filename || 'organisms.csv');
     }
 
     /** Download the freeform event log CSV */
     downloadEvents(filename) {
-        const date = new Date().toISOString().split('T')[0];
-        this._download(this.eventsCSV(), filename || `events_${date}.csv`);
+        this._download(this.eventsCSV(), filename || 'events.csv');
     }
 
     /**
@@ -314,11 +595,10 @@ class Logger {
      * Small delay between each so browsers don't block multiple downloads.
      */
     downloadAll(prefix) {
-        const date = new Date().toISOString().split('T')[0];
-        const p    = prefix ? `${prefix}_` : '';
-        this.downloadGenerations(`${p}generations_${date}.csv`);
-        setTimeout(() => this.downloadOrganisms(`${p}organisms_${date}.csv`),   400);
-        setTimeout(() => this.downloadEvents(`${p}events_${date}.csv`),         800);
+        const p = prefix ? `${prefix}_` : '';
+        this.downloadGenerations(`${p}generations.csv`);
+        setTimeout(() => this.downloadOrganisms(`${p}organisms.csv`),   400);
+        setTimeout(() => this.downloadEvents(`${p}events.csv`),         800);
     }
 
     // ── Utility ───────────────────────────────────────────────────────────────
@@ -328,6 +608,9 @@ class Logger {
         this.organism_log   = [];
         this.event_log      = [];
         this._start_time    = Date.now();
+        this._last_saved_gen_idx = 0;
+        this._last_saved_org_idx = 0;
+        this._last_saved_evt_idx = 0;
     }
 
     summary() {

@@ -31,11 +31,21 @@ class ControlPanel {
         this.setHyperparamDefaults();
         LoadController.control_panel = this;
         
-        // Display learning status in About tab
-        const learning_status = WorldConfig.learning_enabled 
-            ? "🟢 ENABLED (Reinforcement Learning Active)" 
-            : "🔴 DISABLED (Genetic Algorithm Only)";
-        $('#learning-status').text('Learning Status: ' + learning_status);
+        // Display experiment status in About tab
+        let mode_label = 'Standard';
+        if (WorldConfig.experiment_mode === 'frozen_pg') {
+            mode_label = 'Frozen PG';
+        }
+        const learning_status = WorldConfig.learning_enabled
+            ? '🟢 ENABLED'
+            : '🔴 DISABLED';
+        let detail = WorldConfig.learning_enabled
+            ? 'Reinforcement Learning Active'
+            : 'Genetic Algorithm Only';
+        if (WorldConfig.experiment_mode === 'frozen_pg') {
+            detail = 'Frozen policy; single PG update per generation';
+        }
+        $('#learning-status').text(`Mode: ${mode_label} | Learning: ${learning_status} (${detail})`);
     }
 
     defineMinMaxControls(){
@@ -647,6 +657,7 @@ class ControlPanel {
     }
 
     setEditorOrganism(org) {
+        this.editor_controller.selected_org = org;
         this.engine.organism_editor.setOrganismToCopyOf(org);
         this.editor_controller.clearDetailsPanel();
         this.editor_controller.setEditorPanel();

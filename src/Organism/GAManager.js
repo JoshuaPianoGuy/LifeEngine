@@ -64,6 +64,7 @@ class GAManager {
     constructor(env, rl_enabled, spawn_col, spawn_row) {
         this.env        = env;
         this.rl_enabled = rl_enabled;
+        this.condition_label = rl_enabled ? 'learning' : 'natural_selection';
         this.spawn_col  = spawn_col;
         this.spawn_row  = spawn_row;
 
@@ -216,10 +217,8 @@ class GAManager {
             this.living_agents.delete(agent);
         }
 
-        // Map ends early if everyone dies, or exactly at TICKS_PER_MAP
-        if (this.living_agents.size === 0) {
-            return 'NEXT_GENERATION'; // If they die, whole gen is over
-        } else if (this.map_tick_count >= TICKS_PER_MAP) {
+        // Map ends exactly at TICKS_PER_MAP, generating evolving epoch when maps exhausted
+        if (this.map_tick_count >= TICKS_PER_MAP) {
             this.current_map_index++;
             if (this.current_map_index >= MAPS_PER_GEN) {
                 return 'NEXT_GENERATION'; // Reached map limit -> Evolve

@@ -6,12 +6,14 @@ const Species = require("../Stats/Species");
 const LoadController = require("./LoadController");
 const Brain = require("../Organism/Perception/Brain");
 const FossilRecord = require("../Stats/FossilRecord");
+const NNBrain = require("../Organism/Perception/NNBrain");
 
 class EditorController extends CanvasController{
     constructor(env, canvas) {
         super(env, canvas);
         this.edit_cell_type = null;
         this.highlight_org = false;
+        this.selected_org = null;
         this.defineCellTypeSelection();
         this.defineEditorDetails();
         this.defineSaveLoad();
@@ -71,12 +73,56 @@ class EditorController extends CanvasController{
         }
         this.updateBrainInfo();
         this.updateBrainSummary();
+        this.updateEditorBrainStats();
+    }
+
+    updateEditorBrainStats() {
+        const org = this.selected_org || this.env.organism;
+        const statsContainer = $('#edit-brain-stats');
+        if (!statsContainer.length) return;
+
+        if (!org.brain || !(org.brain instanceof NNBrain) || !org.brain.genome_weights) {
+            $('#edit-brain-type').html('<strong>Brain:</strong> None');
+            $('#edit-brain-weight-summary').html('');
+            $('#edit-brain-weight-sample').text('');
+            return;
+        }
+
+        const weights = org.brain.genome_weights;
+        let min = Infinity;
+        let max = -Infinity;
+        let sum = 0;
+        let sum_sq = 0;
+        for (let i = 0; i < weights.length; i++) {
+            const v = weights[i];
+            if (v < min) min = v;
+            if (v > max) max = v;
+            sum += v;
+            sum_sq += v * v;
+        }
+        const mean = sum / weights.length;
+        const variance = (sum_sq / weights.length) - (mean * mean);
+        const std = Math.sqrt(Math.max(0, variance));
+        const rms = Math.sqrt(sum_sq / weights.length);
+
+        $('#edit-brain-type').html('<strong>Brain:</strong> Neural Network (46→32→6)');
+        $('#edit-brain-weight-summary').html(
+            `<strong>Genome Weights:</strong> ` +
+            `mean=${mean.toFixed(4)} std=${std.toFixed(4)} ` +
+            `min=${min.toFixed(4)} max=${max.toFixed(4)} rms=${rms.toFixed(4)}`
+        );
+        const sample = Array.from(weights.slice(0, Math.min(12, weights.length)))
+            .map(v => v.toFixed(3))
+            .join(' ');
+        $('#edit-brain-weight-sample').text(sample);
     }
 
     updateBrainSummary() {
-        const org = this.env.organism;
+        const org = this.selected_org || this.env.organism;
         let summaryText;
-        if (org.anatomy && org.anatomy.has_eyes && org.anatomy.is_mover) {
+        if (org.brain && org.brain instanceof NNBrain) {
+            summaryText = 'NNBrain: 46->32->6';
+        } else if (org.anatomy && org.anatomy.has_eyes && org.anatomy.is_mover) {
             // ensure counts are up to date
             if (org.brain && typeof org.brain.countCells === 'function') {
                 org.brain.countCells();
@@ -233,7 +279,7 @@ class EditorController extends CanvasController{
 
     updateBrainInfo() {
         const org = this.env.organism;
-        org.brain.countCells();
+        const display_org = this.selected_org || org;
         const brainInfo = $('#brain-info');
         const brainMaps = $('#brain-maps');
         brainMaps.empty();
@@ -243,6 +289,39 @@ class EditorController extends CanvasController{
             brainInfo.html('<h2>Brain</h2><p>Add 1 eye and 1 mover to add a brain</p>');
             return;
         }
+
+        if (display_org.brain && display_org.brain instanceof NNBrain) {
+            const weights = display_org.brain.genome_weights || [];
+            let min = Infinity;
+            let max = -Infinity;
+            let sum = 0;
+            let sum_sq = 0;
+            for (let i = 0; i < weights.length; i++) {
+                const v = weights[i];
+                if (v < min) min = v;
+                if (v > max) max = v;
+                sum += v;
+                sum_sq += v * v;
+            }
+            const mean = weights.length ? sum / weights.length : 0;
+            const variance = weights.length ? (sum_sq / weights.length) - (mean * mean) : 0;
+            const std = Math.sqrt(Math.max(0, variance));
+            const rms = weights.length ? Math.sqrt(sum_sq / weights.length) : 0;
+            const sample = Array.from(weights.slice(0, Math.min(12, weights.length)))
+                .map(v => v.toFixed(3))
+                .join(' ');
+
+            brainInfo.html(
+                `<h2>Brain</h2>` +
+                `<p><strong>Type:</strong> Neural Network (46->32->6)</p>` +
+                `<p><strong>Genome Weights:</strong> mean=${mean.toFixed(4)} std=${std.toFixed(4)} ` +
+                `min=${min.toFixed(4)} max=${max.toFixed(4)} rms=${rms.toFixed(4)}</p>` +
+                `<pre class="weight-sample">${sample}</pre>`
+            );
+            return;
+        }
+
+        org.brain.countCells();
 
         let eyeOptions = '';
         for (let i = 0; i < org.brain.eye_cell_count; i++) {

@@ -34,10 +34,8 @@ class Renderer {
 
     renderFullGrid(grid) {
         this.clearUpdates();
-        for (var col of grid) {
-            for (var cell of col){
-                this.renderCell(cell);
-            }
+        for (var i = 0; i < grid.length; i++) {
+            this.renderCell(grid[i]);
         }
     }
 

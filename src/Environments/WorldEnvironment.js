@@ -4,6 +4,8 @@ const GridMap = require('../Grid/GridMap');
 const Organism = require('../Organism/Organism');
 const AdvancedOrganism = require('../Organism/AdvancedOrganism');
 const GAManager = require('../Organism/GAManager');
+const FrozenPolicyManager = require('../Organism/FrozenPolicyManager');
+const PureRLManager = require('../Organism/PureRLManager');
 const CellStates = require('../Organism/Cell/CellStates');
 const EnvironmentController = require('../Controllers/EnvironmentController');
 const Hyperparams = require('../Hyperparameters.js');
@@ -43,22 +45,23 @@ class WorldEnvironment extends Environment {
         const center    = this.grid_map.getCenter();
         const spawn_col = center[0] + 15;
         const spawn_row = center[1] + 15;
-        //reference?
-        this.ga_manager = new GAManager(this, this.learning_enabled, spawn_col, spawn_row);
+        const use_frozen_pg = WorldConfig.experiment_mode === 'frozen_pg';
+        const use_pure_rl   = WorldConfig.experiment_mode === 'pure_rl';
+        if (use_frozen_pg) {
+            this.learning_enabled = true;
+            this.ga_manager = new FrozenPolicyManager(this, spawn_col, spawn_row);
+        } else if (use_pure_rl) {
+            this.learning_enabled = true;
+            this.ga_manager = new PureRLManager(this, spawn_col, spawn_row);
+        } else {
+            this.ga_manager = new GAManager(this, this.learning_enabled, spawn_col, spawn_row);
+        }
 
         FossilRecord.setEnv(this);
     }
 
     update() {
-        var to_remove = [];
-        const orgs = this.organisms;
-        for (var i = 0; i < orgs.length; i++) {
-            var org = orgs[i];
-            if (!org.living || !org.update()) {
-                to_remove.push(i);
-            }
-        }
-        this.removeOrganisms(to_remove);
+        this.clearDeadOrganisms(true);
         if (Hyperparams.foodDropProb > 0) {
             this.generateFood();
         }
@@ -77,6 +80,25 @@ class WorldEnvironment extends Environment {
                 this.ga_manager.spawnGeneration();
                 this.renderFull();
                 return;
+            } else if (status === 'NEXT_WINDOW') {
+                // PureRLManager: log metrics and reset window counters but do
+                // NOT reset the population — organisms continue living.
+                this.ga_manager.closeWindow();
+                if (this.ga_manager.living_agents && this.ga_manager.living_agents.size === 0) {
+                    if (this.ga_manager.respawnPopulationAtCenter()) {
+                        this.renderFull();
+                    }
+                } else {
+                    this.generateWorld();
+                    this.ga_manager.startNextMap();
+                    this.renderFull();
+                }
+            }
+
+            if (WorldConfig.experiment_mode === 'pure_rl' && this.ga_manager.living_agents && this.ga_manager.living_agents.size === 0) {
+                if (this.ga_manager.respawnPopulationAtCenter()) {
+                    this.renderFull();
+                }
             }
         }
         
@@ -103,21 +125,7 @@ class WorldEnvironment extends Environment {
         this.renderer.renderFullGrid(this.grid_map.grid);
     }
 
-    removeOrganisms(org_indeces) {
-        let start_pop = this.organisms.length;
-        for (var i of org_indeces.reverse()) {
-            this.total_mutability -= this.organisms[i].mutability;
-            this.organisms.splice(i, 1);
-        }
-        if (this.organisms.length === 0 && start_pop > 0 && !this.ga_manager) {
-            if (WorldConfig.auto_pause)
-                $('.pause-button')[0].click();
-            else if (WorldConfig.auto_reset) {
-                this.reset_count++;
-                this.reset(false);
-            }
-        }
-    }
+    // removed removeOrganisms to favor in-place DOD methodology in clearDeadOrganisms
 
     OriginOfLife() {
         var center = this.grid_map.getCenter();
@@ -491,12 +499,48 @@ class WorldEnvironment extends Environment {
         this.organisms = [];
     }
 
-    clearDeadOrganisms() {
-        let to_remove = [];
-        for (let i in this.organisms) {
-            if (!this.organisms[i].living) to_remove.push(i);
+    clearDeadOrganisms(check_update = false) {
+        let write_idx = 0;
+        const orgs = this.organisms;
+        let dead_count = 0;
+        let start_pop = orgs.length;
+        let newborns = [];
+
+        for (let i = 0; i < start_pop; i++) {
+            var org = orgs[i];
+            // If check_update is true, we run org.update() and check if it died during update
+            if (org.living && (!check_update || org.update())) {
+                orgs[write_idx++] = org;
+            } else {
+                this.total_mutability -= org.mutability;
+                dead_count++;
+            }
         }
-        this.removeOrganisms(to_remove);
+        
+        // Recover any organisms added to the end by `addOrganism` during `org.update()`
+        if (orgs.length > start_pop) {
+            for (let i = start_pop; i < orgs.length; i++) {
+                newborns.push(orgs[i]);
+            }
+        }
+
+        if (dead_count > 0 || newborns.length > 0) {
+            // Append newborns cleanly back to the surviving list
+            for (let i = 0; i < newborns.length; i++) {
+                orgs[write_idx++] = newborns[i];
+            }
+            
+            orgs.length = write_idx; // truncate array in-place
+            
+            if (this.organisms.length === 0 && start_pop > 0 && !this.ga_manager) {
+                if (WorldConfig.auto_pause)
+                    $('.pause-button')[0].click();
+                else if (WorldConfig.auto_reset) {
+                    this.reset_count++;
+                    this.reset(false);
+                }
+            }
+        }
     }
 
     generateFood() {

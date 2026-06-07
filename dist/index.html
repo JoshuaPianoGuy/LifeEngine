@@ -132,6 +132,12 @@
 								<label for="mutation-rate-edit" title='Probability that offspring of this organism will mutate'>Mutation Rate:</label>
 								<input type="number" id="mutation-rate-edit" min="1" max="100" value=3 step="1">
 							</div>
+							<div id='edit-brain-stats' style='margin-top: 10px;'>
+								<h4>Brain Stats</h4>
+								<p id='edit-brain-type'><strong>Brain:</strong> </p>
+								<p id='edit-brain-weight-summary'></p>
+								<pre id='edit-brain-weight-sample' class='weight-sample'></pre>
+							</div>
 						</div>
 					</div>
 				</div>
@@ -265,6 +271,7 @@
 							<option value="mut-rate">Organism Structure</option>
 							<option value="mut-rate">Mutation Rate</option>
 							<option value="peak-pop">Peak Gen Population</option>
+							<option value="total-agents">Total Agents</option>
 							<option value="intra-weight">Lifetime Learning (Weight Updates)</option>
 							<option value="inter-weight">Evolutionary Shift (RMS Change)</option>
 							<option value="gen-variance">Genetic Variance Between Genomes</option>
@@ -281,6 +288,8 @@
 						<h2>Selected Organism</h2>
 						<p id='org-info-message'>(Click "Select" mode in toolbar and click an organism to view details)</p>
 						<div id='organism-details' style='display: none;'>
+							<p id='org-fitness'><strong>Fitness:</strong> </p>
+							<p id='org-cumulative-food'><strong>Cumulative Food Score:</strong> </p>
 							<p id='org-position'><strong>Position:</strong> </p>
 							<p id='org-lifetime'><strong>Lifetime:</strong> </p>
 							<p id='org-food-collected'><strong>Food Collected:</strong> </p>
@@ -289,11 +298,13 @@
 							<h3>Cell Inventory</h3>
 							<div id='org-cell-inventory'></div>
 							<h3>Neural Network Brain</h3>
-							<p id='org-brain-type'><strong>Type:</strong> Neural Network (33→8→4)</p>
+							<p id='org-brain-type'><strong>Type:</strong> Neural Network (46→32→6)</p>
 							<p id='org-brain-rl'><strong>RL Status:</strong> </p>
 							<p id='org-brain-last-action'><strong>Last Action:</strong> </p>
 							<p id='org-brain-action-probs'><strong>Action Probabilities:</strong> </p>
 							<p id='org-brain-weights' style='display: none; font-size: 0.9em; color: #666;'><strong>Weight Status:</strong> </p>
+							<p id='org-weight-summary' style='display: none; font-size: 0.9em; color: #666;'><strong>Weight Summary:</strong> </p>
+							<pre id='org-weight-sample' class='weight-sample' style='display: none;'></pre>
 						</div>
 					</div>
 					<div class='right-half'>

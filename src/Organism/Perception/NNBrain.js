@@ -150,6 +150,7 @@ class NNBrain {
         this.owner      = owner;
         this.rl_enabled = rl_enabled;
         this.is_nnbrain = true;
+        this.freeze_updates = false;
 
         this.genome_weights = new Float32Array(GENOME_SIZE);
         this._initGenome();
@@ -325,6 +326,8 @@ class NNBrain {
             }
         }
 
+        if (this.freeze_updates) return;
+
         const delta_w = RL_LR * adjusted_reward;
         for (let idx = 0; idx < GENOME_SIZE; idx++) {
             let val = w[idx] + delta_w * traces[idx];
@@ -333,6 +336,25 @@ class NNBrain {
             else if (val < -1.0) val = -1.0;
             w[idx] = val;
         }
+    }
+
+    // Apply a single policy-gradient update using the stored eligibility traces.
+    // Intended for frozen-policy experiments where weights do not change within life.
+    applyFrozenUpdate(total_reward) {
+        if (!this.traces || !this.genome_weights) return;
+        const delta_w = RL_LR * total_reward;
+        for (let idx = 0; idx < GENOME_SIZE; idx++) {
+            let val = this.genome_weights[idx] + delta_w * this.traces[idx];
+            if (val > 1.0) val = 1.0;
+            else if (val < -1.0) val = -1.0;
+            this.genome_weights[idx] = val;
+            if (this.active_weights && this.active_weights !== this.genome_weights) {
+                this.active_weights[idx] = val;
+            }
+        }
+        this.resetTraces();
+        this.running_baseline = 0;
+        this._baseline_count = 0;
     }
 
     // ── Main entry point ──────────────────────────────────────────────────────
@@ -455,6 +477,13 @@ class NNBrain {
         this._input.fill(0);
         this._last_probs  = null;
         this._last_action = null;
+    }
+
+    // Copy the current learned policy into the inherited genome so future
+    // offspring continue from the updated weights.
+    syncGenomeFromActive() {
+        if (!this.active_weights || !this.genome_weights) return;
+        this.genome_weights = new Float32Array(this.active_weights);
     }
 
     // ── Serialisation ─────────────────────────────────────────────────────────

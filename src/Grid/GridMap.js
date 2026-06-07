@@ -7,28 +7,25 @@ class GridMap {
     }
 
     resize(cols, rows, cell_size) {
-        this.grid = [];
+        this.grid = new Array(cols * rows);
         this.cols = cols;
         this.rows = rows;
         this.cell_size = cell_size;
         for(var c=0; c<cols; c++) {
-            var row = [];
             for(var r=0; r<rows; r++) {
                 var cell = new Cell(CellStates.empty, c, r, c*cell_size, r*cell_size);
-                row.push(cell);
+                this.grid[c * rows + r] = cell;
             }            
-            this.grid.push(row);
         }
     }
 
     fillGrid(state, ignore_walls=false) {
-        for (var col of this.grid) {
-            for (var cell of col) {
-                if (ignore_walls && cell.state===CellStates.wall) continue;
-                cell.setType(state);
-                cell.owner = null;
-                cell.cell_owner = null;
-            }
+        for (var i = 0; i < this.grid.length; i++) {
+            var cell = this.grid[i];
+            if (ignore_walls && cell.state===CellStates.wall) continue;
+            cell.setType(state);
+            cell.owner = null;
+            cell.cell_owner = null;
         }
     }
 
@@ -36,25 +33,34 @@ class GridMap {
         if (!this.isValidLoc(col, row)) {
             return null;
         }
-        return this.grid[col][row];
+        return this.grid[col * this.rows + row];
     }
 
     setCellType(col, row, state) {
         if (!this.isValidLoc(col, row)) {
             return;
         }
-        this.grid[col][row].setType(state);
+        var cell = this.grid[col * this.rows + row];
+        cell.setType(state);
+        if (this.engine && this.engine.renderer) {
+            this.engine.renderer.updateCell(cell);
+        }
     }
 
     setCellOwner(col, row, cell_owner) {
         if (!this.isValidLoc(col, row)) {
             return;
         }
-        this.grid[col][row].cell_owner = cell_owner;
+        var cell = this.grid[col * this.rows + row];
+        cell.cell_owner = cell_owner;
         if (cell_owner != null)
-            this.grid[col][row].owner = cell_owner.org;
+            cell.owner = cell_owner.org;
         else 
-            this.grid[col][row].owner = null;
+            cell.owner = null;
+            
+        if (this.engine && this.engine.renderer) {
+            this.engine.renderer.updateCell(cell);
+        }
     }
 
     isValidLoc(col, row){
@@ -86,15 +92,14 @@ class GridMap {
         let grid = {cell_size:this.cell_size, cols:this.cols, rows:this.rows};
         grid.food = [];
         grid.walls = [];
-        for (let col of this.grid) {
-            for (let cell of col) {
-                if (cell.state===CellStates.wall || cell.state===CellStates.food){
-                    let c = {c: cell.col, r: cell.row}; // no need to store state
-                    if (cell.state===CellStates.food)
-                        grid.food.push(c)
-                    else
-                        grid.walls.push(c)
-                }
+        for (let i = 0; i < this.grid.length; i++) {
+            let cell = this.grid[i];
+            if (cell.state===CellStates.wall || cell.state===CellStates.food){
+                let c = {c: cell.col, r: cell.row}; // no need to store state
+                if (cell.state===CellStates.food)
+                    grid.food.push(c)
+                else
+                    grid.walls.push(c)
             }
         }
         return grid;

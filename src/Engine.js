@@ -144,6 +144,9 @@ class Engine {
 
     environmentUpdate() {
         this.env.update(this.step_ms); // WorldEnvironment ignores the arg, but it’s harmless
+        if (this.controlpanel && this.controlpanel.stats_panel) {
+            this.controlpanel.stats_panel.maybeLogTick(this.env.total_ticks);
+        }
     }
 
     necessaryUpdate() {

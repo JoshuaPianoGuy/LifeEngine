@@ -13,8 +13,7 @@ class GAChartController {
                 minimum: 0,
             },
             axisY:{
-                title: y_axis,
-                minimum: 0,
+                title: y_axis
             },
             data: this.data
         });

@@ -448,6 +448,17 @@ input:hover,input:active {
     box-sizing: border-box;
 }
 
+.weight-sample {
+    margin: 6px 0 0 0;
+    padding: 6px;
+    background-color: #f3f1e8;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 0.85em;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
 .tab .left-half,
 .tab .right-half,
 .control-set {
