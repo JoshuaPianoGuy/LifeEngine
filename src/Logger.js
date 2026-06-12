@@ -49,6 +49,12 @@ if (isNodeRuntime) {
 }
 
 const WEIGHT_SNAPSHOT_PRECISION = 6;
+
+// Fixed cap on organism rows logged per generation.
+// Keeps organisms.csv size predictable regardless of population growth.
+// 20 organisms is sufficient for PCA centroids, t-SNE, and MAD analysis.
+// Increase if within-generation weight diversity analysis is needed.
+const MAX_ORGANISM_LOG_PER_GEN = 20;
 const LOG_W1_SNAPSHOT = true;
 const LOG_ACTIVE_SNAPSHOT = true;
 const LOG_FULL_GENOME_SNAPSHOT = false;
@@ -106,10 +112,18 @@ class Logger {
         if (!sorted || sorted.length === 0) return;
 
         const n          = sorted.length;
-        // Use 20% for top-performing tracked metric
-        let num_top = Math.floor(n * 0.2);
-        num_top = Math.max(1, Math.min(num_top, n));
-        const top20pct = sorted.slice(0, num_top);
+        // True top-20% — used for all population-level metrics in generations.csv
+        // (top20percent_fitness, learned weight diff, weight variance).
+        // Always reflects the real selection cohort regardless of population size.
+        const selection_pct = (typeof ga.selection_percent === 'number')
+            ? ga.selection_percent : 0.2;
+        const num_top_pct  = Math.max(1, Math.floor(n * selection_pct));
+        const top20pct     = sorted.slice(0, num_top_pct);
+
+        // Capped slice for organism weight logging — fixed at MAX_ORGANISM_LOG_PER_GEN
+        // to keep organisms.csv size predictable as population grows.
+        // Only used for the per-organism rows written to organisms.csv.
+        const top20pct_log = sorted.slice(0, Math.min(n, MAX_ORGANISM_LOG_PER_GEN));
 
         // Average energy at tick 1000 (fixed early-game sample)
         const early_samples = sorted.map(a => a.energy_at_early_sample).filter(e => e !== null && e !== undefined);
@@ -188,8 +202,8 @@ class Logger {
         );
 
         // Log top-20% organisms — full population with weight snapshots is ~20 MB/flush
-        for (let i = 0; i < top20pct.length; i++) {
-            this.logOrganism(ga.generation, i + 1, top20pct[i], ga.rl_enabled);
+        for (let i = 0; i < top20pct_log.length; i++) {
+            this.logOrganism(ga.generation, i + 1, top20pct_log[i], ga.rl_enabled);
         }
 
         this._autoSaveIfNeeded(ga.generation, ga.rl_enabled);
@@ -314,22 +328,74 @@ class Logger {
             .join(' ');
     }
 
+    // ── Compact binary weight encoding ────────────────────────────────────────
+    //
+    // Space breakdown per organism row (GENOME_SIZE=1702, W1_SIZE=1472):
+    //   Old text at 6 d.p.:  ~30 KB/row
+    //   Float32 + Base64:    ~17 KB/row  (-43%)
+    //   Int8   + Base64:      ~5 KB/row  (-85%, ~0.008 resolution, fine for genomes)
+    //
+    // w1_weights  → Int8+Base64:    genome weights don't need sub-0.01 precision
+    // active_weights → Float32+Base64: preserves RL-learned drift (~0.009 mean)
+    //
+    // Decoding in Python:
+    //   import base64, numpy as np
+    //   w1 = np.frombuffer(base64.b64decode(field), dtype=np.int8).astype(np.float32) / 127
+    //   aw = np.frombuffer(base64.b64decode(field), dtype=np.float32)
+
+    _encodeFloat32B64(weights) {
+        // Encode a Float32Array (or any array-like) to a Base64 string of its
+        // raw IEEE-754 bytes.  Preserves full float32 precision.
+        if (!weights || weights.length === 0) return '';
+        const f32 = weights instanceof Float32Array ? weights : new Float32Array(weights);
+        // In Node (no btoa): use Buffer. In browser: use Uint8Array + btoa.
+        if (typeof Buffer !== 'undefined') {
+            return Buffer.from(f32.buffer).toString('base64');
+        }
+        const bytes = new Uint8Array(f32.buffer);
+        let binary = '';
+        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+        return btoa(binary);
+    }
+
+    _encodeInt8B64(weights) {
+        // Quantise weights (expected range [-1, 1]) to Int8 [-127, 127], then
+        // Base64-encode the raw bytes.  Resolution: 1/127 ≈ 0.008.
+        if (!weights || weights.length === 0) return '';
+        const i8 = new Int8Array(weights.length);
+        for (let i = 0; i < weights.length; i++) {
+            // Clamp to [-1, 1] then scale; round to nearest integer.
+            const v = Math.max(-1, Math.min(1, weights[i]));
+            i8[i] = Math.round(v * 127);
+        }
+        if (typeof Buffer !== 'undefined') {
+            return Buffer.from(i8.buffer).toString('base64');
+        }
+        const bytes = new Uint8Array(i8.buffer);
+        let binary = '';
+        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+        return btoa(binary);
+    }
+
     _snapshotW1(agent) {
+        // W1 layer of genome — Int8+Base64 (~2 KB vs ~14 KB text).
         if (!agent.brain || !agent.brain.genome_weights) return '';
         const gw = agent.brain.genome_weights;
         const w1_size = NNBrain.STATE_SIZE * NNBrain.HIDDEN_SIZE;
         if (gw.length < w1_size) return '';
-        return this._formatWeights(gw.slice(0, w1_size));
+        return this._encodeInt8B64(gw.subarray ? gw.subarray(0, w1_size) : Array.from(gw).slice(0, w1_size));
     }
 
     _snapshotActive(agent) {
+        // Full active_weights — Float32+Base64 (~9 KB vs ~16 KB text).
+        // Must preserve float32 precision to capture RL weight drift (~0.009 mean).
         if (!agent.brain || !agent.brain.active_weights) return '';
-        return this._formatWeights(agent.brain.active_weights);
+        return this._encodeFloat32B64(agent.brain.active_weights);
     }
 
     _snapshotGenome(agent) {
         if (!agent.brain || !agent.brain.genome_weights) return '';
-        return this._formatWeights(agent.brain.genome_weights);
+        return this._encodeFloat32B64(agent.brain.genome_weights);
     }
 
     /**

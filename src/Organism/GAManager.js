@@ -88,6 +88,10 @@ class GAManager {
         this.gene_pool = null;
 
         this.metrics = [];
+
+        // Expose hyper-parameters so Logger and other consumers can read them
+        // without importing the module-level constants directly.
+        this.selection_percent = SELECTION_PERCENT;
     }
 
     // ── Generation lifecycle ──────────────────────────────────────────────────

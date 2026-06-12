@@ -1,202 +1,177 @@
 /**
- * PureRLManager.js
+ * PureRLManager.js — Condition D: Pure Reinforcement Learning
  *
- * Condition D: Pure Reinforcement Learning
+ * Design
+ * ------
+ * A population of organisms learn entirely through within-lifetime
+ * REINFORCE. There is no GA crossover and no fitness-based selection.
+ * The only mechanisms driving improvement are:
  *
- * What this condition is:
- *   Organisms learn entirely within their own lifetimes via REINFORCE (same as
- *   Condition A). There is NO crossover, NO between-generation gradient update,
- *   and NO generational reset. The only cross-generation improvement mechanism
- *   is differential reproduction — fitter organisms reproduce more and
- *   contribute their starting genome (not their RL-drifted weights) to a
- *   larger share of the next population. Small Gaussian mutation on reproduction
- *   prevents diversity collapse.
+ *   1. Within-lifetime RL   — active_weights updated each tick via REINFORCE
+ *   2. Natural reproduction  — energy-triggered, child inherits parent's
+ *                              current active_weights (Lamarckian continuity)
+ *                              plus Gaussian mutation via _mutateGenome()
+ *   3. Between-episode mutation (optional, see BETWEEN_EPISODE_MUTATION) —
+ *                              undirected Gaussian noise on all survivors'
+ *                              active_weights at each episode boundary
  *
- * Key differences from other conditions:
- *   vs Condition A (RL + GA): no crossover, no between-generation genetic ops.
- *   vs Condition B (GA only): RL is active within each lifetime.
- *   vs Condition C (FrozenPG): RL runs during lifetimes, not as a between-gen
- *                               gradient update on a frozen policy.
+ * Why active_weights as the heritable unit
+ * -----------------------------------------
+ * In Condition A (RL+GA), genome_weights are the heritable unit — they
+ * are frozen during a lifetime and only moved by the GA between generations.
+ * Here there is no GA step, so using genome_weights as the heritable unit
+ * would discard all within-lifetime learning at every reproduction event.
+ * Instead, active_weights (the RL-learned state) are synced to genome_weights
+ * immediately before each child is created, so the child inherits what the
+ * parent actually learned rather than its starting point. This maintains
+ * continuity of learning across the population over time.
  *
- * Generation / episode boundary:
- *   There is no hard generational reset. The simulation runs continuously.
- *   "Generations" are purely measurement windows of TICKS_PER_GEN ticks —
- *   the same 10 000-tick boundary used by other conditions (5 maps × 2 000
- *   ticks). At the end of each window, metrics are snapshotted and logged
- *   using the same schema as GAManager, so all three conditions can be
- *   compared on a shared tick axis.
+ * This is intentionally Lamarckian and is the defining characteristic of
+ * this condition: learned weights persist and propagate through reproduction,
+ * contrasting with the non-Lamarckian RL+GA condition where learned weights
+ * die with the organism.
  *
- * Inheritance:
- *   Offspring inherit the parent's STARTING genome (genome_weights at birth),
- *   not the RL-drifted active_weights. This is non-Lamarckian, matching
- *   Condition A. The 3% asexual mutation rate used in AdvancedOrganism
- *   .reproduce() applies as normal; no extra between-generation mutation step
- *   is needed because reproduction is continuous.
+ * Population management
+ * ---------------------
+ * Population grows freely within episodes via natural reproduction.
+ * At each episode boundary, organisms above POPULATION_SIZE are removed
+ * RANDOMLY (not by fitness) — random removal has no fitness signal and
+ * does not constitute selection pressure.
  *
- * Population management:
- *   No founding population reset. The sim starts with POPULATION_SIZE
- *   organisms seeded from random Xavier weights and runs until stopped.
- *   If the population collapses to zero this is treated as a legitimate
- *   result (within-lifetime RL alone could not sustain the population).
+ * If the population reaches zero at any point, N organisms are respawned
+ * at the next episode boundary using weights sampled randomly from a
+ * rolling buffer of the last COLLAPSE_BUFFER_SIZE dead organisms'
+ * active_weights. Collapse is often environmental (harsh map, food scarcity,
+ * insufficient learning time) rather than a sign the weights are bad, so
+ * discarding them would throw away potentially useful learned structure.
+ * Random sampling from the buffer preserves real individual strategies
+ * rather than averaging, which can produce weight vectors no organism
+ * ever actually had.
+ *
+ * Between-episode mutation
+ * ------------------------
+ * Controlled by BETWEEN_EPISODE_MUTATION toggle.
+ *
+ *   false — within-episode RL and reproduction only. No weight perturbation
+ *           at episode boundaries. The only noise source is _mutateGenome()
+ *           at reproduction.
+ *
+ *   true  — at each episode boundary, all surviving organisms receive
+ *           undirected Gaussian noise on their active_weights (same kernel
+ *           as _mutateGenome(): 5% per weight, σ=0.1). The mutated state
+ *           is synced to genome_weights so children inherit it.
+ *           Mutation without selection is not evolutionary search — it is
+ *           an undirected random walk that adds diversity without gradient.
+ *
+ * Comparison axis
+ * ---------------
+ * Episode boundaries are 10,000-tick windows (5 maps × 2,000 ticks),
+ * matching GAManager exactly. Logger.logGeneration is called at each
+ * boundary with the same schema so all conditions are directly comparable.
  */
 
 'use strict';
 
-const NNBrain          = require('./Perception/NNBrain');
 const AdvancedOrganism = require('./AdvancedOrganism');
 const CellStates       = require('./Cell/CellStates');
 const logger           = require('../Logger');
 
 // ── Hyper-parameters ──────────────────────────────────────────────────────────
 
-const POPULATION_SIZE = 100;   // founding population only; grows/shrinks naturally after
+const POPULATION_SIZE = 100;
 const SPAWN_RADIUS    = 30;
 
-// Measurement window — matches other conditions exactly (5 maps × 2 000 ticks)
-const TICKS_PER_MAP   = 2000;
-const MAPS_PER_GEN    = 5;
-const TICKS_PER_GEN   = TICKS_PER_MAP * MAPS_PER_GEN; // 10 000
+const TICKS_PER_MAP = 2000;
+const MAPS_PER_GEN  = 5;
+const TICKS_PER_GEN = TICKS_PER_MAP * MAPS_PER_GEN;  // 10 000
+
+// Rolling buffer size for collapse respawn — recent enough to reflect
+// current learning, large enough to have meaningful diversity.
+const COLLAPSE_BUFFER_SIZE = 25;
+
+// Toggle between-episode mutation. Does not affect within-episode
+// reproduction mutation, which always runs via _mutateGenome().
+const BETWEEN_EPISODE_MUTATION = true;
+const EPISODE_MUT_PROB         = 0.05;   // same kernel as _mutateGenome()
+const EPISODE_MUT_SIGMA        = 0.1;
 
 // ─────────────────────────────────────────────────────────────────────────────
 
 class PureRLManager {
-    /**
-     * @param {WorldEnvironment} env
-     * @param {number} spawn_col  fixed spawn column for founding agents
-     * @param {number} spawn_row  fixed spawn row
-     */
     constructor(env, spawn_col, spawn_row) {
-        this.env        = env;
-        this.spawn_col  = spawn_col;
-        this.spawn_row  = spawn_row;
+        this.env       = env;
+        this.spawn_col = spawn_col;
+        this.spawn_row = spawn_row;
 
-        // RL is always active in this condition
-        this.rl_enabled      = true;
-        this.condition_label = 'pure_rl';
+        this.rl_enabled        = true;
+        this.condition_label   = 'pure_rl';
+        this.selection_percent = 0.2;  // used by Logger for top-N slice
 
-        // Measurement window counters — reset each window, never trigger a
-        // population reset.
-        this.generation          = 0;   // measurement window index (logged as 'generation')
-        this.current_map_index   = 0;
-        this.map_tick_count      = 0;
-        this.tick_count          = 0;   // ticks elapsed in the current measurement window
-        this.total_ticks         = 0;   // total ticks ever (matches env.total_ticks semantics)
+        this.generation        = 0;
+        this.current_map_index = 0;
+        this.map_tick_count    = 0;
+        this.tick_count        = 0;
+        this.total_ticks       = 0;
 
-        // Agent tracking — agents are added on birth and retained until logged.
-        // Unlike GAManager, living_agents is the primary population; there is no
-        // clean founding/descendant boundary.
-        this.all_agents_this_window = [];  // every agent alive or born this window
+        this.all_agents_this_window = [];
         this.living_agents          = new Set();
         this.peak_population        = 0;
 
-        // No gene_pool — population is self-sustaining via reproduction
+        // Rolling buffer of active_weight snapshots from recently dead
+        // organisms. Used for collapse respawn. Oldest entry dropped when
+        // full. Stored as Float32Array copies (organism may be GC'd).
+        this._dead_weight_buffer = [];
     }
 
     // ── Initial population spawn ──────────────────────────────────────────────
 
-    /**
-     * Spawn the founding population once at the start of the experiment.
-     * Called once from WorldEnvironment (same call site as GAManager.spawnGeneration).
-     * After this, organisms reproduce and die naturally — no further resets.
-     */
-    spawnGeneration(options = {}) {
-        const spawn_col = options.spawn_col !== undefined ? options.spawn_col : this.spawn_col;
-        const spawn_row = options.spawn_row !== undefined ? options.spawn_row : this.spawn_row;
-        const seed_weights = options.seed_weights || null;
-        const preserve_window_state = Boolean(options.preserve_window_state);
-
-        if (!preserve_window_state) {
-            this.all_agents_this_window = [];
-            this.tick_count             = 0;
-            this.map_tick_count         = 0;
-            this.current_map_index      = 0;
-            this.peak_population        = 0;
-            this.generation             = 1;
-        }
-
-        this.living_agents = new Set();
-        this.env.organisms = [];
+    spawnGeneration() {
+        this.all_agents_this_window = [];
+        this.living_agents          = new Set();
+        this.tick_count             = 0;
+        this.map_tick_count         = 0;
+        this.current_map_index      = 0;
+        this.peak_population        = 0;
+        this.generation             = 1;
+        this.env.organisms          = [];
 
         for (let i = 0; i < POPULATION_SIZE; i++) {
-            const org = new AdvancedOrganism(
-                0,
-                0,
-                this.env,
-                null,       // no parent — random Xavier init
-                true,       // rl_enabled = true
-                this        // manager reference so reproduce() calls registerAgent()
-            );
-
-            // Anatomy matches other conditions exactly
-            org.anatomy.addDefaultCell(CellStates.mover, 0, -2);
-
-            const eye_ul = org.anatomy.addDefaultCell(CellStates.eye, -1, -1);
-            if (eye_ul) eye_ul.direction = 0;
-            const eye_ur = org.anatomy.addDefaultCell(CellStates.eye,  1, -1);
-            if (eye_ur) eye_ur.direction = 1;
-            const eye_dl = org.anatomy.addDefaultCell(CellStates.eye, -1,  1);
-            if (eye_dl) eye_dl.direction = 3;
-            const eye_dr = org.anatomy.addDefaultCell(CellStates.eye,  1,  1);
-            if (eye_dr) eye_dr.direction = 2;
-
-            org.anatomy.addDefaultCell(CellStates.mouth,  0, -1);
-            org.anatomy.addDefaultCell(CellStates.mouth, -1,  0);
-            org.anatomy.addDefaultCell(CellStates.mouth,  0,  0);
-            org.anatomy.addDefaultCell(CellStates.mouth,  1,  0);
-            org.anatomy.addDefaultCell(CellStates.mouth,  0,  1);
-
-            org.anatomy.checkTypeChange();
-
-            if (seed_weights) {
-                org.brain.setGenome(seed_weights);
-            }
-
-            // Genome left as random Xavier — no gene_pool for generation 0
-
-            const spawn = this._findSpawnPosition(org, spawn_col, spawn_row);
-            if (!spawn) continue;
-            org.c = spawn[0];
-            org.r = spawn[1];
-
+            // Founding population: random Xavier weights (buffer is empty)
+            const org = this._createOrganism(null);
+            if (!org) continue;
             this.env.addOrganism(org);
-            this.registerAgent(org);
+            this._trackAgent(org);
         }
-
-        if (!preserve_window_state) {
-            logger.logEvent('PureRL', `Founding population | ${POPULATION_SIZE} organisms | RL=true | no generational resets`);
-        }
-    }
-
-    respawnPopulationAtCenter() {
-        const template_agent = this._getBestWindowAgent();
-        if (!template_agent || !template_agent.brain) {
-            return false;
-        }
-
-        const center = this.env.grid_map ? this.env.grid_map.getCenter() : [this.spawn_col, this.spawn_row];
-        const seed_weights = new Float32Array(template_agent.brain.active_weights || template_agent.brain.genome_weights);
-
-        this.spawnGeneration({
-            preserve_window_state: true,
-            spawn_col: center[0],
-            spawn_row: center[1],
-            seed_weights,
-        });
 
         logger.logEvent('PureRL',
-            `Population extinct | respawned at center | best_fit=${template_agent.getFitness().toFixed(2)}`
-        );
-        return true;
+            `Founding population | ${POPULATION_SIZE} organisms | RL=true | ` +
+            `between_episode_mutation=${BETWEEN_EPISODE_MUTATION}`);
     }
 
     // ── Agent registration ────────────────────────────────────────────────────
 
     /**
-     * Register a newly born agent (founding or asexual descendant).
-     * Called by AdvancedOrganism.reproduce() for every child and by
-     * spawnGeneration() for founders.
+     * Called by AdvancedOrganism.reproduce() for naturally born children.
+     *
+     * Before registering the child, we sync the parent's active_weights →
+     * genome_weights so the child inherits the learned state rather than
+     * the original starting weights. This uses the existing inheritance
+     * path in AdvancedOrganism without modifying it.
+     *
+     * The child then receives Gaussian mutation via _mutateGenome() as
+     * normal — this is the within-episode mutation source.
      */
     registerAgent(agent) {
+        // agent.parent is set by AdvancedOrganism.reproduce() before calling
+        // registerAgent. Sync parent's active → genome so this child
+        // inherits the learned state.
+        if (agent.parent && agent.parent.brain) {
+            agent.parent.brain.syncGenomeFromActive();
+        }
+        this._trackAgent(agent);
+    }
+
+    _trackAgent(agent) {
         this.all_agents_this_window.push(agent);
         this.living_agents.add(agent);
         if (this.living_agents.size > this.peak_population) {
@@ -206,30 +181,21 @@ class PureRLManager {
 
     // ── Per-tick update ───────────────────────────────────────────────────────
 
-    /**
-     * Call once per world tick (after WorldEnvironment.update()).
-     * Returns 'NEXT_MAP' at each map boundary, 'NEXT_WINDOW' at each
-     * measurement window boundary (every TICKS_PER_GEN ticks).
-     * Returns null otherwise.
-     *
-     * Unlike GAManager, 'NEXT_WINDOW' does NOT trigger a population reset —
-     * it only triggers metric logging and counter resets.
-     */
     tick() {
         this.tick_count++;
         this.map_tick_count++;
         this.total_ticks++;
 
-        // Remove newly dead agents from the living set.
-        // Collect first, then delete — modifying a Set while iterating it is
-        // undefined behaviour in older runtimes and can skip entries in V8.
-        const dead_agents = [];
+        // Remove dead agents, snapshot their active_weights into buffer
+        const dead = [];
         for (const agent of this.living_agents) {
-            if (!agent.living) dead_agents.push(agent);
+            if (!agent.living) dead.push(agent);
         }
-        for (const agent of dead_agents) {
+        for (const agent of dead) {
             this.living_agents.delete(agent);
+            this._bufferDeadWeights(agent);
         }
+
 
         if (this.map_tick_count >= TICKS_PER_MAP) {
             this.current_map_index++;
@@ -242,96 +208,207 @@ class PureRLManager {
         return null;
     }
 
-    /**
-     * Transition to the next map within a measurement window.
-     * Organisms keep their positions and energy — same behaviour as GAManager.
-     */
     startNextMap() {
         this.map_tick_count = 0;
-        logger.logEvent('PureRL', `Window ${this.generation} -> Map ${this.current_map_index + 1}/${MAPS_PER_GEN}`);
+        logger.logEvent('PureRL',
+            `Window ${this.generation} -> Map ` +
+            `${this.current_map_index + 1}/${MAPS_PER_GEN}`);
 
-        const survivors = Array.from(this.living_agents);
-        this.env.organisms = [];
-
-        for (const org of survivors) {
+        // Reset RL eligibility traces — each map is a fresh episode
+        for (const org of this.living_agents) {
             if (org.brain && org.brain.resetTraces) {
                 org.brain.resetTraces();
             }
+        }
+
+        this.env.organisms = [];
+        for (const org of this.living_agents) {
             this.env.addOrganism(org);
         }
     }
 
-    /**
-     * Close a measurement window: log metrics, reset window counters.
-     * Does NOT reset the population — organisms continue living.
-     * Call when tick() returns 'NEXT_WINDOW'.
-     */
     closeWindow() {
-        for (const agent of this.living_agents) {
-            if (agent.brain && typeof agent.brain.syncGenomeFromActive === 'function') {
-                agent.brain.syncGenomeFromActive();
+        const living_arr = Array.from(this.living_agents);
+
+        // ── Collapse: respawn from buffer at episode boundary ─────────────────
+        // If the population hit zero during the episode, wait until the boundary
+        // then seed the next episode from the rolling weight buffer.
+        // Collapse is a legitimate episode outcome — don't paper over it by
+        // mid-episode respawning, which inflates that window's fitness metrics.
+        if (living_arr.length === 0) {
+            logger.logEvent('PureRL',
+                `Window ${this.generation} | collapse — seeding next episode ` +
+                `from buffer (buffer_size=${this._dead_weight_buffer.length})`);
+            this._respawnFromBuffer(POPULATION_SIZE);
+        } else {
+            // ── Random cap (NOT fitness-based) ────────────────────────────────
+            // Remove excess organisms randomly — no fitness signal.
+            if (living_arr.length > POPULATION_SIZE) {
+                // Fisher-Yates shuffle, remove the tail
+                for (let i = living_arr.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [living_arr[i], living_arr[j]] = [living_arr[j], living_arr[i]];
+                }
+                const excess = living_arr.slice(POPULATION_SIZE);
+                for (const org of excess) {
+                    // Buffer their weights before removing, in case of future collapse
+                    this._bufferDeadWeights(org);
+                    org.living = false;
+                    this.living_agents.delete(org);
+                }
+                logger.logEvent('PureRL',
+                    `Window ${this.generation} | random cap: removed ` +
+                    `${excess.length} organisms randomly ` +
+                    `(${living_arr.length} → ${this.living_agents.size})`);
+            }
+
+            // ── Between-episode mutation (optional) ───────────────────────────
+            // Undirected Gaussian noise on active_weights of all survivors.
+            // Synced to genome_weights so children next episode inherit the
+            // mutated learned state. No fitness signal — not selection.
+            if (BETWEEN_EPISODE_MUTATION) {
+                for (const org of this.living_agents) {
+                    if (!org.brain) continue;
+                    this._mutateWeights(org.brain.active_weights);
+                    org.brain.genome_weights =
+                        new Float32Array(org.brain.active_weights);
+                }
             }
         }
 
-        // Snapshot all agents active this window (dead + alive)
-        const sorted = [...this.all_agents_this_window]
+        // ── Log ───────────────────────────────────────────────────────────────
+        const all_sorted = [...this.all_agents_this_window]
             .sort((a, b) => b.getFitness() - a.getFitness());
 
-        // Log using the same Logger.logGeneration path as GAManager so CSV
-        // schemas are identical across all conditions
-        logger.logGeneration(this, sorted);
+        logger.logGeneration(this, all_sorted);
 
         logger.logEvent('PureRL',
             `Window ${this.generation} closed | ` +
             `living=${this.living_agents.size} | ` +
-            `window_agents=${sorted.length} | ` +
-            `best_fit=${sorted.length > 0 ? sorted[0].getFitness().toFixed(2) : 'n/a'}`
-        );
+            `window_agents=${all_sorted.length} | ` +
+            `best_fit=${all_sorted.length > 0
+                ? all_sorted[0].getFitness().toFixed(2) : 'n/a'} | ` +
+            `between_mutation=${BETWEEN_EPISODE_MUTATION}`);
 
-        // Reset window counters — population continues uninterrupted
+        // ── Reset window counters — population continues uninterrupted ────────
         this.generation++;
         this.tick_count          = 0;
         this.map_tick_count      = 0;
         this.current_map_index   = 0;
         this.peak_population     = this.living_agents.size;
-
-        // New window tracks agents alive at the start of the window plus any
-        // born during it — seed with currently living agents
         this.all_agents_this_window = Array.from(this.living_agents);
     }
 
-    _getBestWindowAgent() {
-        if (this.all_agents_this_window.length === 0) {
-            return null;
-        }
+    // ── Collapse respawn ──────────────────────────────────────────────────────
 
-        let best_agent = this.all_agents_this_window[0];
-        let best_fitness = best_agent.getFitness();
-        for (let i = 1; i < this.all_agents_this_window.length; i++) {
-            const agent = this.all_agents_this_window[i];
-            const fitness = agent.getFitness();
-            if (fitness > best_fitness) {
-                best_agent = agent;
-                best_fitness = fitness;
+    /**
+     * Respawn N organisms by randomly sampling from the dead weight buffer.
+     * Each organism gets one randomly chosen buffer entry — preserving real
+     * individual strategies rather than averaging (which can produce weight
+     * vectors no organism ever actually had).
+     *
+     * If the buffer is empty (very first episode collapsed before anyone
+     * died, which is extremely unlikely), falls back to random Xavier.
+     */
+    _respawnFromBuffer(n) {
+        for (let i = 0; i < n; i++) {
+            let seed = null;
+            if (this._dead_weight_buffer.length > 0) {
+                const idx = Math.floor(
+                    Math.random() * this._dead_weight_buffer.length);
+                seed = new Float32Array(this._dead_weight_buffer[idx]);
             }
+            const org = this._createOrganism(seed);
+            if (!org) continue;
+            this.env.addOrganism(org);
+            this._trackAgent(org);
         }
-
-        return best_agent;
     }
 
-    // ── Spawn helpers ─────────────────────────────────────────────────────────
+    /**
+     * Snapshot an organism's active_weights into the rolling buffer.
+     * Oldest entry is dropped when the buffer exceeds COLLAPSE_BUFFER_SIZE.
+     */
+    _bufferDeadWeights(agent) {
+        if (!agent.brain || !agent.brain.active_weights) return;
+        this._dead_weight_buffer.push(
+            new Float32Array(agent.brain.active_weights));
+        if (this._dead_weight_buffer.length > COLLAPSE_BUFFER_SIZE) {
+            this._dead_weight_buffer.shift();
+        }
+    }
 
-    _getRandomSpawnPosition(spawn_col = this.spawn_col, spawn_row = this.spawn_row) {
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /**
+     * Gaussian mutation on a weight array in-place.
+     * Same kernel as AdvancedOrganism._mutateGenome():
+     *   5% per-weight probability, σ=0.1, clipped to [-1, 1].
+     */
+    _mutateWeights(weights) {
+        if (!weights) return;
+        for (let i = 0; i < weights.length; i++) {
+            if (Math.random() < EPISODE_MUT_PROB) {
+                const u1 = 1 - Math.random();
+                const u2 = 1 - Math.random();
+                const z  = Math.sqrt(-2 * Math.log(u1)) *
+                           Math.cos(2 * Math.PI * u2);
+                weights[i] += EPISODE_MUT_SIGMA * z;
+                weights[i]  = Math.max(-1, Math.min(1, weights[i]));
+            }
+        }
+    }
+
+    _createOrganism(seed_weights) {
+        const org = new AdvancedOrganism(
+            0, 0, this.env,
+            null,   // no parent — genome set below
+            true,   // rl_enabled
+            this    // manager ref so reproduce() calls registerAgent()
+        );
+
+        org.anatomy.addDefaultCell(CellStates.mover, 0, -2);
+        const eye_ul = org.anatomy.addDefaultCell(CellStates.eye, -1, -1);
+        if (eye_ul) eye_ul.direction = 0;
+        const eye_ur = org.anatomy.addDefaultCell(CellStates.eye,  1, -1);
+        if (eye_ur) eye_ur.direction = 1;
+        const eye_dl = org.anatomy.addDefaultCell(CellStates.eye, -1,  1);
+        if (eye_dl) eye_dl.direction = 3;
+        const eye_dr = org.anatomy.addDefaultCell(CellStates.eye,  1,  1);
+        if (eye_dr) eye_dr.direction = 2;
+        org.anatomy.addDefaultCell(CellStates.mouth,  0, -1);
+        org.anatomy.addDefaultCell(CellStates.mouth, -1,  0);
+        org.anatomy.addDefaultCell(CellStates.mouth,  0,  0);
+        org.anatomy.addDefaultCell(CellStates.mouth,  1,  0);
+        org.anatomy.addDefaultCell(CellStates.mouth,  0,  1);
+        org.anatomy.checkTypeChange();
+
+        if (seed_weights) {
+            org.brain.setGenome(seed_weights);
+        }
+
+        const spawn = this._findSpawnPosition(
+            org, this.spawn_col, this.spawn_row);
+        if (!spawn) return null;
+        org.c = spawn[0];
+        org.r = spawn[1];
+        return org;
+    }
+
+    _getRandomSpawnPosition(
+        spawn_col = this.spawn_col,
+        spawn_row = this.spawn_row
+    ) {
         const grid = this.env.grid_map;
         if (!grid) return [spawn_col, spawn_row];
-
         for (let i = 0; i < 50; i++) {
             const rx = (Math.random() * 2 - 1) * SPAWN_RADIUS;
             const ry = (Math.random() * 2 - 1) * SPAWN_RADIUS;
             if (rx * rx + ry * ry <= SPAWN_RADIUS * SPAWN_RADIUS) {
                 const col = Math.floor(spawn_col + rx);
                 const row = Math.floor(spawn_row + ry);
-                if (col >= 0 && col < grid.cols && row >= 0 && row < grid.rows) {
+                if (col >= 0 && col < grid.cols &&
+                    row >= 0 && row < grid.rows) {
                     return [col, row];
                 }
             }
@@ -339,12 +416,11 @@ class PureRLManager {
         return [spawn_col, spawn_row];
     }
 
-    _findSpawnPosition(org, spawn_col = this.spawn_col, spawn_row = this.spawn_row, attempts = 200) {
+    _findSpawnPosition(org, spawn_col, spawn_row, attempts = 200) {
         for (let i = 0; i < attempts; i++) {
-            const [col, row] = this._getRandomSpawnPosition(spawn_col, spawn_row);
-            if (org.isClear(col, row, org.rotation)) {
-                return [col, row];
-            }
+            const [col, row] = this._getRandomSpawnPosition(
+                spawn_col, spawn_row);
+            if (org.isClear(col, row, org.rotation)) return [col, row];
         }
         return null;
     }

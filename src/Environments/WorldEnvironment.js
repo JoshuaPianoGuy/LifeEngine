@@ -41,6 +41,15 @@ class WorldEnvironment extends Environment {
         // Null until generateWorld() is called for the first time.
         this._world_snapshot = null;
 
+        // ── Fixed map pool ────────────────────────────────────────────────
+        // 50 pre-generated maps loaded from map_pool.json.
+        // All conditions cycle through the same sequence for reproducibility.
+        // ── Fixed map pool ────────────────────────────────────────────────
+        this._map_pool       = null; 
+        this._map_sequence   = [4, 3, 2, 1, 0]; // 0-indexed: Map 3, 2, 4, 1, 5
+        this._sequence_index = 0;               // Tracks where we are in the sequence
+        this._loadMapPool();
+
         this.learning_enabled = WorldConfig.learning_enabled;
         const center    = this.grid_map.getCenter();
         const spawn_col = center[0] + 15;
@@ -174,11 +183,14 @@ class WorldEnvironment extends Environment {
     // All positions are jittered so the map looks organic, not grid-like.
 
     generateWorld() {
-        // Clear all walls from previous generation
+        if (this._map_pool && this._map_pool.length > 0) {
+            this._loadMapFromPool();
+            return;
+        }
+        // Fallback if pool failed to load — random generation
         this.clearWalls();
-        // Clear all cells including walls for each new generation to prevent accumulation
         this.grid_map.fillGrid(CellStates.empty, false);
-        this.walls = [];  // Clear the walls array as well
+        this.walls = [];
 
         const cols = this.grid_map.cols;
         const rows = this.grid_map.rows;
@@ -232,6 +244,10 @@ class WorldEnvironment extends Environment {
 
             const patch_size = 130 + Math.floor(rng() * 80);  // 130–210 cells
             this._placeBlob(pos.c, pos.r, 15, CellStates.lowFood, patch_size, rng);
+            // Landmark lines pointing toward this low food patch
+            this._placeLandmarkLines(pos.c, pos.r, CellStates.lowFoodLandmark,
+                2 + Math.floor(rng() * 2), 18 + Math.floor(rng() * 8),
+                22 + Math.floor(rng() * 10), rng);
         }
 
         // ── Prestige food: 6–8 tight patches, randomly placed ────────────────
@@ -243,6 +259,13 @@ class WorldEnvironment extends Environment {
 
             const patch_size = 60 + Math.floor(rng() * 40);  // 60–100 cells
             this._placeBlob(pos.c, pos.r, 12, CellStates.prestigeFood, patch_size, rng);
+            // More prominent landmark lines for rarer prestige food
+            this._placeLandmarkLines(pos.c, pos.r, CellStates.prestigeFoodLandmark,
+                3 + Math.floor(rng() * 2), 22 + Math.floor(rng() * 11),
+                28 + Math.floor(rng() * 12), rng);
+            // Extra shorter outer lines for early detection
+            this._placeLandmarkLines(pos.c, pos.r, CellStates.prestigeFoodLandmark,
+                2, 14, 44 + Math.floor(rng() * 8), rng);
         }
 
         // ── Medium food: scattered patches, randomly placed ─────────────────
@@ -254,6 +277,10 @@ class WorldEnvironment extends Environment {
 
             const patch_size = 90 + Math.floor(rng() * 60);  // 90–150 cells
             this._placeBlob(pos.c, pos.r, 14, CellStates.mediumFood, patch_size, rng);
+            // Landmark lines pointing toward this medium food patch
+            this._placeLandmarkLines(pos.c, pos.r, CellStates.mediumFoodLandmark,
+                2 + Math.floor(rng() * 2), 20 + Math.floor(rng() * 9),
+                25 + Math.floor(rng() * 10), rng);
         }
 
         // ── Caves: solid rectangles, well-separated ────────────────────────────
@@ -276,25 +303,110 @@ class WorldEnvironment extends Environment {
             }
         }
 
-        // ── Obstacles: wall rectangles, like reference image ──────────────────
-        // 10–15 wall blocks placed at mid-range, well away from food patches.
-        // Centred on their position like caves.
-        const obstacle_count = 10 + Math.floor(rng() * 6);
-        for (let i = 0; i < obstacle_count; i++) {
-            const pos = pickPosition(50, 180, placed_centres, 50);
-            if (!pos) continue;
-            placed_centres.push(pos);
-            const w = 8 + Math.floor(rng() * 10);
-            const h = 8 + Math.floor(rng() * 10);
-            this._placeRect(pos.c - Math.floor(w/2), pos.r - Math.floor(h/2), w, h, CellStates.wall);
-        }
+        // Obstacles removed — fixed maps use pool; fallback uses no walls.
 
         // Take a snapshot so all subsequent generations restore this exact layout.
         this._takeWorldSnapshot();
     }
 
+
+    // ── Fixed map pool ────────────────────────────────────────────────────
+
+    _loadMapPool() {
+            try {
+                // Webpack resolves this path at build time and injects the parsed JSON object
+                const pool = require('../maps/map_pool.json'); 
+                
+                this._map_pool = pool.maps;
+                console.log(`[WorldEnv] Loaded map pool: ${this._map_pool.length} maps`);
+            } catch (e) {
+                console.warn('[WorldEnv] map_pool.json not found — falling back to random generation:', e.message);
+                this._map_pool = null;
+            }
+        }
+
+    /**
+     * Load the next map from the pool into the world.
+     * Advances _map_pool_index (wraps at pool length).
+     * Converts relative {c_rel, r_rel} coords to absolute for the current grid.
+     */
+    _loadMapFromPool() {
+        // Get the target map index from your custom sequence array
+        const target_map_index = this._map_sequence[this._sequence_index % this._map_sequence.length];
+        this._sequence_index++; // Move to the next item in your sequence
+
+        // Grab the actual map using that target index
+        const map = this._map_pool[target_map_index];
+
+        const cols = this.grid_map.cols;
+        const rows = this.grid_map.rows;
+
+        // Clear everything
+        this.clearWalls();
+        this.grid_map.fillGrid(CellStates.empty, false);
+        this.walls = [];
+
+        const stateMap = {
+            'food':                    CellStates.food,
+            'low food':                CellStates.lowFood,
+            'medium food':             CellStates.mediumFood,
+            'prestige food':           CellStates.prestigeFood,
+            'cave':                    CellStates.cave,
+            'low food landmark':       CellStates.lowFoodLandmark,
+            'medium food landmark':    CellStates.mediumFoodLandmark,
+            'prestige food landmark':  CellStates.prestigeFoodLandmark,
+        };
+
+        for (const entry of map.cells) {
+            const c     = Math.round(entry.c_rel * cols);
+            const r     = Math.round(entry.r_rel * rows);
+            const state = stateMap[entry.name];
+            if (state && c >= 0 && c < cols && r >= 0 && r < rows) {
+                this.changeCell(c, r, state, null);
+            }
+        }
+
+        // Snapshot so periodic food respawn works from this map's layout
+        this._takeWorldSnapshot();
+
+        console.log(`[WorldEnv] Map ${this._map_pool_index}/${this._map_pool.length} ` +
+            `profile=${map.profile} cells=${map.cell_count}`);
+    }
+
     // Place a food patch using 2D Gaussian spread — organic, irregular shape.
     // Keep sigma small (5–8) for distinct patches, larger (12+) for diffuse areas.
+    /**
+     * Draw N landmark lines pointing inward toward a food patch centre.
+     * Each line starts at offset_r cells from the patch and draws toward it,
+     * matching the document description: directional "blurred lines" that
+     * indicate a food type is nearby. The NN perceives each landmark type
+     * as a distinct input (indices 5-7 in the 11-type percept vector).
+     */
+    _placeLandmarkLines(patch_cx, patch_cy, state, n_lines, line_len, offset_r, rng) {
+        for (let i = 0; i < n_lines; i++) {
+            const angle   = rng() * 2 * Math.PI;
+            const start_c = Math.round(patch_cx + offset_r * Math.cos(angle));
+            const start_r = Math.round(patch_cy + offset_r * Math.sin(angle));
+            const dx   = patch_cx - start_c;
+            const dy   = patch_cy - start_r;
+            const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+            const ux   = dx / dist;
+            const uy   = dy / dist;
+            // Slight angular jitter so lines aren't perfectly straight
+            const jitter = (rng() - 0.5) * 0.4;
+            const vx = ux * Math.cos(jitter) - uy * Math.sin(jitter);
+            const vy = ux * Math.sin(jitter) + uy * Math.cos(jitter);
+            for (let step = 0; step < line_len; step++) {
+                const c = Math.round(start_c + vx * step);
+                const r = Math.round(start_r + vy * step);
+                const cell = this.grid_map.cellAt(c, r);
+                if (cell && cell.state === CellStates.empty) {
+                    this.changeCell(c, r, state, null);
+                }
+            }
+        }
+    }
+
     _placeBlob(cx, cy, sigma, state, count, rng) {
         let placed = 0;
         for (let attempt = 0; attempt < count * 8 && placed < count; attempt++) {
