@@ -3,3 +3,5 @@ dist/js/bundle.js
 ./package-lock.json
 dist/js/bundle.js.LICENSE.txt
 /logs
+/output_logs
+/figures

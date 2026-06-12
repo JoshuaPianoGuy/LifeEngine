@@ -46,6 +46,7 @@ const logger          = require('../Logger');
 const POPULATION_SIZE = 100;   // founding population per generation; raised for larger experiments
 const SELECTION_PERCENT = 0.2; // top 20% GA selection
 const MUT_PROB        = 0.03;  // 3% per-weight mutation probability between generations
+const TOURNAMENT_K    = 2;     // tournament size for parent selection
 const MUT_SIGMA       = 0.1;   // Gaussian noise std-dev
 const SPAWN_RADIUS    = 30;    // spawn organisms within a 30-cell radius to fit 100 organisms
 
@@ -266,30 +267,27 @@ class GAManager {
 
         this._recordMetrics(sorted);
 
-        // Use top 20% of population (at least 1, at most the whole population)
-        let num_parents = Math.floor(sorted.length * SELECTION_PERCENT);
-        num_parents = Math.max(1, Math.min(num_parents, sorted.length));
-        
-        const parents = sorted.slice(0, num_parents);
+        // Tournament selection (k=TOURNAMENT_K) replaces truncation selection.
+        // Each parent slot runs a mini-tournament: draw k agents at random from
+        // the full sorted population, the fitter one wins. This gives every agent
+        // a non-zero selection chance while still favouring higher fitness —
+        // selection pressure is controlled by k without a hard truncation cutoff.
+        // The between-generation mutation step (_mutate) is unchanged.
         const next_pool = [];
-        
-        logger.logEvent('GA', `Gen ${this.generation - 1} size: ${sorted.length} agents, selecting top ${num_parents} (20%) parents`);
 
-        // Fill entire next generation with crossover offspring — no elitism.
-        // Every genome comes from uniform crossover between two parents drawn
-        // randomly from the top-5, then mutated.
+        logger.logEvent('GA',
+            `Gen ${this.generation - 1} | ${sorted.length} agents | ` +
+            `tournament k=${TOURNAMENT_K} → ${POPULATION_SIZE} offspring`);
+
         while (next_pool.length < POPULATION_SIZE) {
-            const pa_idx = Math.floor(Math.random() * parents.length);
-            let pb_idx;
-            //id only one organism survives pa_idx === pb_idx
+            const pa = this._tournamentSelect(sorted);
+            let pb;
+            // Ensure two distinct parents when pool is large enough
             do {
-                pb_idx = Math.floor(Math.random() * parents.length);
-            } while (pb_idx === pa_idx && parents.length > 1);
+                pb = this._tournamentSelect(sorted);
+            } while (pb === pa && sorted.length > 1);
 
-            const child = this._uniformCrossover(
-                parents[pa_idx].getGenome(), 
-                parents[pb_idx].getGenome()
-            );
+            const child = this._uniformCrossover(pa.getGenome(), pb.getGenome());
             this._mutate(child);
             next_pool.push(child);
         }
@@ -298,6 +296,23 @@ class GAManager {
     }
 
     // ── Genetic operators ─────────────────────────────────────────────────────
+
+    /**
+     * Tournament selection: draw TOURNAMENT_K agents at random from the pool
+     * and return the one with the highest fitness. With k=2 this gives a
+     * selection probability of p(rank i) = (n-i)/(n*(n-1)/2) approximately,
+     * preserving diversity while still favouring fit agents.
+     */
+    _tournamentSelect(pool) {
+        let best = null;
+        for (let i = 0; i < TOURNAMENT_K; i++) {
+            const candidate = pool[Math.floor(Math.random() * pool.length)];
+            if (best === null || candidate.getFitness() > best.getFitness()) {
+                best = candidate;
+            }
+        }
+        return best;
+    }
 
     /**
      * Uniform crossover: each weight independently from parent A or B at 50/50.
@@ -442,5 +457,6 @@ GAManager.POPULATION_SIZE = POPULATION_SIZE;
 GAManager.SELECTION_PERCENT = SELECTION_PERCENT;
 GAManager.MUT_PROB        = MUT_PROB;
 GAManager.MUT_SIGMA       = MUT_SIGMA;
+GAManager.TOURNAMENT_K    = TOURNAMENT_K;
 
 module.exports = GAManager;
