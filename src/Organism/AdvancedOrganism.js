@@ -54,8 +54,7 @@ const MAX_LIFETIME      = 1000000;  // increased from 1500 to allow more time fo
 
 // Generation length in ticks: TICKS_PER_MAP * MAPS_PER_GEN from GAManager.js.
 // No organism can outlive a generation, so this is the true ceiling for
-// within-lifetime epsilon decay. Must be kept in sync with GAManager's
-// TICKS_PER_MAP and MAPS_PER_GEN constants — if those change, update this.
+// within-lifetime epsilon decay. Must stay in sync with GAManager constants.
 const TICKS_PER_GEN = 10000; // 2000 ticks/map * 5 maps/gen
 const ENERGY_CAPACITY   = 500;   // maximum energy set to 500
 const START_ENERGY      = 300;   // increased from 100 to give organisms buffer for reproduction
@@ -64,11 +63,11 @@ const ENERGY_DECAY_INTERVAL = 10; // ticks between decay events (per spec: lose 
 
 // ── Day/night energy mechanics ─────────────────────────────────────────────────
 //
-// Day (300 ticks):
+// Day (150 ticks):
 //   - Outside cave: normal decay (1 per 10 ticks) — organisms search for food
 //   - Inside cave: accelerated decay (2-3x rate) — not a refuge during day
 //
-// Night (300 ticks):
+// Night (75 ticks):
 //   - Inside cave: energy frozen — safe sleeping spot
 //   - Outside cave: fast energy loss — incentive to find cave before night
 //
@@ -152,6 +151,20 @@ class AdvancedOrganism extends Organism {
 
         // Energy-based reproduction: child spawns when parent gains 10 energy
         this.energyGainedSinceReproduction = 0;
+
+        // Epsilon decay window: the organism's maximum possible lifetime is
+        // TICKS_PER_GEN minus however many generation ticks had elapsed when
+        // it was born. An organism born at tick 0 can live up to 10k ticks;
+        // one born at tick 4000 can live at most 6k ticks. Using this as the
+        // denominator for lifetime_frac in _nnMove() means epsilon always
+        // decays from EPSILON_START to EPSILON_END over the organism's full
+        // available lifespan, regardless of when within the generation it
+        // was born. Without this, late-born offspring would have artificially
+        // compressed lifetime_frac values and die still highly exploratory.
+        const birth_tick = (ga_manager && ga_manager.tick_count != null)
+            ? ga_manager.tick_count
+            : 0;
+        this._max_possible_lifetime = Math.max(1, TICKS_PER_GEN - birth_tick);
     }
 
     // ── Lifespan ──────────────────────────────────────────────────────────────
@@ -184,7 +197,7 @@ class AdvancedOrganism extends Organism {
         }
 
         // ── Energy decay with day/night and cave mechanics ────────────────────
-        // Day: normal outside, 2x faster in caves
+        // Day: normal outside, 3x faster in caves
         // Night: frozen in caves, 2x faster outside
         if (this.lifetime % ENERGY_DECAY_INTERVAL === 0) {
             const is_night = this.env.isNight();
@@ -273,15 +286,7 @@ class AdvancedOrganism extends Organism {
     // ── NNBrain movement ──────────────────────────────────────────────────────
 
     _nnMove() {
-        // lifetime_frac runs 0 → 1 over the generation's tick length, not over
-        // MAX_LIFETIME (1,000,000) which no organism can ever reach — the
-        // generation ends at TICKS_PER_GEN (10,000) and all organisms are
-        // replaced. Using MAX_LIFETIME as the denominator meant lifetime_frac
-        // never exceeded 0.01, so epsilon barely moved from EPSILON_START and
-        // the quadratic decay was effectively disabled. Using TICKS_PER_GEN
-        // means epsilon correctly decays from EPSILON_START to EPSILON_END
-        // over each organism's actual lifespan within the generation.
-        const lifetime_frac = Math.min(1, this.lifetime / TICKS_PER_GEN);
+        const lifetime_frac = Math.min(1, this.lifetime / this._max_possible_lifetime);
         const reward        = this.pending_reward;
         this.pending_reward = 0;
 
@@ -503,20 +508,29 @@ class AdvancedOrganism extends Organism {
         const new_r = this.r + direction_r;
         
         if (this.isClear(new_c, new_r)) {
-            // Clear old cell positions, but preserve landmarks and caves
+            // Clear old cell positions, but preserve landmarks, caves, and
+            // predator body cells. Predator cells must be skipped for the same
+            // reason landmarks are: clearing them to empty silently removes the
+            // predator from the grid without calling die(), turning it into a
+            // ghost that still updates but has no grid presence.
             for (const cell of this.anatomy.cells) {
                 const real_c = this.c + cell.rotatedCol(this.rotation);
                 const real_r = this.r + cell.rotatedRow(this.rotation);
                 const existing_cell = this.env.grid_map.cellAt(real_c, real_r);
                 
-                // Only clear if NOT a landmark or cave
                 if (existing_cell) {
                     const name = existing_cell.state.name;
                     if (name === 'low food landmark'
                         || name === 'medium food landmark'
                         || name === 'prestige food landmark'
                         || name === 'cave') {
-                        continue; // Keep landscape intact
+                        continue;
+                    }
+                    // Skip cells currently owned by a living predator
+                    if (existing_cell.owner != null
+                        && existing_cell.owner.is_predator
+                        && existing_cell.owner.living) {
+                        continue;
                     }
                 }
                 
@@ -545,20 +559,25 @@ class AdvancedOrganism extends Organism {
             rotation = Directions.getRandomDirection();
         }
         if (this.isClear(this.c, this.r, rotation)) {
-            // Clear old cell positions, but preserve landmarks and caves
+            // Clear old cell positions, but preserve landmarks, caves, and
+            // predator body cells (same reason as attemptMove).
             for (const cell of this.anatomy.cells) {
                 const real_c = this.c + cell.rotatedCol(this.rotation);
                 const real_r = this.r + cell.rotatedRow(this.rotation);
                 const existing_cell = this.env.grid_map.cellAt(real_c, real_r);
                 
-                // Only clear if NOT a landmark or cave
                 if (existing_cell) {
                     const name = existing_cell.state.name;
                     if (name === 'low food landmark'
                         || name === 'medium food landmark'
                         || name === 'prestige food landmark'
                         || name === 'cave') {
-                        continue; // Keep landscape intact
+                        continue;
+                    }
+                    if (existing_cell.owner != null
+                        && existing_cell.owner.is_predator
+                        && existing_cell.owner.living) {
+                        continue;
                     }
                 }
                 
@@ -591,19 +610,30 @@ class AdvancedOrganism extends Organism {
             const real_r = this.r + cell.rotatedRow(this.rotation);
             const existing_cell = this.env.grid_map.cellAt(real_c, real_r);
             
-            // If the space has a landmark or cave, preserve it - don't overwrite
             if (existing_cell) {
                 const name = existing_cell.state.name;
+                // Preserve landscape cells — overwriting them would erase
+                // fixed terrain features permanently.
                 if (name === 'low food landmark'
                     || name === 'medium food landmark'
                     || name === 'prestige food landmark'
                     || name === 'cave') {
-                    // Skip updating this cell to preserve the landscape
+                    continue;
+                }
+                // Preserve predator cells — overwriting them erases the
+                // predator from the grid without killing it, producing a
+                // ghost predator that still updates but has no grid presence.
+                // Contact-based draining is handled by PredatorDrainCell's
+                // adjacency scan, not by grid-cell ownership, so prey
+                // occupying the same logical space as a predator is fine —
+                // the drain fires on adjacency regardless.
+                if (existing_cell.owner != null
+                    && existing_cell.owner.is_predator
+                    && existing_cell.owner.living) {
                     continue;
                 }
             }
             
-            // Otherwise, place the organism cell as normal
             this.env.changeCell(real_c, real_r, cell.state, cell);
         }
     }
