@@ -4,6 +4,10 @@ const MoverCell = require("./MoverCell");
 const KillerCell = require("./KillerCell");
 const ArmorCell = require("./ArmorCell");
 const EyeCell = require("./EyeCell");
+const PredatorBodyCell = require("./PredatorBodyCell");
+const PredatorMoverCell = require("./PredatorMoverCell");
+const PredatorEyeCell = require("./PredatorEyeCell");
+const PredatorDrainCell = require("./PredatorDrainCell");
 const CellStates = require("../CellStates");
 
 
@@ -16,6 +20,10 @@ const BodyCellFactory = {
         type_map[CellStates.killer.name] = KillerCell;
         type_map[CellStates.armor.name] = ArmorCell;
         type_map[CellStates.eye.name] = EyeCell;
+        type_map[CellStates.predatorBody.name] = PredatorBodyCell;
+        type_map[CellStates.predatorMover.name] = PredatorMoverCell;
+        type_map[CellStates.predatorEye.name] = PredatorEyeCell;
+        type_map[CellStates.predatorDrain.name] = PredatorDrainCell;
         this.type_map = type_map;
     },
 

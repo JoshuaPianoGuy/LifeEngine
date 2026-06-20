@@ -51,6 +51,12 @@ const FossilRecord = require('../Stats/FossilRecord');
 // ── Energy constants ──────────────────────────────────────────────────────────
 
 const MAX_LIFETIME      = 1000000;  // increased from 1500 to allow more time for learning
+
+// Generation length in ticks: TICKS_PER_MAP * MAPS_PER_GEN from GAManager.js.
+// No organism can outlive a generation, so this is the true ceiling for
+// within-lifetime epsilon decay. Must be kept in sync with GAManager's
+// TICKS_PER_MAP and MAPS_PER_GEN constants — if those change, update this.
+const TICKS_PER_GEN = 10000; // 2000 ticks/map * 5 maps/gen
 const ENERGY_CAPACITY   = 500;   // maximum energy set to 500
 const START_ENERGY      = 300;   // increased from 100 to give organisms buffer for reproduction
 const ENERGY_DECAY_RATE = 1;     // energy lost per decay event
@@ -58,11 +64,11 @@ const ENERGY_DECAY_INTERVAL = 10; // ticks between decay events (per spec: lose 
 
 // ── Day/night energy mechanics ─────────────────────────────────────────────────
 //
-// Day (150 ticks):
+// Day (300 ticks):
 //   - Outside cave: normal decay (1 per 10 ticks) — organisms search for food
 //   - Inside cave: accelerated decay (2-3x rate) — not a refuge during day
 //
-// Night (75 ticks):
+// Night (300 ticks):
 //   - Inside cave: energy frozen — safe sleeping spot
 //   - Outside cave: fast energy loss — incentive to find cave before night
 //
@@ -178,7 +184,7 @@ class AdvancedOrganism extends Organism {
         }
 
         // ── Energy decay with day/night and cave mechanics ────────────────────
-        // Day: normal outside, 3x faster in caves
+        // Day: normal outside, 2x faster in caves
         // Night: frozen in caves, 2x faster outside
         if (this.lifetime % ENERGY_DECAY_INTERVAL === 0) {
             const is_night = this.env.isNight();
@@ -267,7 +273,15 @@ class AdvancedOrganism extends Organism {
     // ── NNBrain movement ──────────────────────────────────────────────────────
 
     _nnMove() {
-        const lifetime_frac = Math.min(1, this.lifetime / MAX_LIFETIME);
+        // lifetime_frac runs 0 → 1 over the generation's tick length, not over
+        // MAX_LIFETIME (1,000,000) which no organism can ever reach — the
+        // generation ends at TICKS_PER_GEN (10,000) and all organisms are
+        // replaced. Using MAX_LIFETIME as the denominator meant lifetime_frac
+        // never exceeded 0.01, so epsilon barely moved from EPSILON_START and
+        // the quadratic decay was effectively disabled. Using TICKS_PER_GEN
+        // means epsilon correctly decays from EPSILON_START to EPSILON_END
+        // over each organism's actual lifespan within the generation.
+        const lifetime_frac = Math.min(1, this.lifetime / TICKS_PER_GEN);
         const reward        = this.pending_reward;
         this.pending_reward = 0;
 

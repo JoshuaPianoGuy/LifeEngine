@@ -57,6 +57,13 @@ const Directions = require('../Directions');
 // Anything not listed falls back to 0 (nothing).
 // Keys are CellState.name values (the string passed to super() in each class).
 // These must match exactly — note spaces in the new food/landmark names.
+//
+// Index 10 ("prey organism body") vs index 11 ("predator organism body") is
+// the deliberate differentiation point: prey can now tell "another prey
+// organism is here" apart from "a predator is here" via eye raycasts, rather
+// than both collapsing into one ambiguous "occupied" signal. This is what
+// makes learned/evolved avoidance possible from direct perception, not just
+// from the indirect energy-loss consequence of contact (PredatorDrainCell).
 const PERCEPT_INDEX = {
     'empty':                    0,
     'wall':                     4,
@@ -74,8 +81,12 @@ const PERCEPT_INDEX = {
     'killer':                   10,
     'armor':                    10,
     'eye':                      10,
+    'predator body':            11,
+    'predator mover':           11,
+    'predator eye':             11,
+    'predator drain':           11,
 };
-const N_PERCEPT_TYPES = 11;
+const N_PERCEPT_TYPES = 12;
 
 // Fixed iteration order for the 4 eye directions
 const EYE_DIRECTIONS = [
@@ -88,17 +99,17 @@ const N_EYE_DIRECTIONS = 4;
 
 // Network topology
 const N_SCALARS   = 2;   // energy + rotation
-const STATE_SIZE  = N_EYE_DIRECTIONS * N_PERCEPT_TYPES + N_SCALARS;  // 46
+const STATE_SIZE  = N_EYE_DIRECTIONS * N_PERCEPT_TYPES + N_SCALARS;  // 50
 const HIDDEN_SIZE = 32;
 const OUTPUT_SIZE = 6;   // up, right, down, left, rotate-left, rotate-right
 
 const DEBUG_STATE_VECTOR = false;  // Set to true to log the 42-element input vector
 
-const W1_SIZE     = STATE_SIZE  * HIDDEN_SIZE;   // 1472
+const W1_SIZE     = STATE_SIZE  * HIDDEN_SIZE;   // 1600
 const B1_SIZE     = HIDDEN_SIZE;                 //   32
 const W2_SIZE     = HIDDEN_SIZE * OUTPUT_SIZE;   //  192
 const B2_SIZE     = OUTPUT_SIZE;                 //    6
-const GENOME_SIZE = W1_SIZE + B1_SIZE + W2_SIZE + B2_SIZE;  // 1702
+const GENOME_SIZE = W1_SIZE + B1_SIZE + W2_SIZE + B2_SIZE;  // 1830
 
 // RL hyper-parameters
 const RL_LR            = 0.02;

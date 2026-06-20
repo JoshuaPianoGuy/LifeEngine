@@ -18,7 +18,12 @@ const color_schemes = {
         "killer":"#F82380",
         "armor":"#7230DB",
         "eye":"#B6C1EA",
-        "eye-slit": "#0E1318"
+        "eye-slit": "#0E1318",
+        "predator body":"#3D0000",
+        "predator mover":"#5C0011",
+        "predator eye":"#FF003C",
+        "predator eye-slit": "#0E1318",
+        "predator drain":"#8C0030"
     },
     "classic":{
         "empty":"#121D29",
@@ -37,7 +42,12 @@ const color_schemes = {
         "killer":"red",
         "armor":"purple",
         "eye":"yellow",
-        "eye-slit": "#121D29"
+        "eye-slit": "#121D29",
+        "predator body":"#4A0000",
+        "predator mover":"#660000",
+        "predator eye":"#FF1A1A",
+        "predator eye-slit": "#121D29",
+        "predator drain":"#8B0000"
     },
     "soft":{
         "empty":"#0B0E11",
@@ -56,7 +66,12 @@ const color_schemes = {
         "killer":"#B06B85",
         "armor":"#7C69B5",
         "eye":"#AEB4C2",
-        "eye-slit": "#0B0E11"
+        "eye-slit": "#0B0E11",
+        "predator body":"#4D1A22",
+        "predator mover":"#6B2531",
+        "predator eye":"#C24B5E",
+        "predator eye-slit": "#0B0E11",
+        "predator drain":"#8C3344"
     },
     "dark":{
         "empty":"black",
@@ -75,7 +90,12 @@ const color_schemes = {
         "killer":"#992E5E",
         "armor":"#5632B5",
         "eye":"#8892B3",
-        "eye-slit": "black"
+        "eye-slit": "black",
+        "predator body":"#3D0A14",
+        "predator mover":"#591020",
+        "predator eye":"#C41E3A",
+        "predator eye-slit": "black",
+        "predator drain":"#7A1530"
     },
     "grayscale":{
         "empty":"black",
@@ -94,7 +114,12 @@ const color_schemes = {
         "killer":"#AAAAAA",
         "armor":"#999999",
         "eye":"#888888",
-        "eye-slit": "black"
+        "eye-slit": "black",
+        "predator body":"#222222",
+        "predator mover":"#333333",
+        "predator eye":"#444444",
+        "predator eye-slit": "black",
+        "predator drain":"#111111"
     }
 }
 const color_scheme_names = Object.keys(color_schemes);
@@ -115,6 +140,7 @@ class ColorSchemeSingleton {
             state.color = color_scheme[state.name];
         }
         CellStates.eye.slit_color=color_scheme['eye-slit']
+        CellStates.predatorEye.slit_color=color_scheme['predator eye-slit']
         for (var cell_type in color_scheme) {
             // Set colors for cell-type and cell-legend-type with proper selector syntax
             const cell_type_elem = $('#' + cell_type.replace(/ /g, '\\ ') + '.cell-type');

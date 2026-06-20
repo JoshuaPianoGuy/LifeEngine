@@ -6,6 +6,8 @@ const AdvancedOrganism = require('../Organism/AdvancedOrganism');
 const GAManager = require('../Organism/GAManager');
 const FrozenPolicyManager = require('../Organism/FrozenPolicyManager');
 const PureRLManager = require('../Organism/PureRLManager');
+const PredatorManager = require('../Organism/PredatorManager');
+const PredatorHyperparameters = require('../Organism/PredatorHyperparameters');
 const CellStates = require('../Organism/Cell/CellStates');
 const EnvironmentController = require('../Controllers/EnvironmentController');
 const Hyperparams = require('../Hyperparameters.js');
@@ -67,6 +69,14 @@ class WorldEnvironment extends Environment {
         }
 
         FossilRecord.setEnv(this);
+
+        // ── Predation ────────────────────────────────────────────────────
+        // Independent of ga_manager: predators are a fixed environmental
+        // hazard, not part of the experimental population. They persist
+        // across generation/map boundaries (see PredatorManager docs) and
+        // are spawned once here; population count is enforced by
+        // PredatorManager for the entire lifetime of the simulation.
+        this.predator_manager = new PredatorManager(this);
     }
 
     update() {
@@ -82,12 +92,15 @@ class WorldEnvironment extends Environment {
             if (status === 'NEXT_MAP') {
                 this.generateWorld();
                 this.ga_manager.startNextMap();
+                this.predator_manager.relocateAll();
                 this.renderFull();
             } else if (status === 'NEXT_GENERATION') {
                 this.ga_manager.evolve();
                 this.generateWorld();
                 this.ga_manager.spawnGeneration();
+                this.predator_manager.relocateAll();
                 this.renderFull();
+                this.predator_manager.tick();
                 return;
             } else if (status === 'NEXT_WINDOW') {
                 // PureRLManager: log metrics and reset window counters but do
@@ -100,6 +113,7 @@ class WorldEnvironment extends Environment {
                 } else {
                     this.generateWorld();
                     this.ga_manager.startNextMap();
+                    this.predator_manager.relocateAll();
                     this.renderFull();
                 }
             }
@@ -110,10 +124,28 @@ class WorldEnvironment extends Environment {
                 }
             }
         }
-        
+
+        // Predators persist across generation/map boundaries and are ticked
+        // every world update regardless of ga_manager state — they are not
+        // part of the experimental population and have no generation concept
+        // of their own. (Skipped above via early `return` only on the
+        // NEXT_GENERATION branch, where it's called explicitly instead,
+        // since that branch returns before reaching here.)
+        this.predator_manager.tick();
+
         // Randomly respawn food periodically
         if (this.total_ticks % 1200 == 0) {
             this._restoreWorldSnapshotWithProbability(0.2);
+            // _restoreWorldSnapshotWithProbability calls fillGrid(empty, ...)
+            // first, which blanks every non-wall cell including whatever
+            // square a predator currently occupies. Predators redraw
+            // themselves every tick via their own updateGrid(), but a food/
+            // landmark cell from the snapshot could land on a predator's
+            // square in the same pass and overwrite it until that happens.
+            // Re-drawing here closes that one-tick window.
+            for (const org of this.predator_manager.predators) {
+                if (org && org.living) org.updateGrid();
+            }
         }
         
         if (this.total_ticks % this.data_update_rate == 0) {
@@ -693,6 +725,11 @@ class WorldEnvironment extends Environment {
         if (reset_life) {
             this.ga_manager.spawnGeneration();
         }
+        // Reset predators to a fresh fixed-count population on the new
+        // layout. A manual reset is the one place where re-spawning (rather
+        // than relocating) is appropriate, since the rest of the simulation
+        // state (ticks, generation count) is also being reset here.
+        this.predator_manager.spawnAll();
         if (restart) this.engine.start(this.engine.last_fps);
         return true;
     }

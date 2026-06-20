@@ -24,6 +24,11 @@ class Engine {
         // Initialize founding population using GA manager (always used for generation tracking)
         // Do this AFTER ColorScheme.loadColorScheme() so rendering is properly initialized
         this.env.ga_manager.spawnGeneration();
+
+        // Spawn the fixed predator population. Independent of ga_manager —
+        // predators persist across every generation/map boundary for the
+        // rest of the simulation's life (see PredatorManager docs).
+        this.env.predator_manager.spawnAll();
         
         // Render the organisms on the canvas
         this.env.renderFull();

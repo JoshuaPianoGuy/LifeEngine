@@ -86,9 +86,14 @@ class Anatomy {
         for (var cell of this.cells) {
             if (cell.state == CellStates.producer)
                 this.is_producer = true;
-            if (cell.state == CellStates.mover)
+            // predatorMover/predatorEye are a separate cell-state family from
+            // the prey mover/eye states (see CellStates.js), but should set
+            // the same is_mover/has_eyes anatomy flags — base Organism.update()
+            // and the movement pipeline (attemptMove/attemptRotate) key off
+            // these flags regardless of which kind of organism owns them.
+            if (cell.state == CellStates.mover || cell.state == CellStates.predatorMover)
                 this.is_mover = true;
-            if (cell.state == CellStates.eye)
+            if (cell.state == CellStates.eye || cell.state == CellStates.predatorEye)
                 this.has_eyes = true;
         }
     }

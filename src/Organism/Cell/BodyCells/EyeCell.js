@@ -41,6 +41,13 @@ class EyeCell extends BodyCell{
     }
 
     look() {
+        // Predator cells are a distinct percept (index 11, see
+        // NNBrain.PERCEPT_INDEX) from prey organism cells (index 10) — a
+        // raycast hitting a predator reports "predator here" specifically,
+        // not just "something occupies this cell" or "nothing." This is
+        // what makes direct, perception-based avoidance learnable/evolvable,
+        // as opposed to only an indirect energy-loss consequence of contact
+        // (see PredatorDrainCell).
         var env = this.org.env;
         var direction = this.getAbsoluteDirection();
         var addCol = 0;
