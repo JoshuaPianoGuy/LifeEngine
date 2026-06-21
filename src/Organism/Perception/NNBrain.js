@@ -418,19 +418,25 @@ class NNBrain {
             console.log(`[Org #${this.owner.id} tick ${this.owner.lifetime}] State: ${parts.join(' | ')}`);
         }
 
-        // Epsilon-greedy: quadratic decay from EPSILON_START to EPSILON_END (faster decay)
-        const epsilon = EPSILON_START + (EPSILON_END - EPSILON_START) * (lifetime_frac ** 2);
+        // Epsilon-greedy exploration only applies in RL conditions. In GA-only
+        // (rl_enabled=false) organisms act purely on their inherited policy —
+        // random action injection would corrupt the GA baseline since organisms
+        // would be spending up to 50% of their ticks on random behaviour
+        // regardless of what the genome encodes.
         let action;
-        //only REINFORCE policy actions?
-        //let was_random = false;
-        if (Math.random() < epsilon) {
-            this.forward(state); // cache hidden activations
-            action = Math.floor(Math.random() * OUTPUT_SIZE);
-            this._last_action = action;
-            // override probs with uniform distribution
-            this._probs.fill(1 / OUTPUT_SIZE);
-            this._last_probs = this._probs;
+        if (this.rl_enabled) {
+            const epsilon = EPSILON_START + (EPSILON_END - EPSILON_START) * (lifetime_frac ** 2);
+            if (Math.random() < epsilon) {
+                this.forward(state); // cache hidden activations for REINFORCE
+                action = Math.floor(Math.random() * OUTPUT_SIZE);
+                this._last_action = action;
+                this._probs.fill(1 / OUTPUT_SIZE);
+                this._last_probs = this._probs;
+            } else {
+                action = this.forward(state);
+            }
         } else {
+            // Pure policy execution — no exploration noise, no weight updates.
             action = this.forward(state);
         }
 
