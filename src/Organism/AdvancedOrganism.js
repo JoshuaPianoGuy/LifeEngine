@@ -34,9 +34,10 @@
  * 7. Die() does NOT drop food (per experiment spec). Cells become empty.
  *
  * Reward function (drives RL in Condition A):
- *   +food energy value    when food is eaten
- *   -DECAY_PENALTY        each time energy ticks down
- *   +EXPLORE_BONUS        for each newly visited grid cell
+ *   +food energy value                    when food is eaten (0.01 / 0.5 / 1.0 / 2.0 by tier)
+ *   -DECAY_PENALTY * decay                per decay event — scales with rate (normal 0.05, accelerated 0.10, cave-night 0)
+ *   +EXPLORE_BONUS                        for each newly visited grid cell
+ *   -PREDATOR_DRAIN_PENALTY * drainAmount on predator contact (injected by PredatorDrainCell)
  */
 
 'use strict';
@@ -86,10 +87,20 @@ const DEFAULT_FOOD_ENERGY = FOOD_ENERGY.food || 0.01;
 
 // ── Reward constants ──────────────────────────────────────────────────────────
 
-const DECAY_PENALTY  = 0.05;   // negative reward each time energy decays
-//try 0.01--0.1?
+const DECAY_PENALTY  = 0.05;   // reward penalty per unit of energy lost to decay
+// Multiplied by actual decay each tick, so accelerated decay (2x in day-cave
+// or night-outside) produces 2x the penalty signal automatically.
+// Normal: 0.05*1=0.05, accelerated: 0.05*2=0.10, night-cave: 0.05*0=0 (no penalty).
 const EXPLORE_BONUS  = 0.15;  // positive reward for visiting a new cell
 //try 0.1--0.3? initially 0.02, but organisms had less incentive to explore after eating high tier food
+//ignore previous comment. maybe make this lower (like 0.02 or so) because epsilon ensure exploration and the importance
+//should be on finding food
+
+// Multiplier on energy lost to a predator drain contact.
+// At 0.5, one drain unit (drainAmount=1.0) gives reward -0.5 — equal to one
+// low food tile, large enough to discourage contact without dominating the
+// signal when patrol predators are near high-tier food.
+const PREDATOR_DRAIN_PENALTY = 0.5;
 
 // ── Debugging ───────────────────────────────────────────────────────────────
 const DEBUG_ACTIONS = false;  // Set to true to log NN actions and movement outcomes
@@ -221,7 +232,10 @@ class AdvancedOrganism extends Organism {
             }
 
             this.energy -= decay;
-            this.pending_reward -= DECAY_PENALTY;
+            // Scale penalty by actual decay so 2x decay situations produce
+            // 2x the negative signal. Night-cave case (decay=0) fires no
+            // penalty, which is correct since no energy is lost there.
+            this.pending_reward -= DECAY_PENALTY * decay;
         }
 
         if (this.energy <= 0) {
@@ -271,6 +285,13 @@ class AdvancedOrganism extends Organism {
             const type = this.last_eaten_state || 'food';
             this.food_by_type[type] = (this.food_by_type[type] || 0) + 1;
         }
+    }
+
+    // Called by PredatorDrainCell.drainNeighbor() immediately after it
+    // decrements this.energy. Injects a proportional negative reward so
+    // REINFORCE sees the predator contact signal on the same tick it occurs.
+    notifyPredatorDrain(amount) {
+        this.pending_reward -= PREDATOR_DRAIN_PENALTY * amount;
     }
 
     _foodValue() {

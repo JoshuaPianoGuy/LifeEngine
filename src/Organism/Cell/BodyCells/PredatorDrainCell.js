@@ -35,6 +35,12 @@ class PredatorDrainCell extends BodyCell {
         if (typeof target.energy !== 'number') return;
 
         target.energy -= PredatorHyperparams.drainAmount;
+        // Notify prey so it can inject a negative RL reward signal this tick.
+        // The typeof guard keeps this safe if any non-AdvancedOrganism prey
+        // type passes through (no import of AdvancedOrganism needed here).
+        if (typeof target.notifyPredatorDrain === 'function') {
+            target.notifyPredatorDrain(PredatorHyperparams.drainAmount);
+        }
         // The prey's own update() loop only checks energy<=0 once per tick,
         // before its cells run — and predator drain happens on the
         // predator's tick, not the prey's. Without an explicit check here,
