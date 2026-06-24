@@ -54,9 +54,12 @@ const WEIGHT_SNAPSHOT_PRECISION = 6;
 // Keeps organisms.csv size predictable regardless of population growth.
 // 20 organisms is sufficient for PCA centroids, t-SNE, and MAD analysis.
 // Increase if within-generation weight diversity analysis is needed.
-const MAX_ORGANISM_LOG_PER_GEN = 20;
-const LOG_W1_SNAPSHOT = true;
-const LOG_ACTIVE_SNAPSHOT = true;
+const MAX_ORGANISM_LOG_PER_GEN = 2000;
+// Weight snapshots disabled — full vectors are expensive and not needed
+// while the primary per-organism weight metric is learned_weight_diff (MAD).
+// Re-enable if PCA/t-SNE on raw weight vectors is needed for a specific run.
+const LOG_W1_SNAPSHOT        = false;  // was true
+const LOG_ACTIVE_SNAPSHOT    = false;  // was true
 const LOG_FULL_GENOME_SNAPSHOT = false;
 
 // Maximum number of organism rows to hold in RAM between flushes.
@@ -250,11 +253,18 @@ class Logger {
             food_prestige:            food_counts['prestige food'] || 0,
             food_default:             food_counts['food']          || 0,
             cells_visited:            agent.visited_cells ? agent.visited_cells.size : 0,
+            // learned_weight_diff: MAD between active_weights and genome_weights.
+            // This is the primary per-organism weight metric — measures how much
+            // within-lifetime RL has shifted the policy away from the inherited genome.
+            // Non-zero only in the learning condition; ~0 in GA-only and Pure RL
+            // (where active_weights === genome_weights or are Lamarckian-synced).
             learned_weight_diff:      learned_weight_diff !== null ? learned_weight_diff.toFixed(6) : 'n/a',
             network_weight_magnitude: network_weight_mag.toFixed(4),
-            w1_weights:               LOG_W1_SNAPSHOT ? this._snapshotW1(agent) : '',
-            active_weights:           LOG_ACTIVE_SNAPSHOT ? this._snapshotActive(agent) : '',
-            genome_weights:           LOG_FULL_GENOME_SNAPSHOT ? this._snapshotGenome(agent) : '',
+            // Weight snapshots commented out — re-enable flags at top of file if
+            // raw vector analysis (PCA, t-SNE) is needed for a specific run.
+            // w1_weights:            LOG_W1_SNAPSHOT ? this._snapshotW1(agent) : '',
+            // active_weights:        LOG_ACTIVE_SNAPSHOT ? this._snapshotActive(agent) : '',
+            // genome_weights:        LOG_FULL_GENOME_SNAPSHOT ? this._snapshotGenome(agent) : '',
         };
 
         this.organism_log.push(entry);
@@ -541,12 +551,10 @@ class Logger {
 
         const header = Object.keys(slice[0]).join(',');
 
-        // Organism rows contain two full weight snapshots (~25 KB each).
-        // Browsers enforce a 64 KB hard limit on keepalive fetch bodies and
-        // silently drop the request without any error if it is exceeded — so
-        // keepalive must NOT be used for organism payloads.
-        // generations/events rows are tiny and safe to send with keepalive.
-        const isLargePayload = filename === 'organisms.csv';
+        // Organism rows no longer contain weight snapshots so payload size is
+        // small and uniform across all three files. keepalive is still skipped
+        // for organisms as a precaution, but chunk sizes can be uniform.
+        const isLargePayload = false;
 
         // Keep chunks small enough that even organism rows don't hit limits.
         // 2 rows × 25 KB = 50 KB < 64 KB keepalive ceiling (used for others).
