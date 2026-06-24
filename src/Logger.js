@@ -50,11 +50,10 @@ if (isNodeRuntime) {
 
 const WEIGHT_SNAPSHOT_PRECISION = 6;
 
-// Fixed cap on organism rows logged per generation.
-// Keeps organisms.csv size predictable regardless of population growth.
-// 20 organisms is sufficient for PCA centroids, t-SNE, and MAD analysis.
-// Increase if within-generation weight diversity analysis is needed.
-const MAX_ORGANISM_LOG_PER_GEN = 2000;
+// Cap on organism rows logged per generation. Set high enough to capture the
+// full population (peak ~1600 agents) now that weight snapshots are disabled
+// and per-row size is negligible. Lower if disk/memory becomes a concern.
+const MAX_ORGANISM_LOG_PER_GEN = 20000;
 // Weight snapshots disabled — full vectors are expensive and not needed
 // while the primary per-organism weight metric is learned_weight_diff (MAD).
 // Re-enable if PCA/t-SNE on raw weight vectors is needed for a specific run.
@@ -62,10 +61,11 @@ const LOG_W1_SNAPSHOT        = false;  // was true
 const LOG_ACTIVE_SNAPSHOT    = false;  // was true
 const LOG_FULL_GENOME_SNAPSHOT = false;
 
-// Maximum number of organism rows to hold in RAM between flushes.
-// At 100 organisms/gen × AUTO_SAVE_EVERY_N_GENS=5 = 500 rows per flush cycle.
-// Cap at 2000 as a safety backstop (e.g. if the server is unreachable).
-const MAX_ORGANISM_LOG_ROWS = 2000;
+// In-memory safety cap on organism rows between flushes. With full-population
+// logging (~1600 agents/gen) and AUTO_SAVE_EVERY_N_GENS=5, up to ~8000 rows
+// can accumulate per flush cycle. 20000 gives comfortable headroom without
+// weight snapshots, where per-row size is now just a dozen scalar fields.
+const MAX_ORGANISM_LOG_ROWS = 20000;
 
 const AUTO_SAVE_ENABLED = true;
 const AUTO_SAVE_EVERY_N_GENS = 5;
@@ -123,9 +123,9 @@ class Logger {
         const num_top_pct  = Math.max(1, Math.floor(n * selection_pct));
         const top20pct     = sorted.slice(0, num_top_pct);
 
-        // Capped slice for organism weight logging — fixed at MAX_ORGANISM_LOG_PER_GEN
-        // to keep organisms.csv size predictable as population grows.
-        // Only used for the per-organism rows written to organisms.csv.
+        // Full population slice for organism logging — capped at MAX_ORGANISM_LOG_PER_GEN
+        // (effectively unlimited at 20000) to capture all agents now that weight
+        // snapshots are removed and per-row size is negligible.
         const top20pct_log = sorted.slice(0, Math.min(n, MAX_ORGANISM_LOG_PER_GEN));
 
         // Average energy at tick 1000 (fixed early-game sample)
@@ -147,8 +147,9 @@ class Logger {
         const avg_lifetime = sorted.reduce((s, a) => s + (a.lifetime || 0), 0) / n;
 
         // Learned weight difference: mean absolute deviation between active_weights and
-        // genome_weights across all agents. Only meaningful in Condition A (RL enabled).
-        // Measures how much within-lifetime learning has modified the starting weights.
+        // genome_weights across ALL agents (not just top 20%) — population-wide average
+        // is more informative for tracking assimilation than the selected cohort alone.
+        // Only meaningful in Condition A (RL enabled).
         const drifts = sorted.map(a => this._calcDrift(a)).filter(d => d !== null);
         const avg_learned_weight_diff = drifts.length > 0
             ? drifts.reduce((s, d) => s + d, 0) / drifts.length
