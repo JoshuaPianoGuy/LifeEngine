@@ -147,9 +147,9 @@ class Logger {
         const avg_lifetime = sorted.reduce((s, a) => s + (a.lifetime || 0), 0) / n;
 
         // Learned weight difference: mean absolute deviation between active_weights and
-        // genome_weights across all top 20% agents. Only meaningful in Condition A (RL enabled).
+        // genome_weights across all agents. Only meaningful in Condition A (RL enabled).
         // Measures how much within-lifetime learning has modified the starting weights.
-        const drifts = top20pct.map(a => this._calcDrift(a)).filter(d => d !== null);
+        const drifts = sorted.map(a => this._calcDrift(a)).filter(d => d !== null);
         const avg_learned_weight_diff = drifts.length > 0
             ? drifts.reduce((s, d) => s + d, 0) / drifts.length
             : 0;
