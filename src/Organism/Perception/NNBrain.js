@@ -100,7 +100,7 @@ const N_EYE_DIRECTIONS = 4;
 // Network topology
 const N_SCALARS   = 2;   // energy + rotation
 const STATE_SIZE  = N_EYE_DIRECTIONS * N_PERCEPT_TYPES + N_SCALARS;  // 50
-const HIDDEN_SIZE = 32;
+const HIDDEN_SIZE = 64;
 const OUTPUT_SIZE = 6;   // up, right, down, left, rotate-left, rotate-right
 
 const DEBUG_STATE_VECTOR = false;  // Set to true to log the 42-element input vector

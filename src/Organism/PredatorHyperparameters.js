@@ -18,7 +18,7 @@ const PredatorHyperparameters = {
     // never grows or shrinks below this number — PredatorManager respawns any
     // predator that somehow dies (e.g. future extension) or is removed, so
     // count(tick=1) === count(tick=10,000,000).
-    count: 0,
+    count: 15,
 
     // ── Energy drain ───────────────────────────────────────────────────────
     // Energy subtracted from a prey organism per drain-cell contact per tick.
@@ -26,7 +26,7 @@ const PredatorHyperparameters = {
     // plain mutable field (not a constant) so it can be swept programmatically
     // during hyperparameter tuning, e.g.:
     //   for (const d of [0.5, 1, 2, 4]) { PredatorHyperparameters.drainAmount = d; ... }
-    drainAmount: 1.0,
+    drainAmount: 5.0,
 
     // ── Movement ───────────────────────────────────────────────────────────
     // Ticks-per-move ratio relative to prey. Prey attempt a move every tick

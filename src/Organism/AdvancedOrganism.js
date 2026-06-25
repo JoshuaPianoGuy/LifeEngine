@@ -100,7 +100,7 @@ const EXPLORE_BONUS  = 0.15;  // positive reward for visiting a new cell
 // At 0.5, one drain unit (drainAmount=1.0) gives reward -0.5 — equal to one
 // low food tile, large enough to discourage contact without dominating the
 // signal when patrol predators are near high-tier food.
-const PREDATOR_DRAIN_PENALTY = 0.5;
+const PREDATOR_DRAIN_PENALTY = 0.2;
 
 // ── Debugging ───────────────────────────────────────────────────────────────
 const DEBUG_ACTIONS = false;  // Set to true to log NN actions and movement outcomes
