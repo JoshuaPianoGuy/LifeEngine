@@ -24,6 +24,16 @@ class WorldEnvironment extends Environment {
         this.controller = new EnvironmentController(this, this.renderer.canvas);
         this.num_rows = Math.ceil(this.renderer.height / cell_size);
         this.num_cols = Math.ceil(this.renderer.width / cell_size);
+
+        // Override canvas-derived dimensions with hardcoded values if set.
+        // This is the single place to change map size for HPC/headless runs
+        // without touching canvas or browser layout.
+        if (WorldConfig.MAP_COLS != null && WorldConfig.MAP_ROWS != null) {
+            this.renderer.fillShape(WorldConfig.MAP_ROWS * cell_size, WorldConfig.MAP_COLS * cell_size);
+            this.num_cols = WorldConfig.MAP_COLS;
+            this.num_rows = WorldConfig.MAP_ROWS;
+        }
+
         this.grid_map = new GridMap(this.num_cols, this.num_rows, cell_size);
         this.organisms = [];
         this.walls = [];
@@ -47,10 +57,17 @@ class WorldEnvironment extends Environment {
         // 50 pre-generated maps loaded from map_pool.json.
         // All conditions cycle through the same sequence for reproducibility.
         // ── Fixed map pool ────────────────────────────────────────────────
-        this._map_pool       = null; 
-        this._map_sequence   = [4, 3, 2, 1, 0]; // 0-indexed: Map 3, 2, 4, 1, 5
+        this._map_pool       = null;
         this._sequence_index = 0;               // Tracks where we are in the sequence
         this._loadMapPool();
+        // Fixed deterministic order through ALL pool maps: every run cycles the
+        // identical sequence 0,1,...,N-1. The pool is already profile-interleaved
+        // (sparse, low_medium, balanced, medium_rich, prestige_rich, repeating),
+        // so each pass over the 50 maps is a balanced rotation of all 5 density
+        // profiles. Reproducible across runs/conditions by construction.
+        this._map_sequence = (this._map_pool && this._map_pool.length > 0)
+            ? Array.from({ length: this._map_pool.length }, (_, i) => i)
+            : [0];
 
         this.learning_enabled = WorldConfig.learning_enabled;
         const center    = this.grid_map.getCenter();
@@ -284,10 +301,12 @@ class WorldEnvironment extends Environment {
 
         // ── Prestige food: 6–8 tight patches, randomly placed ────────────────
         const prestige_patch_count = 6 + Math.floor(rng() * 3);
+        const prestige_centres = [];
         for (let i = 0; i < prestige_patch_count; i++) {
             const pos = pickRandomPosition(placed_centres, 100);
             if (!pos) continue;
             placed_centres.push(pos);
+            prestige_centres.push(pos);
 
             const patch_size = 60 + Math.floor(rng() * 40);  // 60–100 cells
             this._placeBlob(pos.c, pos.r, 12, CellStates.prestigeFood, patch_size, rng);
@@ -299,6 +318,9 @@ class WorldEnvironment extends Environment {
             this._placeLandmarkLines(pos.c, pos.r, CellStates.prestigeFoodLandmark,
                 2, 14, 44 + Math.floor(rng() * 8), rng);
         }
+        // Expose prestige centres so PredatorManager can place patrol predators
+        // at each patch without a second grid scan.
+        this.prestige_patch_centres = prestige_centres;
 
         // ── Medium food: scattered patches, randomly placed ─────────────────
         const med_patch_count = 7 + Math.floor(rng() * 4);
@@ -347,10 +369,22 @@ class WorldEnvironment extends Environment {
     _loadMapPool() {
             try {
                 // Webpack resolves this path at build time and injects the parsed JSON object
-                const pool = require('../maps/map_pool.json'); 
-                
+                const pool = require('../maps/map_pool.json');
+
                 this._map_pool = pool.maps;
-                console.log(`[WorldEnv] Loaded map pool: ${this._map_pool.length} maps`);
+                this.map_seed  = (pool.seed != null) ? pool.seed : null;
+                console.log(`[WorldEnv] Loaded map pool: ${this._map_pool.length} maps (seed=${this.map_seed})`);
+
+                // Sanity-check: the active pool must match the configured run seed.
+                // A mismatch means map_pool.json wasn't regenerated for MAP_SEED.
+                const want = WorldConfig.MAP_SEED;
+                if (want != null && this.map_seed != null && this.map_seed !== want) {
+                    console.warn(
+                        `[WorldEnv] SEED MISMATCH: active map_pool.json is seed=${this.map_seed} ` +
+                        `but WorldConfig.MAP_SEED=${want}. Run: ` +
+                        `node generate_map_pool.js --seed ${want}  (then rebuild).`
+                    );
+                }
             } catch (e) {
                 console.warn('[WorldEnv] map_pool.json not found — falling back to random generation:', e.message);
                 this._map_pool = null;
@@ -401,12 +435,103 @@ class WorldEnvironment extends Environment {
         // Snapshot so periodic food respawn works from this map's layout
         this._takeWorldSnapshot();
 
+        // Derive prestige patch centres from the loaded map so patrol predators
+        // can be repositioned onto the correct patches after each map swap.
+        this.prestige_patch_centres = this._extractPrestigeCentres();
+
         console.log(`[WorldEnv] Map ${this._map_pool_index}/${this._map_pool.length} ` +
-            `profile=${map.profile} cells=${map.cell_count}`);
+            `profile=${map.profile} cells=${map.cell_count} ` +
+            `prestige_patches=${this.prestige_patch_centres.length}`);
     }
 
     // Place a food patch using 2D Gaussian spread — organic, irregular shape.
     // Keep sigma small (5–8) for distinct patches, larger (12+) for diffuse areas.
+
+    /**
+     * Cluster all prestige food cells on the current grid into patch centres
+     * using greedy grouping: cells within 20 cells of an existing centre are
+     * merged into it. Returns [{c, r}, ...] one per patch.
+     * Used after loading from the map pool so patrol predators can home to
+     * the correct prestige patches without a full re-generation.
+     */
+    _extractPrestigeCentres() {
+        // Connected-components clustering: one centre per distinct prestige
+        // patch. Two prestige cells belong to the same patch if they lie within
+        // LINK cells of EACH OTHER (union-find), so a patch stays a single
+        // component no matter how wide it is — the fixed-seed approach this
+        // replaces fragmented any patch wider than its merge radius, spawning
+        // several patrol homes (and therefore several times predatorsPerPatch
+        // predators) on one visual patch. LINK only has to exceed the largest
+        // internal gap of one blob while staying below inter-patch spacing,
+        // which is a wide, shape-independent window.
+        const PredatorHyperparams = require('../Organism/PredatorHyperparameters');
+        const LINK = (PredatorHyperparams.patrol &&
+                      PredatorHyperparams.patrol.patchLinkRadius) || 12;
+        const MIN_CELLS = (PredatorHyperparams.patrol &&
+                           PredatorHyperparams.patrol.minPatchCells) || 1;
+        const LINK2 = LINK * LINK;
+        const cols = this.grid_map.cols;
+        const rows = this.grid_map.rows;
+
+        // 1. Collect every prestige-food cell.
+        const cells = [];
+        for (let c = 0; c < cols; c++) {
+            for (let r = 0; r < rows; r++) {
+                const cell = this.grid_map.cellAt(c, r);
+                if (cell && cell.state === CellStates.prestigeFood) cells.push([c, r]);
+            }
+        }
+        if (cells.length === 0) return [];
+
+        // 2. Bucket cells into LINK-sized bins so each cell only compares
+        //    against neighbours in its own + adjacent bins — O(n) instead of
+        //    O(n^2). Any pair within LINK lands in bins at most one apart.
+        const bin = LINK > 0 ? LINK : 1;
+        const buckets = new Map();
+        const key = (bx, by) => bx + ',' + by;
+        cells.forEach(([c, r], i) => {
+            const k = key(Math.floor(c / bin), Math.floor(r / bin));
+            let arr = buckets.get(k);
+            if (!arr) { arr = []; buckets.set(k, arr); }
+            arr.push(i);
+        });
+
+        // 3. Union-find: join cells within LINK of one another.
+        const parent = cells.map((_, i) => i);
+        const find = (x) => { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; };
+        const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb; };
+        cells.forEach(([c, r], i) => {
+            const bx = Math.floor(c / bin), by = Math.floor(r / bin);
+            for (let dx = -1; dx <= 1; dx++) {
+                for (let dy = -1; dy <= 1; dy++) {
+                    const arr = buckets.get(key(bx + dx, by + dy));
+                    if (!arr) continue;
+                    for (const j of arr) {
+                        if (j <= i) continue;
+                        const ddc = c - cells[j][0], ddr = r - cells[j][1];
+                        if (ddc * ddc + ddr * ddr <= LINK2) union(i, j);
+                    }
+                }
+            }
+        });
+
+        // 4. Centroid of each component = patch centre. Components smaller than
+        //    MIN_CELLS are stray tail fragments, not real patches — drop them.
+        const groups = new Map();  // root -> { sum_c, sum_r, count }
+        cells.forEach(([c, r], i) => {
+            const root = find(i);
+            let g = groups.get(root);
+            if (!g) { g = { sum_c: 0, sum_r: 0, count: 0 }; groups.set(root, g); }
+            g.sum_c += c; g.sum_r += r; g.count += 1;
+        });
+        const centres = [];
+        for (const g of groups.values()) {
+            if (g.count < MIN_CELLS) continue;
+            centres.push({ c: Math.round(g.sum_c / g.count), r: Math.round(g.sum_r / g.count) });
+        }
+        return centres;
+    }
+
     /**
      * Draw N landmark lines pointing inward toward a food patch centre.
      * Each line starts at offset_r cells from the patch and draws toward it,

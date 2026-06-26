@@ -81,9 +81,8 @@ const logger           = require('../Logger');
 const POPULATION_SIZE = 100;
 const SPAWN_RADIUS    = 30;
 
-const TICKS_PER_MAP = 2000;
-const MAPS_PER_GEN  = 5;
-const TICKS_PER_GEN = TICKS_PER_MAP * MAPS_PER_GEN;  // 10 000
+// Generation length — single source of truth (honors WorldConfig overrides).
+const { TICKS_PER_MAP, MAPS_PER_GEN, TICKS_PER_GEN } = require('./GenerationConstants');
 
 // Rolling buffer size for collapse respawn — recent enough to reflect
 // current learning, large enough to have meaningful diversity.

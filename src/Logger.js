@@ -173,6 +173,7 @@ class Logger {
 
         const entry = {
             generation:              ga.generation,
+            map_seed:                this._mapSeed(ga),
             condition:               ga.condition_label || (ga.rl_enabled ? 'learning' : 'natural_selection'),
             wall_clock_s:            ((Date.now() - this._start_time) / 1000).toFixed(1),
             generation_ticks:        ga.tick_count,
@@ -239,12 +240,17 @@ class Logger {
         const entry = {
             generation,
             rank,
+            map_seed:                 this._mapSeed(agent),
             condition:                (agent && agent.ga_manager && agent.ga_manager.condition_label)
                 ? agent.ga_manager.condition_label
                 : (rl_enabled ? 'learning' : 'natural_selection'),
             fitness:                  agent.getFitness().toFixed(4),
             lifetime:                 agent.lifetime || 0,
             energy_at_death:          (agent.energy || 0).toFixed(2),
+            // Why the organism's life ended: 'drained' (predator delivered the
+            // killing blow), 'starved' (energy decayed to 0), 'lifespan' (hit
+            // the cap), or 'survived' (still alive at generation end).
+            death_cause:              agent.death_cause || 'survived',
             energy_at_tick_1000:      agent.energy_at_early_sample !== null && agent.energy_at_early_sample !== undefined
                 ? agent.energy_at_early_sample.toFixed(2)
                 : 'n/a',
@@ -254,6 +260,16 @@ class Logger {
             food_prestige:            food_counts['prestige food'] || 0,
             food_default:             food_counts['food']          || 0,
             cells_visited:            agent.visited_cells ? agent.visited_cells.size : 0,
+            // ── Predator-interaction + cave-use behaviour ─────────────────────
+            // predator_touches: distinct predator attachment episodes (leave +
+            //   re-attach counts as 2; staying latched across ticks counts as 1).
+            // drained_ticks: number of ticks a predator was draining this org.
+            // cave_entries: distinct cave entries, split by day/night at entry.
+            predator_touches:         agent.predator_touch_count || 0,
+            drained_ticks:            agent.drained_ticks || 0,
+            cave_entries:             agent.cave_entry_count || 0,
+            cave_entries_day:         agent.cave_entries_day || 0,
+            cave_entries_night:       agent.cave_entries_night || 0,
             // learned_weight_diff: MAD between active_weights and genome_weights.
             // This is the primary per-organism weight metric — measures how much
             // within-lifetime RL has shifted the policy away from the inherited genome.
@@ -341,7 +357,7 @@ class Logger {
 
     // ── Compact binary weight encoding ────────────────────────────────────────
     //
-    // Space breakdown per organism row (GENOME_SIZE=1702, W1_SIZE=1472):
+    // Space breakdown per organism row (GENOME_SIZE=1830, W1_SIZE=1600):
     //   Old text at 6 d.p.:  ~30 KB/row
     //   Float32 + Base64:    ~17 KB/row  (-43%)
     //   Int8   + Base64:      ~5 KB/row  (-85%, ~0.008 resolution, fine for genomes)
@@ -589,6 +605,15 @@ class Logger {
         const mode = WorldConfig.experiment_mode;
         if (mode === 'frozen_pg' || mode === 'pure_rl') return mode;
         return 'standard';
+    }
+
+    // Map seed for the current run. Prefers the seed the active pool was
+    // generated with (env.map_seed, set in WorldEnvironment._loadMapPool);
+    // falls back to the configured WorldConfig.MAP_SEED. Accepts either a
+    // GAManager or an organism — both expose `.env`.
+    _mapSeed(obj) {
+        if (obj && obj.env && obj.env.map_seed != null) return obj.env.map_seed;
+        return (WorldConfig.MAP_SEED != null) ? WorldConfig.MAP_SEED : '';
     }
 
     _getRunDir(rl_enabled) {

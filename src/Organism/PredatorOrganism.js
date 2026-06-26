@@ -59,6 +59,12 @@ class PredatorOrganism extends Organism {
 
         this.move_count = 0;
         this.move_range = 1; // unused directly — PredatorBrain drives direction every tick
+
+        // Per-anatomy-cell memory of the food state currently underneath each
+        // predator cell (null = nothing to restore). Lets the predator draw
+        // itself over food — staying visible to prey eye raycasts and blocking
+        // other organisms — while restoring the food intact once it moves off.
+        this._covered = [];
     }
 
     // ── Lifespan ──────────────────────────────────────────────────────────
@@ -99,24 +105,20 @@ class PredatorOrganism extends Organism {
     }
 
     // ── Passable cell override ──────────────────────────────────────────
-    // Predators may walk through empty space and through prey-related
-    // landscape (food/landmarks) exactly like prey can, but — unlike prey —
-    // may NOT enter caves. This is half of the cave-exclusion guarantee;
-    // the other half is PredatorBrain skipping caved prey as targets.
+    // Predators traverse ONLY empty space and food. They may NOT enter caves,
+    // walls, landmarks, or any cell occupied by another organism (prey or
+    // predator). Food is passable but never consumed — updateGrid draws the
+    // predator over it and restores it on departure (see _covered).
 
     isPassableCell(cell, parent) {
         if (cell == null) return false;
         if (cell.owner === this || cell.owner === parent) return true;
         const name = cell.state.name;
-        // Predators cannot enter caves, food tiles, or landmark tiles.
-        // Food/landmark exclusion prevents the predator's attemptMove() from
-        // calling changeCell(..., empty) on a food tile it was standing on,
-        // which would permanently erase that food from the environment.
-        // Predators only need to traverse empty cells to chase prey — they
-        // gain nothing from walking over food, and excluding it here means
-        // their movement is naturally channelled through open corridors,
-        // which is also more realistic behaviour.
-        return name === CellStates.empty.name;
+        return name === CellStates.empty.name
+            || name === CellStates.food.name
+            || name === CellStates.lowFood.name
+            || name === CellStates.mediumFood.name
+            || name === CellStates.prestigeFood.name;
     }
 
     isClear(col, row, rotation = this.rotation) {
@@ -124,17 +126,32 @@ class PredatorOrganism extends Organism {
             const cell = this.getRealCell(loccell, col, row, rotation);
             if (cell == null) return false;
             if (cell.owner === this) continue;
-            // Only empty cells are traversable — everything else (walls, caves,
-            // food, landmarks, other organisms) blocks movement.
-            if (cell.state.name !== CellStates.empty.name) return false;
+            // Only empty space and food are traversable. Walls, caves, and
+            // landmarks all block the predator. Food traversal is required so
+            // patrol predators aren't trapped inside the prestige patch they
+            // guard (every neighbour there is food).
+            const name = cell.state.name;
+            const traversable = name === CellStates.empty.name
+                || name === CellStates.food.name
+                || name === CellStates.lowFood.name
+                || name === CellStates.mediumFood.name
+                || name === CellStates.prestigeFood.name;
+            if (!traversable) return false;
+            // Even on traversable terrain, the cell must not be occupied by
+            // another organism — this is what stops predators overlapping each
+            // other or sharing a cell with prey.
+            if (cell.owner != null && cell.owner !== this) return false;
         }
         return true;
     }
 
     // ── Movement / rotation overrides ───────────────────────────────────
-    // Mirrors AdvancedOrganism's pattern of preserving landmarks/caves when
-    // clearing old cell positions, so predators don't erase landscape
-    // features as they move across them.
+    // Draw-remember-restore model: the predator always draws its cells onto
+    // the grid (so it stays visible to prey eye raycasts and occupies — and
+    // therefore blocks — its cells), recording any food underneath. When it
+    // moves off, the remembered food is restored, so the predator passes over
+    // food without deleting it. Food is never erased by the predator; only
+    // actual eating (which predators don't do) removes it.
 
     attemptMove() {
         const direction = Directions.scalars[this.direction];
@@ -142,46 +159,58 @@ class PredatorOrganism extends Organism {
         const new_r = this.r + direction[1];
 
         if (this.isClear(new_c, new_r)) {
-            for (const cell of this.anatomy.cells) {
-                const real_c = this.c + cell.rotatedCol(this.rotation);
-                const real_r = this.r + cell.rotatedRow(this.rotation);
-                const existing = this.env.grid_map.cellAt(real_c, real_r);
-                if (existing && this._isPreservedLandscape(existing.state)) continue;
-                this.env.changeCell(real_c, real_r, CellStates.empty, null);
-            }
+            this._clearOwnedCells();   // restores any covered food at the old position
             this.c = new_c;
             this.r = new_r;
-            this.updateGrid();
+            this.updateGrid();         // draws at new position, records covered food
             return true;
         }
         return false;
     }
 
-    _isPreservedLandscape(state) {
-        // Every environmental cell that must survive a predator moving over it.
-        // Food cells are included here because food can respawn beneath a
-        // stationary predator between ticks, and the clearance sweep in
-        // attemptMove() fires on the *old* position regardless of what's there
-        // now — so without food in this list, any food that appeared under the
-        // predator since its last move would be silently erased.
-        // Landmarks must also be preserved for the same reason (they're fixed
-        // and never re-placed, so any erasure would be permanent).
+    _isFoodState(state) {
         return state === CellStates.food
             || state === CellStates.lowFood
             || state === CellStates.mediumFood
-            || state === CellStates.prestigeFood
-            || state === CellStates.lowFoodLandmark
-            || state === CellStates.mediumFoodLandmark
-            || state === CellStates.prestigeFoodLandmark
-            || state === CellStates.cave;
+            || state === CellStates.prestigeFood;
     }
 
-    updateGrid() {
-        for (const cell of this.anatomy.cells) {
+    // Restore the predator's currently-occupied cells: put back the food that
+    // was underneath (if any), otherwise clear to empty. Only touches cells the
+    // predator still owns, so it never disturbs prey/landmarks/caves.
+    _clearOwnedCells() {
+        const cells = this.anatomy.cells;
+        for (let i = 0; i < cells.length; i++) {
+            const cell = cells[i];
             const real_c = this.c + cell.rotatedCol(this.rotation);
             const real_r = this.r + cell.rotatedRow(this.rotation);
             const existing = this.env.grid_map.cellAt(real_c, real_r);
-            if (existing && this._isPreservedLandscape(existing.state)) continue;
+            if (existing && existing.owner === this) {
+                const restore = this._covered[i];
+                this.env.changeCell(real_c, real_r, restore != null ? restore : CellStates.empty, null);
+            }
+            this._covered[i] = null;
+        }
+    }
+
+    updateGrid() {
+        const cells = this.anatomy.cells;
+        if (this._covered.length !== cells.length) {
+            this._covered = new Array(cells.length).fill(null);
+        }
+        for (let i = 0; i < cells.length; i++) {
+            const cell = cells[i];
+            const real_c = this.c + cell.rotatedCol(this.rotation);
+            const real_r = this.r + cell.rotatedRow(this.rotation);
+            const existing = this.env.grid_map.cellAt(real_c, real_r);
+            if (existing == null) continue;
+            // Record the food underneath the first time we occupy this square
+            // (before we've drawn ourselves here). If we already own it, keep
+            // the value recorded earlier — re-reading would see our own cell.
+            if (existing.owner !== this) {
+                this._covered[i] = this._isFoodState(existing.state) ? existing.state : null;
+            }
+            // Always draw the predator — visible to the NN, blocks others.
             this.env.changeCell(real_c, real_r, cell.state, cell);
         }
     }
@@ -191,16 +220,10 @@ class PredatorOrganism extends Organism {
     // implemented (rather than left as the base Organism.die(), which
     // touches this.species — predators have no species/FossilRecord entry)
     // so PredatorManager can safely respawn a predator if anything ever does
-    // remove one.
+    // remove one. Restores any food the predator was covering.
 
     die() {
-        for (const cell of this.anatomy.cells) {
-            const real_c = this.c + cell.rotatedCol(this.rotation);
-            const real_r = this.r + cell.rotatedRow(this.rotation);
-            const existing = this.env.grid_map.cellAt(real_c, real_r);
-            if (existing && this._isPreservedLandscape(existing.state)) continue;
-            this.env.changeCell(real_c, real_r, CellStates.empty, null);
-        }
+        this._clearOwnedCells();
         this.living = false;
     }
 

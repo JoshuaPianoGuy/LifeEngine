@@ -51,6 +51,9 @@ class PredatorDrainCell extends BodyCell {
         // perspective, just resolved at the moment of contact instead of
         // at the start of the prey's next tick.
         if (target.energy <= 0 && target.living) {
+            // Attribute this death to predation before die() runs, so the
+            // organism log can distinguish predator kills from starvation.
+            if (target.death_cause == null) target.death_cause = 'drained';
             target.die();
         }
     }

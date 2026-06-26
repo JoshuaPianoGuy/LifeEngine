@@ -53,10 +53,11 @@ const FossilRecord = require('../Stats/FossilRecord');
 
 const MAX_LIFETIME      = 1000000;  // increased from 1500 to allow more time for learning
 
-// Generation length in ticks: TICKS_PER_MAP * MAPS_PER_GEN from GAManager.js.
-// No organism can outlive a generation, so this is the true ceiling for
-// within-lifetime epsilon decay. Must stay in sync with GAManager constants.
-const TICKS_PER_GEN = 10000; // 2000 ticks/map * 5 maps/gen
+// Generation length in ticks. No organism can outlive a generation, so this is
+// the true ceiling for within-lifetime epsilon decay. Imported from the shared
+// GenerationConstants so it can never drift from the managers' generation length
+// (a mismatch would silently break the per-organism epsilon decay window).
+const { TICKS_PER_GEN } = require('./GenerationConstants');
 const ENERGY_CAPACITY   = 500;   // maximum energy set to 500
 const START_ENERGY      = 300;   // increased from 100 to give organisms buffer for reproduction
 const ENERGY_DECAY_RATE = 1;     // energy lost per decay event
@@ -160,6 +161,22 @@ class AdvancedOrganism extends Organism {
         // Per-food-type counts for Logger detail rows
         this.food_by_type = {};
 
+        // ── Behaviour / predator-interaction metrics (logged per organism) ────
+        // Used to study foraging vs predator avoidance (do attacked organisms
+        // survive, do they use caves to shake predators, do they reach high-tier
+        // food, etc). See Logger.logOrganism().
+        this.predator_touch_count = 0;    // distinct predator attachment episodes
+        this.drained_ticks        = 0;    // ticks on which a predator drained this org
+        this._last_drain_tick     = -2;   // last global tick a drain was registered
+        this.cave_entry_count     = 0;    // distinct cave entries (edge-triggered)
+        this.cave_entries_day     = 0;    // of those, entered during day
+        this.cave_entries_night   = 0;    // of those, entered during night
+        this._was_in_cave         = false;
+        // Why it died: 'drained' (predator drain delivered the killing blow),
+        // 'starved' (energy ran out from decay), 'lifespan' (hit MAX_LIFETIME).
+        // Stays null for organisms still alive at generation end → 'survived'.
+        this.death_cause          = null;
+
         // Energy-based reproduction: child spawns when parent gains 10 energy
         this.energyGainedSinceReproduction = 0;
 
@@ -198,6 +215,7 @@ class AdvancedOrganism extends Organism {
 
         // Hard lifespan cap
         if (this.lifetime > MAX_LIFETIME) {
+            this.death_cause = 'lifespan';
             this.die();
             return false;
         }
@@ -206,6 +224,18 @@ class AdvancedOrganism extends Organism {
         if (this.lifetime === this._early_sample_tick) {
             this.energy_at_early_sample = this.energy;
         }
+
+        // ── Cave-entry tracking (edge-triggered) ──────────────────────────────
+        // Count a new entry each time the organism crosses from outside into a
+        // cave, tagged with whether it was day or night at entry. Re-entering
+        // after leaving counts again; sitting inside across ticks counts once.
+        const in_cave_now = this._isInCave();
+        if (in_cave_now && !this._was_in_cave) {
+            this.cave_entry_count++;
+            if (this.env.isNight()) this.cave_entries_night++;
+            else                    this.cave_entries_day++;
+        }
+        this._was_in_cave = in_cave_now;
 
         // ── Energy decay with day/night and cave mechanics ────────────────────
         // Day: normal outside, 3x faster in caves
@@ -239,6 +269,9 @@ class AdvancedOrganism extends Organism {
         }
 
         if (this.energy <= 0) {
+            // Reached here via energy decay (a lethal predator drain would have
+            // called die() from PredatorDrainCell and set death_cause first).
+            if (this.death_cause == null) this.death_cause = 'starved';
             this.die();
             return false;
         }
@@ -292,6 +325,22 @@ class AdvancedOrganism extends Organism {
     // REINFORCE sees the predator contact signal on the same tick it occurs.
     notifyPredatorDrain(amount) {
         this.pending_reward -= PREDATOR_DRAIN_PENALTY * amount;
+
+        // Count drain ticks and distinct attachment episodes. De-duplicate
+        // multiple drain cells/predators hitting the same global tick, and treat
+        // a gap in drain ticks as a predator leaving and (re)attaching — so
+        // leave-then-reattach counts as 2 touches while staying latched counts
+        // as 1. (Two predators latched simultaneously count as one episode.)
+        const tick = (this.env && typeof this.env.total_ticks === 'number')
+            ? this.env.total_ticks
+            : this.lifetime;
+        if (tick !== this._last_drain_tick) {
+            this.drained_ticks++;
+            if (tick > this._last_drain_tick + 1) {
+                this.predator_touch_count++;
+            }
+            this._last_drain_tick = tick;
+        }
     }
 
     _foodValue() {

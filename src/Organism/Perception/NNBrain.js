@@ -5,11 +5,11 @@
  * learning influences the rate at which effective food-seeking behaviours become
  * encoded in heritable neural network weights across generations.
  *
- * Architecture:  46 -> 32 -> 6
- *   Input  (46): 4 eye directions x 11 one-hot percept types  +  1 energy scalar + 1 rotation scalar
+ * Architecture:  50 -> 32 -> 6
+ *   Input  (50): 4 eye directions x 12 one-hot percept types  +  1 energy scalar + 1 rotation scalar
  *   Hidden (32): ReLU
  *   Output  (6): softmax -> up / right / down / left / rotate-left / rotate-right
- *   Genome: 42x32 + 32 + 32x6 + 6 = 1344 + 32 + 192 + 6 = 1574 weights
+ *   Genome: 50x32 + 32 + 32x6 + 6 = 1600 + 32 + 192 + 6 = 1830 weights
  *
  * Perception:
  *   Uses the existing EyeCell.look() raycast (lookRange = 30 by default).
@@ -17,18 +17,19 @@
  *   range. NNBrain reads those observations directly rather than going through
  *   the Brain.observe() / Brain.decide() pipeline.
  *
- *   Percept types (one-hot, 11 classes):
+ *   Percept types (one-hot, 12 classes):
  *     0 - nothing / empty / out-of-bounds
- *     1 - food_red       (energy 0.5)
- *     2 - food_orange    (energy 1.0)
- *     3 - food_teal      (energy 2.0)
+ *     1 - food_red       (low food, energy 0.5)
+ *     2 - food_orange    (medium food, energy 1.0)
+ *     3 - food_teal      (prestige food, energy 2.0)
  *     4 - wall / obstacle
- *     5 - landmark_red   (red food nearby)
- *     6 - landmark_orange
- *     7 - landmark_teal
+ *     5 - landmark_red   (low food nearby)
+ *     6 - landmark_orange (medium food nearby)
+ *     7 - landmark_teal  (prestige food nearby)
  *     8 - cave
  *     9 - base food (fallback)
- *    10 - organism body (mouth/producer/mover/killer/armor/eye)
+ *    10 - prey organism body (mouth/producer/mover/killer/armor/eye)
+ *    11 - predator organism body (predator body/mover/eye/drain)
  *
  * GA / inheritance (non-Lamarckian):
  *   genome_weights -- starting weights; what the GA reads and crossovers.
@@ -44,8 +45,11 @@
  *   active_weights === genome_weights (same reference). No RL, no drift.
  *
  * Exploration:
- *   Epsilon-greedy with linear decay over the agent's lifetime.
- *   Set EPSILON_START = 0 to disable entirely.
+ *   Epsilon-greedy with quadratic decay over the agent's available lifetime
+ *   (see AdvancedOrganism._max_possible_lifetime). Exploratory actions are
+ *   importance-weighted (ρ = π(a)/behaviour(a), behaviour = the ε-greedy
+ *   mixture) so off-policy noise doesn't bias the REINFORCE update.
+ *   Set EPSILON_START = 0 to disable exploration entirely.
  */
 
 'use strict';
@@ -182,6 +186,9 @@ class NNBrain {
         this._obs_buffer      = new Array(4);
         this._last_probs      = null;
         this._last_action     = null;
+        // Importance-sampling ratio π(a)/behaviour(a) for the last action.
+        // 1 on-policy; <1 or >1 to correct for epsilon-greedy exploration noise.
+        this._last_is_ratio   = 1;
     }
 
     _initGenome() {
@@ -212,6 +219,7 @@ class NNBrain {
         this._obs_buffer  = new Array(4);
         this._last_probs  = null;
         this._last_action = null;
+        this._last_is_ratio = 1;
     }
 
     // ── Perception ────────────────────────────────────────────────────────────
@@ -310,12 +318,15 @@ class NNBrain {
         const traces = this.traces;
         const action = this._last_action;
         const probs  = this._last_probs;
+        // Importance weight π(a)/behaviour(a); applied once to every component
+        // of this step's score function ∇log π(a) before it enters the traces.
+        const rho    = this._last_is_ratio;
 
         const W2_off = W1_SIZE + B1_SIZE;
         const b2_off = W2_off + W2_SIZE;
 
         for (let k = 0; k < OUTPUT_SIZE; k++) {
-            const factor = (k === action ? 1 : 0) - probs[k];
+            const factor = rho * (((k === action ? 1 : 0)) - probs[k]);
             const base   = W2_off + k * HIDDEN_SIZE;
             for (let j = 0; j < HIDDEN_SIZE; j++) {
                 traces[base + j] = TRACE_DECAY * traces[base + j] + factor * this._hidden[j];
@@ -330,6 +341,7 @@ class NNBrain {
             for (let k = 0; k < OUTPUT_SIZE; k++) {
                 delta += w[W2_off + k * HIDDEN_SIZE + j] * ((k === action ? 1 : 0) - probs[k]);
             }
+            delta *= rho;
             traces[b1_off + j] = TRACE_DECAY * traces[b1_off + j] + delta;
             const base = j * STATE_SIZE;
             for (let i = 0; i < STATE_SIZE; i++) {
@@ -427,21 +439,32 @@ class NNBrain {
         if (this.rl_enabled) {
             const epsilon = EPSILON_START + (EPSILON_END - EPSILON_START) * (lifetime_frac ** 2);
             if (Math.random() < epsilon) {
-                this.forward(state); // cache hidden activations for REINFORCE
+                // Explore: forward pass caches hidden activations AND the true
+                // softmax π (left in this._last_probs); only the chosen action
+                // is overridden with a uniform-random one. Crucially we do NOT
+                // overwrite _last_probs with a uniform distribution — REINFORCE
+                // needs the real π(a) both for the policy gradient and for the
+                // importance ratio below.
+                this.forward(state);
                 action = Math.floor(Math.random() * OUTPUT_SIZE);
                 this._last_action = action;
-                this._probs.fill(1 / OUTPUT_SIZE);
-                this._last_probs = this._probs;
             } else {
                 action = this.forward(state);
             }
+
+            // Importance-sampling correction. The behaviour policy is the
+            // epsilon-greedy mixture over the softmax, b(a) = (1-ε)π(a) + ε/N,
+            // while the gradient targets π. ρ = π(a)/b(a) reweights the update
+            // so exploratory actions don't bias learning. ρ → 1 as ε → 0, and
+            // ρ is bounded in ~[0, 1/(1-ε)], but clamp defensively.
+            const pi_a = this._last_probs[action];
+            const b_a  = (1 - epsilon) * pi_a + epsilon / OUTPUT_SIZE;
+            this._last_is_ratio = b_a > 1e-12 ? Math.min(pi_a / b_a, 10) : 1;
+
+            this.reinforce(reward);
         } else {
             // Pure policy execution — no exploration noise, no weight updates.
             action = this.forward(state);
-        }
-
-        if (this.rl_enabled) {
-            this.reinforce(reward);
         }
         return action;
     }
@@ -522,11 +545,11 @@ class NNBrain {
     // Stub methods for compatibility with Anatomy.js cell addition/removal tracking
     // NNBrain has fixed input architecture so no dynamic updates needed
     checkAddedCell(cell) {
-        // No-op: NNBrain input layer is fixed (33 elements)
+        // No-op: NNBrain input layer is fixed (50 elements)
     }
 
     checkRemovedCell(cell) {
-        // No-op: NNBrain input layer is fixed (33 elements)
+        // No-op: NNBrain input layer is fixed (50 elements)
     }
 
     // Stub method for compatibility with EditorController

@@ -5,3 +5,10 @@ dist/js/bundle.js.LICENSE.txt
 /logs
 /output_logs
 /figures
+.claude
+.venv
+
+# Per-seed map caches are regenerable from the seed (node generate_map_pool.js
+# --seed N); the seed is the reproducible artifact, so don't bloat the repo with
+# them. The active map_pool.json stays tracked.
+src/maps/map_pool_seed*.json

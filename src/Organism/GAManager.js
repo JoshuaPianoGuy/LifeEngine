@@ -50,8 +50,8 @@ const TOURNAMENT_K    = 2;     // tournament size for parent selection
 const MUT_SIGMA       = 0.1;   // Gaussian noise std-dev
 const SPAWN_RADIUS    = 30;    // spawn organisms within a 30-cell radius to fit 100 organisms
 
-const TICKS_PER_MAP   = 2000;
-const MAPS_PER_GEN    = 5;
+// Generation length — single source of truth (honors WorldConfig overrides).
+const { TICKS_PER_MAP, MAPS_PER_GEN } = require('./GenerationConstants');
 
 // ─────────────────────────────────────────────────────────────────────────────
 
