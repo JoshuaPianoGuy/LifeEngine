@@ -58,6 +58,7 @@ class WorldEnvironment extends Environment {
         // All conditions cycle through the same sequence for reproducibility.
         // ── Fixed map pool ────────────────────────────────────────────────
         this._map_pool       = null;
+        this._map_reference_grid = null;        // {cols, rows} the maps were authored on
         this._sequence_index = 0;               // Tracks where we are in the sequence
         this._loadMapPool();
         // Fixed deterministic order through ALL pool maps: every run cycles the
@@ -367,29 +368,66 @@ class WorldEnvironment extends Environment {
     // ── Fixed map pool ────────────────────────────────────────────────────
 
     _loadMapPool() {
+        // Headless/Node path: load the seed-specific pool file directly,
+        // generating it on demand if missing. This lets parallel HPC jobs each
+        // use their own map_pool_seed<N>.json without clobbering a shared active
+        // file. eval('require') keeps fs / the generator out of the webpack bundle.
+        const isNode = typeof process !== 'undefined' && !!(process.versions && process.versions.node);
+        const want   = WorldConfig.MAP_SEED;
+        if (isNode && want != null) {
             try {
-                // Webpack resolves this path at build time and injects the parsed JSON object
-                const pool = require('../maps/map_pool.json');
-
-                this._map_pool = pool.maps;
-                this.map_seed  = (pool.seed != null) ? pool.seed : null;
-                console.log(`[WorldEnv] Loaded map pool: ${this._map_pool.length} maps (seed=${this.map_seed})`);
-
-                // Sanity-check: the active pool must match the configured run seed.
-                // A mismatch means map_pool.json wasn't regenerated for MAP_SEED.
-                const want = WorldConfig.MAP_SEED;
-                if (want != null && this.map_seed != null && this.map_seed !== want) {
-                    console.warn(
-                        `[WorldEnv] SEED MISMATCH: active map_pool.json is seed=${this.map_seed} ` +
-                        `but WorldConfig.MAP_SEED=${want}. Run: ` +
-                        `node generate_map_pool.js --seed ${want}  (then rebuild).`
-                    );
+                const req  = eval('require');
+                const fs   = req('fs');
+                const path = req('path');
+                const file = path.join(__dirname, '..', 'maps', `map_pool_seed${want}.json`);
+                let pool;
+                if (fs.existsSync(file)) {
+                    pool = JSON.parse(fs.readFileSync(file, 'utf8'));
+                    console.log(`[WorldEnv] Loaded cached map pool ${path.basename(file)}`);
+                } else {
+                    const { generateMapPool } = req('../maps/generateMapPool');
+                    pool = generateMapPool(want);
+                    // Atomic write (temp + rename) so a parallel job that starts
+                    // at the same time can't read a half-written pool file. The
+                    // temp name is per-process; rename is atomic on the same fs.
+                    const tmp = `${file}.tmp.${process.pid}`;
+                    fs.writeFileSync(tmp, JSON.stringify(pool, null, 2));
+                    fs.renameSync(tmp, file);
+                    console.log(`[WorldEnv] Generated map pool for seed=${want} -> ${path.basename(file)}`);
                 }
+                this._map_pool = pool.maps;
+                this._map_reference_grid = pool.reference_grid || null;
+                this.map_seed  = (pool.seed != null) ? pool.seed : want;
+                console.log(`[WorldEnv] Map pool ready: ${this._map_pool.length} maps (seed=${this.map_seed})`);
+                return;
             } catch (e) {
-                console.warn('[WorldEnv] map_pool.json not found — falling back to random generation:', e.message);
-                this._map_pool = null;
+                console.warn('[WorldEnv] Seed-specific map pool load failed, falling back:', e.message);
             }
         }
+
+        // Browser path: the active map_pool.json is bundled at build time.
+        try {
+            const pool = require('../maps/map_pool.json');
+
+            this._map_pool = pool.maps;
+            this._map_reference_grid = pool.reference_grid || null;
+            this.map_seed  = (pool.seed != null) ? pool.seed : null;
+            console.log(`[WorldEnv] Loaded map pool: ${this._map_pool.length} maps (seed=${this.map_seed})`);
+
+            // Sanity-check: the active pool must match the configured run seed.
+            // A mismatch means map_pool.json wasn't regenerated for MAP_SEED.
+            if (want != null && this.map_seed != null && this.map_seed !== want) {
+                console.warn(
+                    `[WorldEnv] SEED MISMATCH: active map_pool.json is seed=${this.map_seed} ` +
+                    `but WorldConfig.MAP_SEED=${want}. Run: ` +
+                    `node generate_map_pool.js --seed ${want}  (then rebuild).`
+                );
+            }
+        } catch (e) {
+            console.warn('[WorldEnv] map_pool.json not found — falling back to random generation:', e.message);
+            this._map_pool = null;
+        }
+    }
 
     /**
      * Load the next map from the pool into the world.
@@ -423,13 +461,79 @@ class WorldEnvironment extends Environment {
             'prestige food landmark':  CellStates.prestigeFoodLandmark,
         };
 
-        for (const entry of map.cells) {
-            const c     = Math.round(entry.c_rel * cols);
-            const r     = Math.round(entry.r_rel * rows);
-            const state = stateMap[entry.name];
-            if (state && c >= 0 && c < cols && r >= 0 && r < rows) {
-                this.changeCell(c, r, state, null);
+        // Map cells are stored as individual relative points. When the runtime
+        // grid is larger than the reference grid, Math.round(c_rel * cols) maps
+        // adjacent reference cells onto non-adjacent runtime cells, leaving gaps
+        // — caves look like a dotted grid and landmark lines break into sparse
+        // cells. To keep caves solid and landmark lines continuous at any scale,
+        // those two cell types are drawn by filling the whole runtime footprint
+        // each reference cell scales to, closing the inter-cell gaps. Food stays
+        // as single points (it's an organic, scattered blob by design).
+        //
+        // Placement order also guarantees caves never intersect food/landmarks:
+        //   1. Caves first, as solid footprint blocks on the empty grid.
+        //   2. Food, skipping any cell already occupied by a cave.
+        //   3. Landmarks, footprint-filled but only over still-empty cells, so a
+        //      line never overwrites a cave or food — it just connects its own
+        //      cells through the empty gaps between them.
+        // The generator already keeps caves clear of food/landmarks on the
+        // reference grid (see generateMapPool.js); this preserves that on scale.
+        const ref     = this._map_reference_grid;
+        const scale_x = (ref && ref.cols) ? cols / ref.cols : 1;
+        const scale_y = (ref && ref.rows) ? rows / ref.rows : 1;
+        const fp_w    = Math.max(1, Math.ceil(scale_x));
+        const fp_h    = Math.max(1, Math.ceil(scale_y));
+
+        const landmarkStates = new Set([
+            CellStates.lowFoodLandmark,
+            CellStates.mediumFoodLandmark,
+            CellStates.prestigeFoodLandmark,
+        ]);
+
+        // Fill a runtime footprint block for one reference cell. onlyEmpty=true
+        // makes the fill yield to anything already placed (used for landmarks so
+        // they never overwrite caves/food).
+        const fillFootprint = (c, r, state, onlyEmpty) => {
+            for (let dc = 0; dc < fp_w; dc++) {
+                for (let dr = 0; dr < fp_h; dr++) {
+                    const fc = c + dc;
+                    const fr = r + dr;
+                    if (fc < 0 || fc >= cols || fr < 0 || fr >= rows) continue;
+                    if (onlyEmpty) {
+                        const existing = this.grid_map.cellAt(fc, fr);
+                        if (!existing || existing.state !== CellStates.empty) continue;
+                    }
+                    this.changeCell(fc, fr, state, null);
+                }
             }
+        };
+
+        // Pass 1: caves — solid footprint blocks.
+        for (const entry of map.cells) {
+            if (stateMap[entry.name] !== CellStates.cave) continue;
+            const c = Math.round(entry.c_rel * cols);
+            const r = Math.round(entry.r_rel * rows);
+            fillFootprint(c, r, CellStates.cave, false);
+        }
+        // Pass 2: food — single points, never over a cave.
+        for (const entry of map.cells) {
+            const state = stateMap[entry.name];
+            if (!state || state === CellStates.cave || landmarkStates.has(state)) continue;
+            const c = Math.round(entry.c_rel * cols);
+            const r = Math.round(entry.r_rel * rows);
+            if (c < 0 || c >= cols || r < 0 || r >= rows) continue;
+            const existing = this.grid_map.cellAt(c, r);
+            if (existing && existing.state === CellStates.cave) continue;
+            this.changeCell(c, r, state, null);
+        }
+        // Pass 3: landmarks — footprint-filled over empty cells only, so lines
+        // become continuous without intersecting caves or food.
+        for (const entry of map.cells) {
+            const state = stateMap[entry.name];
+            if (!landmarkStates.has(state)) continue;
+            const c = Math.round(entry.c_rel * cols);
+            const r = Math.round(entry.r_rel * rows);
+            fillFootprint(c, r, state, true);
         }
 
         // Snapshot so periodic food respawn works from this map's layout
@@ -439,8 +543,8 @@ class WorldEnvironment extends Environment {
         // can be repositioned onto the correct patches after each map swap.
         this.prestige_patch_centres = this._extractPrestigeCentres();
 
-        console.log(`[WorldEnv] Map ${this._map_pool_index}/${this._map_pool.length} ` +
-            `profile=${map.profile} cells=${map.cell_count} ` +
+        console.log(`[WorldEnv] Map ${this._sequence_index}/${this._map_sequence.length} ` +
+            `(pool idx ${target_map_index}) profile=${map.profile} cells=${map.cell_count} ` +
             `prestige_patches=${this.prestige_patch_centres.length}`);
     }
 

@@ -5,11 +5,11 @@
  * learning influences the rate at which effective food-seeking behaviours become
  * encoded in heritable neural network weights across generations.
  *
- * Architecture:  50 -> 32 -> 6
- *   Input  (50): 4 eye directions x 12 one-hot percept types  +  1 energy scalar + 1 rotation scalar
+ * Architecture:  54 -> 32 -> 6
+ *   Input  (54): 4 eye directions x 13 one-hot percept types  +  1 energy scalar + 1 rotation scalar
  *   Hidden (32): ReLU
  *   Output  (6): softmax -> up / right / down / left / rotate-left / rotate-right
- *   Genome: 50x32 + 32 + 32x6 + 6 = 1600 + 32 + 192 + 6 = 1830 weights
+ *   Genome: 54x32 + 32 + 32x6 + 6 = 1728 + 32 + 192 + 6 = 1958 weights
  *
  * Perception:
  *   Uses the existing EyeCell.look() raycast (lookRange = 30 by default).
@@ -17,7 +17,7 @@
  *   range. NNBrain reads those observations directly rather than going through
  *   the Brain.observe() / Brain.decide() pipeline.
  *
- *   Percept types (one-hot, 12 classes):
+ *   Percept types (one-hot, 13 classes):
  *     0 - nothing / empty / out-of-bounds
  *     1 - food_red       (low food, energy 0.5)
  *     2 - food_orange    (medium food, energy 1.0)
@@ -29,7 +29,8 @@
  *     8 - cave
  *     9 - base food (fallback)
  *    10 - prey organism body (mouth/producer/mover/killer/armor/eye)
- *    11 - predator organism body (predator body/mover/eye/drain)
+ *    11 - roaming predator body (free-roaming hazard, chases anywhere)
+ *    12 - patrol predator body  (patch-leashed hazard, guards prestige food)
  *
  * GA / inheritance (non-Lamarckian):
  *   genome_weights -- starting weights; what the GA reads and crossovers.
@@ -55,6 +56,10 @@
 'use strict';
 
 const Directions = require('../Directions');
+// Tunable hyperparameters (RL rate, epsilon, hidden size). Read once here at
+// module load; the headless runner overrides ExperimentParams before this
+// module is required so per-job values bake in. Browser uses the defaults.
+const ExperimentParams = require('../../ExperimentParams');
 
 // Percept type map: CellState name -> one-hot index
 // Add entries here when you add new CellStates.
@@ -62,12 +67,21 @@ const Directions = require('../Directions');
 // Keys are CellState.name values (the string passed to super() in each class).
 // These must match exactly — note spaces in the new food/landmark names.
 //
-// Index 10 ("prey organism body") vs index 11 ("predator organism body") is
-// the deliberate differentiation point: prey can now tell "another prey
-// organism is here" apart from "a predator is here" via eye raycasts, rather
-// than both collapsing into one ambiguous "occupied" signal. This is what
-// makes learned/evolved avoidance possible from direct perception, not just
-// from the indirect energy-loss consequence of contact (PredatorDrainCell).
+// Index 10 ("prey organism body") vs index 11/12 ("predator body") is the
+// deliberate differentiation point: prey can tell "another prey organism is
+// here" apart from "a predator is here" via eye raycasts, rather than both
+// collapsing into one ambiguous "occupied" signal. This is what makes
+// learned/evolved avoidance possible from direct perception, not just from
+// the indirect energy-loss consequence of contact (PredatorDrainCell).
+//
+// Roaming and patrol predators are built from the SAME cell-state names, so
+// the table below maps every predator cell to index 11 by default. They are
+// behaviourally distinct hazards, though (roaming = chases anywhere, patrol =
+// leashed to a prestige patch), so buildStateVector() promotes a patrol
+// predator to its own percept (index 12) using the owning organism's
+// is_patrol flag — letting prey perceive, and thus learn/evolve, type-specific
+// responses. A richer hazard structure is also intended to roughen the fitness
+// landscape rather than collapse to one generic "flee" response.
 const PERCEPT_INDEX = {
     'empty':                    0,
     'wall':                     4,
@@ -90,7 +104,14 @@ const PERCEPT_INDEX = {
     'predator eye':             11,
     'predator drain':           11,
 };
-const N_PERCEPT_TYPES = 12;
+const N_PERCEPT_TYPES = 13;
+
+// Base predator percept (any predator cell) and its patrol-specific promotion.
+// perceptIndex() returns PERCEPT_PREDATOR for every predator cell-state name;
+// buildStateVector() upgrades it to PERCEPT_PATROL_PREDATOR when the cell's
+// owning organism is a patrol predator (is_patrol).
+const PERCEPT_PREDATOR        = 11;
+const PERCEPT_PATROL_PREDATOR = 12;
 
 // Fixed iteration order for the 4 eye directions
 const EYE_DIRECTIONS = [
@@ -103,26 +124,26 @@ const N_EYE_DIRECTIONS = 4;
 
 // Network topology
 const N_SCALARS   = 2;   // energy + rotation
-const STATE_SIZE  = N_EYE_DIRECTIONS * N_PERCEPT_TYPES + N_SCALARS;  // 50
-const HIDDEN_SIZE = 32;
+const STATE_SIZE  = N_EYE_DIRECTIONS * N_PERCEPT_TYPES + N_SCALARS;  // 54
+const HIDDEN_SIZE = ExperimentParams.hidden_size;  // tunable (default 64)
 const OUTPUT_SIZE = 6;   // up, right, down, left, rotate-left, rotate-right
 
-const DEBUG_STATE_VECTOR = false;  // Set to true to log the 42-element input vector
+const DEBUG_STATE_VECTOR = false;  // Set to true to log the 54-element input vector
 
-const W1_SIZE     = STATE_SIZE  * HIDDEN_SIZE;   // 1600
+const W1_SIZE     = STATE_SIZE  * HIDDEN_SIZE;   // 1728
 const B1_SIZE     = HIDDEN_SIZE;                 //   32
 const W2_SIZE     = HIDDEN_SIZE * OUTPUT_SIZE;   //  192
 const B2_SIZE     = OUTPUT_SIZE;                 //    6
-const GENOME_SIZE = W1_SIZE + B1_SIZE + W2_SIZE + B2_SIZE;  // 1830
+const GENOME_SIZE = W1_SIZE + B1_SIZE + W2_SIZE + B2_SIZE;  // 1958
 
 // RL hyper-parameters
-const RL_LR            = 0.02;
+const RL_LR            = ExperimentParams.learning_rate;  // tunable (default 0.02)
 const TRACE_DECAY      = 0.90;
 const BASELINE_DECAY   = 0.9;   // exponential moving average decay for running mean baseline (0.9 * mean + 0.1 * reward)
 
-// Exploration
-const EPSILON_START = 0.5; //initially 0.2
-const EPSILON_END   = 0.05;
+// Exploration (tunable; defaults 0.5 -> 0.05)
+const EPSILON_START = ExperimentParams.epsilon_start;
+const EPSILON_END   = ExperimentParams.epsilon_end;
 
 // ── Debugging ─────────────────────────────────────────────────────────────────
 const DEBUG_OBSERVATIONS = false;  // Set to true to log what each eye observes per tick
@@ -232,7 +253,7 @@ class NNBrain {
         this._last_action = null;
     }
 
-    // Build 42-element state vector from 4 eye observations + energy + rotation.
+    // Build 54-element state vector from 4 eye observations + energy + rotation.
     // observations: array of 4 Observation objects in [up, right, down, left] order.
     buildStateVector(observations, max_energy) {
         const state = this._input;
@@ -244,6 +265,13 @@ class NNBrain {
             let type_idx = 0;
             if (obs && obs.cell && obs.cell.state) {
                 type_idx = perceptIndex(obs.cell.state.name);
+                // Roaming and patrol predators share cell-state names (so both
+                // map to PERCEPT_PREDATOR above); split them here via the owning
+                // organism so prey perceive the two hazard types distinctly.
+                if (type_idx === PERCEPT_PREDATOR &&
+                    obs.cell.owner && obs.cell.owner.is_patrol) {
+                    type_idx = PERCEPT_PATROL_PREDATOR;
+                }
             }
             state[base + type_idx] = 1;
         }
@@ -592,6 +620,8 @@ NNBrain.OUTPUT_SIZE      = OUTPUT_SIZE;
 NNBrain.N_PERCEPT_TYPES  = N_PERCEPT_TYPES;
 NNBrain.N_EYE_DIRECTIONS = N_EYE_DIRECTIONS;
 NNBrain.PERCEPT_INDEX    = PERCEPT_INDEX;
+NNBrain.PERCEPT_PREDATOR        = PERCEPT_PREDATOR;
+NNBrain.PERCEPT_PATROL_PREDATOR = PERCEPT_PATROL_PREDATOR;
 NNBrain.EPSILON_START    = EPSILON_START;
 NNBrain.EPSILON_END      = EPSILON_END;
 

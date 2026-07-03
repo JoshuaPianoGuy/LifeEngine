@@ -45,39 +45,65 @@ warnings.filterwarnings('ignore')
 
 # ── 1. Historical Summary Plot ───────────────────────────────────────────────
 
-def plot_exact_summary_panel(gen_path, label, max_gen, out_dir='.'):
+def _clean_generations(g):
+    """
+    Strip artifacts that make the line plots backtrack and spike:
+      * periodic world-snapshot dumps logged with generation == 0
+        (they carry reset values like total_agents=100 and a non-standard
+         generation_ticks, and corrupt every panel when plotted on the same axes)
+      * duplicate generation rows (keep the last occurrence)
+      * unsorted rows (plot() connects in file order, not by x)
+    """
+    g = g[g['generation'] > 0]
+    g = g.drop_duplicates(subset='generation', keep='last')
+    g = g.sort_values('generation').reset_index(drop=True)
+    return g
+
+
+def _series(g, col, smooth):
+    """Return the column, rolling-mean smoothed when smooth > 0, else raw."""
+    s = g[col]
+    if smooth and smooth > 0:
+        return s.rolling(window=smooth, min_periods=1).mean()
+    return s
+
+
+def plot_exact_summary_panel(gen_path, label, max_gen, out_dir='.', smooth=0):
     print("  Generating 7-panel line metrics canvas ...")
     g = pd.read_csv(gen_path)
     g = g[g['generation'] <= max_gen]
+    g = _clean_generations(g)
+    if smooth and smooth > 0:
+        print(f"  Applying rolling-mean smoothing (window={smooth}).")
 
     fig, axs = plt.subplots(3, 3, figsize=(18, 15))
 
     # Panel 1: Fitness Performance
-    axs[0, 0].plot(g['generation'], g['best_fitness'], color='#1D4ED8', linestyle='-', lw=1.2, alpha=0.4, label='Best Fitness')
-    axs[0, 0].plot(g['generation'], g['top20percent_fitness'], color='#1D4ED8', linestyle='--', lw=1.8, label='Top 20% Fittest')
-    axs[0, 0].plot(g['generation'], g['avg_fitness'], color='#1D4ED8', linestyle=':', lw=2.2, label='Average Fitness')
+    axs[0, 0].plot(g['generation'], _series(g, 'best_fitness', smooth), color='#1D4ED8', linestyle='-', lw=1.2, alpha=0.4, label='Best Fitness')
+    axs[0, 0].plot(g['generation'], _series(g, 'top20percent_fitness', smooth), color='#1D4ED8', linestyle='--', lw=1.8, label='Top 20% Fittest')
+    axs[0, 0].plot(g['generation'], _series(g, 'avg_fitness', smooth), color='#1D4ED8', linestyle=':', lw=2.2, label='Average Fitness')
     axs[0, 0].set_title('Fitness Performance History', fontsize=12, fontweight='bold')
     axs[0, 0].set_ylabel('Absolute Fitness')
     axs[0, 0].legend(loc='upper left', fontsize=9)
     axs[0, 0].grid(True, alpha=0.3)
 
     # Panel 2: Population Growth Dynamics
-    axs[0, 1].plot(g['generation'], g['total_agents'], color='#2563EB', linestyle='-', lw=2, label='Total Agent Count')
-    axs[0, 1].plot(g['generation'], g['peak_population'], color='#DB2777', linestyle='--', lw=2, label='Peak Population')
+    axs[0, 1].plot(g['generation'], _series(g, 'total_agents', smooth), color='#2563EB', linestyle='-', lw=2, label='Total Agent Count')
+    axs[0, 1].plot(g['generation'], _series(g, 'peak_population', smooth), color='#DB2777', linestyle='--', lw=2, label='Peak Population')
     axs[0, 1].set_title('Population Growth Dynamics', fontsize=12, fontweight='bold')
     axs[0, 1].set_ylabel('Organism Counts')
     axs[0, 1].legend(loc='upper left', fontsize=9)
     axs[0, 1].grid(True, alpha=0.3)
 
     # Panel 3: Average Lifespan
-    axs[0, 2].plot(g['generation'], g['avg_lifetime'], color='#D97706', lw=2)
+    axs[0, 2].plot(g['generation'], _series(g, 'avg_lifetime', smooth), color='#D97706', lw=2)
     axs[0, 2].set_title('Average Lifespan per Generation', fontsize=12, fontweight='bold')
     axs[0, 2].set_ylabel('Ticks Survived')
     axs[0, 2].grid(True, alpha=0.3)
 
     # Panel 4: Within-Lifetime Weight Drift (Plasticity)
     if 'avg_learned_weight_diff' in g.columns and g['avg_learned_weight_diff'].max() > 0:
-        axs[1, 0].plot(g['generation'], g['avg_learned_weight_diff'], color='#059669', lw=2)
+        axs[1, 0].plot(g['generation'], _series(g, 'avg_learned_weight_diff', smooth), color='#059669', lw=2)
         axs[1, 0].set_title('Within-Lifetime Weight Drift (Plasticity)', fontsize=12, fontweight='bold')
         axs[1, 0].set_ylabel('Mean Absolute Shift (deltaW_life)')
     else:
@@ -87,19 +113,19 @@ def plot_exact_summary_panel(gen_path, label, max_gen, out_dir='.'):
     axs[1, 0].grid(True, alpha=0.3)
 
     # Panel 5: Baseline Network Weight Magnitude
-    axs[1, 1].plot(g['generation'], g['avg_network_weight_mag'], color='#7C3AED', lw=2)
+    axs[1, 1].plot(g['generation'], _series(g, 'avg_network_weight_mag', smooth), color='#7C3AED', lw=2)
     axs[1, 1].set_title('Average Network Weight Magnitude', fontsize=12, fontweight='bold')
     axs[1, 1].set_ylabel('Structural Scale Values')
     axs[1, 1].grid(True, alpha=0.3)
 
     # Panel 6: Inter-generational Structural Weight Step (Velocity)
-    axs[1, 2].plot(g['generation'], g['inter_gen_weight_change'], color='#EA580C', lw=2)
+    axs[1, 2].plot(g['generation'], _series(g, 'inter_gen_weight_change', smooth), color='#EA580C', lw=2)
     axs[1, 2].set_title('Inter-Generational Weight Step (Velocity)', fontsize=12, fontweight='bold')
     axs[1, 2].set_ylabel('Evolutionary Step Delta (deltaW_gen)')
     axs[1, 2].grid(True, alpha=0.3)
 
     # Panel 7: Structural Genomic Variance
-    axs[2, 0].plot(g['generation'], g['genome_variance'], color='#DC2626', lw=2)
+    axs[2, 0].plot(g['generation'], _series(g, 'genome_variance', smooth), color='#DC2626', lw=2)
     axs[2, 0].set_title('Genomic Convergence (Structural Variance)', fontsize=12, fontweight='bold')
     axs[2, 0].set_ylabel('Variance')
     axs[2, 0].set_xlabel('Generation')
@@ -284,13 +310,18 @@ def main():
                         help='Output directory for all generated plots.')
     parser.add_argument('--max-gen', type=int, default=3000,
                         help='Discard rows beyond this generation (default 3000).')
+    parser.add_argument('--smooth', type=int, default=0,
+                        help='Rolling-mean window (in generations) for the summary '
+                             'panel lines. 0 (default) plots raw values; >0 smooths '
+                             'noisy metrics for readability.')
     args = parser.parse_args()
 
     os.makedirs(args.out, exist_ok=True)
 
     print(f"\n-- Processing Diagnostic Extraction: {args.label} --")
     plot_exact_summary_panel(args.generations, args.label,
-                             max_gen=args.max_gen, out_dir=args.out)
+                             max_gen=args.max_gen, out_dir=args.out,
+                             smooth=args.smooth)
 
     if args.organisms:
         org_df = load_organisms(args.organisms, max_gen=args.max_gen)

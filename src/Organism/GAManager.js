@@ -40,14 +40,15 @@ const NNBrain         = require('./Perception/NNBrain');
 const AdvancedOrganism = require('./AdvancedOrganism');
 const CellStates      = require('./Cell/CellStates');
 const logger          = require('../Logger');
+const ExperimentParams = require('../ExperimentParams');  // tunable: pop size + mutation
 
 // ── GA hyper-parameters ───────────────────────────────────────────────────────
 
-const POPULATION_SIZE = 100;   // founding population per generation; raised for larger experiments
+const POPULATION_SIZE = ExperimentParams.population_size;  // tunable (default 100)
 const SELECTION_PERCENT = 0.2; // top 20% GA selection
-const MUT_PROB        = 0.03;  // 3% per-weight mutation probability between generations
+const MUT_PROB        = ExperimentParams.mut_prob;   // tunable (default 0.03)
 const TOURNAMENT_K    = 2;     // tournament size for parent selection
-const MUT_SIGMA       = 0.1;   // Gaussian noise std-dev
+const MUT_SIGMA       = ExperimentParams.mut_sigma;  // tunable (default 0.1)
 const SPAWN_RADIUS    = 30;    // spawn organisms within a 30-cell radius to fit 100 organisms
 
 // Generation length — single source of truth (honors WorldConfig overrides).
@@ -93,6 +94,23 @@ class GAManager {
         // Expose hyper-parameters so Logger and other consumers can read them
         // without importing the module-level constants directly.
         this.selection_percent = SELECTION_PERCENT;
+
+        // ── Natural disaster config ───────────────────────────────────────────
+        // Read at construction so a headless override applied before module load
+        // takes effect. A dedicated PRNG keeps disaster timing/victims
+        // reproducible across runs without coupling to the map seed (which only
+        // governs terrain). seed 0 = unseeded → plain Math.random (run-to-run
+        // chance, like the rest of the GA).
+        this.disaster_enabled   = ExperimentParams.disaster_enabled;
+        this.disaster_prob      = ExperimentParams.disaster_prob;
+        this.disaster_fraction  = ExperimentParams.disaster_fraction;
+        this.disaster_cooldown  = ExperimentParams.disaster_cooldown;
+        this._disaster_rng      = ExperimentParams.disaster_seed
+            ? GAManager._mulberry32(ExperimentParams.disaster_seed)
+            : Math.random;
+        // Generation index of the last disaster (null = never). Used to enforce
+        // the cooldown safety window between strikes.
+        this._last_disaster_gen = null;
     }
 
     // ── Generation lifecycle ──────────────────────────────────────────────────
@@ -265,7 +283,30 @@ class GAManager {
         // Sort all agents by fitness descending
         const sorted = [...this.all_agents].sort((a, b) => b.getFitness() - a.getFitness());
 
+        // Metrics reflect the FULL generation that actually lived (so population
+        // and genome-variance graphs stay truthful); the disaster only prunes
+        // the selection pool below.
         this._recordMetrics(sorted);
+
+        // Optional natural disaster: with probability disaster_prob, randomly
+        // wipe a fixed slice of this generation's agents BEFORE selection, so
+        // their genes never enter the next gene pool. Removal is fitness-blind
+        // (any agent can perish) — that is the point: it culls genetic diversity
+        // at random, not by merit.
+        //
+        // Cooldown safety window: after a strike at generation G, no further
+        // strike may occur until generation G + disaster_cooldown, giving the
+        // population time to recover. The cooldown check short-circuits the
+        // Bernoulli draw, so no PRNG value is consumed while suppressed —
+        // keeping the seeded sequence reproducible regardless of the window.
+        let selection_pool = sorted;
+        const cooldown_ok = (this._last_disaster_gen === null) ||
+            (this.generation - this._last_disaster_gen >= this.disaster_cooldown);
+        if (this.disaster_enabled && sorted.length > 1 && cooldown_ok &&
+            this._disaster_rng() < this.disaster_prob) {
+            selection_pool = this._applyDisaster(sorted);
+            this._last_disaster_gen = this.generation;
+        }
 
         // Tournament selection (k=TOURNAMENT_K) replaces truncation selection.
         // Each parent slot runs a mini-tournament: draw k agents at random from
@@ -276,16 +317,16 @@ class GAManager {
         const next_pool = [];
 
         logger.logEvent('GA',
-            `Gen ${this.generation - 1} | ${sorted.length} agents | ` +
+            `Gen ${this.generation - 1} | ${selection_pool.length} agents | ` +
             `tournament k=${TOURNAMENT_K} → ${POPULATION_SIZE} offspring`);
 
         while (next_pool.length < POPULATION_SIZE) {
-            const pa = this._tournamentSelect(sorted);
+            const pa = this._tournamentSelect(selection_pool);
             let pb;
             // Ensure two distinct parents when pool is large enough
             do {
-                pb = this._tournamentSelect(sorted);
-            } while (pb === pa && sorted.length > 1);
+                pb = this._tournamentSelect(selection_pool);
+            } while (pb === pa && selection_pool.length > 1);
 
             const child = this._uniformCrossover(pa.getGenome(), pb.getGenome());
             this._mutate(child);
@@ -356,6 +397,57 @@ class GAManager {
         const u1 = 1 - Math.random();
         const u2 = 1 - Math.random();
         return mean + sigma * Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+    }
+
+    /**
+     * Natural-disaster cull, applied to the SELECTION pool only.
+     *
+     * Removes a FIXED fraction (disaster_fraction) of agents chosen uniformly at
+     * random — shuffle the pool, drop the first N — so a random slice of genes is
+     * wiped before tournament selection without regard to fitness. At least one
+     * agent always survives. Uses the disaster PRNG (seeded or not) for every
+     * shuffle draw so the whole event is reproducible.
+     *
+     * @param {AdvancedOrganism[]} agents  fitness-sorted full population
+     * @returns {AdvancedOrganism[]} the surviving subset (selection pool)
+     */
+    _applyDisaster(agents) {
+        const n = agents.length;
+        const frac = this.disaster_fraction;
+        // Cap removal so >=1 agent survives for selection/crossover.
+        const remove_count = Math.min(n - 1, Math.round(n * frac));
+
+        // Fisher–Yates shuffle a copy, then drop the first remove_count entries.
+        const shuffled = agents.slice();
+        for (let i = shuffled.length - 1; i > 0; i--) {
+            const j = Math.floor(this._disaster_rng() * (i + 1));
+            const tmp = shuffled[i];
+            shuffled[i] = shuffled[j];
+            shuffled[j] = tmp;
+        }
+        const survivors = shuffled.slice(remove_count);
+
+        logger.logEvent('GA',
+            `Gen ${this.generation - 1} | NATURAL DISASTER — culled ${remove_count}/${n} ` +
+            `(${(frac * 100).toFixed(1)}%) at random before selection`);
+
+        return survivors;
+    }
+
+    /**
+     * Deterministic mulberry32 PRNG factory — returns a Math.random-style
+     * function () → [0,1). Used to make natural-disaster events reproducible
+     * from disaster_seed without disturbing the global unseeded RNG that GA
+     * mutation and RL exploration rely on.
+     */
+    static _mulberry32(seed) {
+        let a = seed >>> 0;
+        return function () {
+            a |= 0; a = (a + 0x6D2B79F5) | 0;
+            let t = Math.imul(a ^ (a >>> 15), 1 | a);
+            t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+            return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
     }
 
     /**

@@ -148,6 +148,7 @@ class PredatorManager {
         const org      = PredatorOrganism.create(this.env);
         org.brain      = new PatrolBrain(org);
         org.patrol_home = home || null;
+        org.is_patrol  = true;   // distinct percept for prey (see NNBrain index 12)
 
         const pos = home
             ? (this._findValidPositionNear(org, home.c, home.r, 10) || this._findValidPosition(org))

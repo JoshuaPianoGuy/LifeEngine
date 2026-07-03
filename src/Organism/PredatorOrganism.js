@@ -44,6 +44,11 @@ class PredatorOrganism extends Organism {
         super(col, row, env, null);
 
         this.is_predator = true;
+        // Roaming vs patrol distinction, exposed so prey perception can tell the
+        // two hazard types apart (NNBrain promotes a patrol predator to its own
+        // percept index via this flag). Defaults to roaming; PredatorManager
+        // flips it to true when spawning a predator into the patrol pool.
+        this.is_patrol = false;
 
         // Replace the base Brain with the scripted PredatorBrain. super()
         // already constructed a (decision-table) Brain via the base
@@ -105,20 +110,18 @@ class PredatorOrganism extends Organism {
     }
 
     // ── Passable cell override ──────────────────────────────────────────
-    // Predators traverse ONLY empty space and food. They may NOT enter caves,
-    // walls, landmarks, or any cell occupied by another organism (prey or
-    // predator). Food is passable but never consumed — updateGrid draws the
-    // predator over it and restores it on departure (see _covered).
+    // Predators traverse empty space, food, and food-region landmarks. They
+    // may NOT enter caves, walls, or any cell occupied by another organism
+    // (prey or predator). Food and landmark cells are passable but never
+    // altered — updateGrid draws the predator over them and restores them on
+    // departure (see _covered). Landmarks are deliberately passable so
+    // predators can see and walk through them (they mark food regions rather
+    // than acting as terrain barriers).
 
     isPassableCell(cell, parent) {
         if (cell == null) return false;
         if (cell.owner === this || cell.owner === parent) return true;
-        const name = cell.state.name;
-        return name === CellStates.empty.name
-            || name === CellStates.food.name
-            || name === CellStates.lowFood.name
-            || name === CellStates.mediumFood.name
-            || name === CellStates.prestigeFood.name;
+        return this._isTraversableTerrain(cell.state);
     }
 
     isClear(col, row, rotation = this.rotation) {
@@ -126,17 +129,11 @@ class PredatorOrganism extends Organism {
             const cell = this.getRealCell(loccell, col, row, rotation);
             if (cell == null) return false;
             if (cell.owner === this) continue;
-            // Only empty space and food are traversable. Walls, caves, and
-            // landmarks all block the predator. Food traversal is required so
-            // patrol predators aren't trapped inside the prestige patch they
-            // guard (every neighbour there is food).
-            const name = cell.state.name;
-            const traversable = name === CellStates.empty.name
-                || name === CellStates.food.name
-                || name === CellStates.lowFood.name
-                || name === CellStates.mediumFood.name
-                || name === CellStates.prestigeFood.name;
-            if (!traversable) return false;
+            // Only empty space, food, and landmarks are traversable. Walls and
+            // caves still block the predator. Food/landmark traversal is
+            // required so patrol predators aren't trapped inside the prestige
+            // patch they guard (every neighbour there is food or landmark).
+            if (!this._isTraversableTerrain(cell.state)) return false;
             // Even on traversable terrain, the cell must not be occupied by
             // another organism — this is what stops predators overlapping each
             // other or sharing a cell with prey.
@@ -168,11 +165,31 @@ class PredatorOrganism extends Organism {
         return false;
     }
 
-    _isFoodState(state) {
+    // Terrain the predator may move onto: empty, food (all tiers), and
+    // food-region landmarks (all tiers). Walls and caves are excluded.
+    _isTraversableTerrain(state) {
+        const name = state.name;
+        return name === CellStates.empty.name
+            || name === CellStates.food.name
+            || name === CellStates.lowFood.name
+            || name === CellStates.mediumFood.name
+            || name === CellStates.prestigeFood.name
+            || name === CellStates.lowFoodLandmark.name
+            || name === CellStates.mediumFoodLandmark.name
+            || name === CellStates.prestigeFoodLandmark.name;
+    }
+
+    // Non-empty terrain the predator must remember and restore when it draws
+    // itself over a square (so passing over it doesn't erase it): food and
+    // landmark cells. Empty squares need no restoration.
+    _isRestorableUnder(state) {
         return state === CellStates.food
             || state === CellStates.lowFood
             || state === CellStates.mediumFood
-            || state === CellStates.prestigeFood;
+            || state === CellStates.prestigeFood
+            || state === CellStates.lowFoodLandmark
+            || state === CellStates.mediumFoodLandmark
+            || state === CellStates.prestigeFoodLandmark;
     }
 
     // Restore the predator's currently-occupied cells: put back the food that
@@ -208,7 +225,7 @@ class PredatorOrganism extends Organism {
             // (before we've drawn ourselves here). If we already own it, keep
             // the value recorded earlier — re-reading would see our own cell.
             if (existing.owner !== this) {
-                this._covered[i] = this._isFoodState(existing.state) ? existing.state : null;
+                this._covered[i] = this._isRestorableUnder(existing.state) ? existing.state : null;
             }
             // Always draw the predator — visible to the NN, blocks others.
             this.env.changeCell(real_c, real_r, cell.state, cell);

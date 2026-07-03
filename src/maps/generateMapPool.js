@@ -232,6 +232,41 @@ function generateMap(profile, seed) {
         return null;
     }
 
+    // True iff every cell of the rectangle (expanded by `margin` on each side)
+    // is in-bounds AND currently empty. getCell returns null out of bounds, so
+    // that also fails the test — keeping caves wholly inside the grid.
+    function isRectClear(left, top, w, h, margin) {
+        for (let c = left - margin; c < left + w + margin; c++) {
+            for (let r = top - margin; r < top + h + margin; r++) {
+                if (getCell(c, r) !== 'empty') return false;
+            }
+        }
+        return true;
+    }
+
+    // Radial position picker for caves that, unlike pickRadialPosition (which
+    // only spaces patch CENTRES), requires the cave's whole w×h rectangle to be
+    // clear of food and landmarks. A progressive margin fallback prefers a gap
+    // around the cave but degrades to 0 so a cave can still place in crowded
+    // maps — it may then touch food/landmarks but never intersect them.
+    function pickClearCavePosition(f_lo, f_hi, n_slots, slot_i, w, h, base_margin, attempts = 60) {
+        const sector = (2 * Math.PI) / Math.max(1, n_slots);
+        const half_w = Math.floor(w / 2);
+        const half_h = Math.floor(h / 2);
+        for (const margin of [base_margin, Math.floor(base_margin / 2), 1, 0]) {
+            for (let i = 0; i < attempts; i++) {
+                const angle = (slot_i + 0.5) * sector + (rng() - 0.5) * sector * 0.85;
+                const f     = f_lo + rng() * (f_hi - f_lo);
+                const c     = Math.round(cx + f * rx * Math.cos(angle));
+                const r     = Math.round(cy + f * ry * Math.sin(angle));
+                if (isRectClear(c - half_w, r - half_h, w, h, margin)) {
+                    return { c, r };
+                }
+            }
+        }
+        return null;
+    }
+
     // Radial bands per tier (fractions of the usable radius). Gaps between
     // bands keep the low -> medium -> prestige gradient visually distinct.
     const BANDS = {
@@ -295,14 +330,17 @@ function generateMap(profile, seed) {
     // ── Caves (mid/outer band — refuges along the route to prestige food) ─────
     // Sited between the medium and prestige rings so prey foraging the outer
     // ring have somewhere to break predator pursuit (predators can't enter
-    // caves). Separated from food patches via min_sep so they don't bury food.
+    // caves). Placed LAST so the clear-rectangle test sees all food/landmarks
+    // already on the grid: each cave is positioned where its full rectangle
+    // (plus a margin) is empty, so caves never intersect food or landmarks and
+    // never end up with holes punched through them by earlier placement.
     const cave_count = profile.caves.min + Math.floor(rng() * (profile.caves.max - profile.caves.min + 1));
     for (let i = 0; i < cave_count; i++) {
-        const pos = pickRadialPosition(BANDS.cave[0], BANDS.cave[1], cave_count, i, 46);
-        if (!pos) continue;
-        placed_centres.push(pos);
         const w = 10 + Math.floor(rng() * 10);
         const h = 10 + Math.floor(rng() * 10);
+        const pos = pickClearCavePosition(BANDS.cave[0], BANDS.cave[1], cave_count, i, w, h, 4);
+        if (!pos) continue;
+        placed_centres.push(pos);
         placeRect(pos.c - Math.floor(w / 2), pos.r - Math.floor(h / 2), w, h, 'cave');
     }
 

@@ -1,0 +1,100 @@
+/**
+ * ExperimentParams.js
+ *
+ * Single mutable holder for the hyperparameters that a headless/HPC job is
+ * allowed to vary per run (via CLI flags / the PBS script). Modules that own
+ * these knobs (NNBrain, GAManager) read their defaults from here AT MODULE
+ * LOAD, so the headless runner can override them BEFORE any simulation module
+ * is required and the new values bake in correctly (including hidden_size,
+ * which resizes the network genome).
+ *
+ * Defaults below are identical to the original in-code constants, so the
+ * browser build — which never calls applyOverrides — behaves exactly as before.
+ *
+ * Predator knobs (drain / patrol count / roaming count) live on the already
+ * mutable PredatorHyperparameters object; the headless runner copies the values
+ * here onto it at runtime. They are mirrored here only so a run's full
+ * parameter set is recorded in one place (see snapshot() / params.txt).
+ *
+ * Note: Math.random itself is NOT seeded — GA mutation, RL exploration and
+ * predator wandering are deliberately left to chance (only the map terrain is
+ * seeded, via WorldConfig.MAP_SEED). See [[map-seed-workflow]].
+ */
+
+'use strict';
+
+const ExperimentParams = {
+    // ── RL (NNBrain) ──────────────────────────────────────────────────────
+    learning_rate: 0.02,   // RL_LR
+    epsilon_start: 0.3,    // EPSILON_START
+    epsilon_end:   0.05,   // EPSILON_END
+
+    // ── Network (NNBrain) ─────────────────────────────────────────────────
+    // Hidden-layer width. Changing this resizes the genome (W1/W2), so it is
+    // read once at NNBrain load — set it before the sim modules are required.
+    hidden_size:  64,     // HIDDEN_SIZE
+
+    // ── GA (GAManager) ────────────────────────────────────────────────────
+    population_size: 100,  // POPULATION_SIZE (founders per generation)
+    mut_prob:        0.03, // MUT_PROB  (between-generation per-weight mutation rate)
+    mut_sigma:       0.1,  // MUT_SIGMA (between-generation Gaussian std-dev)
+
+    // ── Natural disaster (GAManager) ──────────────────────────────────────
+    // Optional mass-mortality event applied BEFORE tournament selection: a
+    // FIXED fraction of the generation's agents are culled from the SELECTION
+    // pool, wiping their genes from the gene pool that seeds the next gen.
+    //
+    // Two independent random mechanisms:
+    //   - WHEN it strikes: a per-generation Bernoulli draw (disaster_prob). The
+    //     gaps between strikes are irregular, so disasters land on random
+    //     generations (e.g. 56, 82, 250, ...) without a fixed cadence.
+    //   - WHO dies: the population is shuffled and exactly disaster_fraction of
+    //     it is removed (fitness-blind). The fraction itself is NOT random.
+    //
+    // Driven by a dedicated PRNG so both are reproducible across runs,
+    // independently of the map seed and the unseeded GA/RL chance.
+    disaster_enabled:   false, // master toggle (off = browser/default behaviour)
+    disaster_prob:      0.1,   // per-generation probability a disaster strikes
+    disaster_fraction:  0.2,   // FIXED fraction of agents removed when it strikes
+    disaster_cooldown:  0,     // min generations between disasters (0 = no limit).
+                               // After a strike at gen G, the next can only
+                               // occur at gen >= G + cooldown — a safety window
+                               // that lets population/fitness recover.
+    disaster_seed:      0,     // PRNG seed (0 = unseeded, use Math.random)
+
+    // ── Predators (mirrors PredatorHyperparameters) ───────────────────────
+    predator_drain:         1.0, // PredatorHyperparameters.drainAmount
+    predators_per_patch:    2,   // PredatorHyperparameters.patrol.predatorsPerPatch
+    roaming_predator_count: 0,   // PredatorHyperparameters.count
+};
+
+// Keys that may be overridden (everything above; methods are excluded).
+const TUNABLE_KEYS = Object.keys(ExperimentParams);
+
+/**
+ * Apply a flat overrides object (e.g. parsed CLI flags). Unknown keys are
+ * ignored; null/undefined values are skipped so partial overrides are fine.
+ * Returns the list of keys actually changed (for logging).
+ */
+ExperimentParams.applyOverrides = function (obj) {
+    if (!obj) return [];
+    const changed = [];
+    for (const key of TUNABLE_KEYS) {
+        if (obj[key] != null && obj[key] !== this[key]) {
+            this[key] = obj[key];
+            changed.push(key);
+        }
+    }
+    return changed;
+};
+
+/** Plain object of the current values (no methods) — for params.txt / logging. */
+ExperimentParams.snapshot = function () {
+    const out = {};
+    for (const key of TUNABLE_KEYS) out[key] = this[key];
+    return out;
+};
+
+ExperimentParams.TUNABLE_KEYS = TUNABLE_KEYS;
+
+module.exports = ExperimentParams;

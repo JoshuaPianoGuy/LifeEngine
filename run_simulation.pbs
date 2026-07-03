@@ -1,0 +1,98 @@
+#!/bin/bash
+# ============================================================================
+# run_simulation.pbs — PBS job script for the learning-vs-evolution experiment
+# on the CHPC (see "CHPC Guide.pdf").
+#
+# Two ways to set parameters:
+#   1. Edit the defaults below, then:   qsub run_simulation.pbs
+#   2. Override per job at submit time (no editing — ideal for sweeps / arrays):
+#        qsub -v MAP_SEED=43,CONDITION=evolution,MODE=standard run_simulation.pbs
+#        qsub -v MAP_SEED=7,GENERATIONS=100,LEARNING_RATE=0.01,HIDDEN_SIZE=64 run_simulation.pbs
+#   Every parameter below uses ${VAR:-default}, so an env var (set via -v) wins,
+#   otherwise the default applies.
+#
+# Each run writes CSVs + a params.txt to logs/<condition>/<mode>/auto-run/run_N/.
+# ============================================================================
+
+#PBS -N life_engine
+#PBS -P CSCI1142
+#PBS -l walltime=24:00:00
+#PBS -l nodes=1:ppn=1
+#PBS -l mem=4gb
+#PBS -q serial
+#PBS -o logs/life_engine.out
+#PBS -e logs/life_engine.err
+#PBS -m abe
+#PBS -M your-email@students.uct.ac.za
+
+# ── Environment (EDIT for your CHPC account) ────────────────────────────────
+# Path to the Node 16 binary (run `nvm use 16 && which node` to find yours).
+NODE_BIN="${NODE_BIN:-/home/$USER/.nvm/versions/node/v16.20.2/bin/node}"
+# Absolute path to the project directory on the CHPC.
+PROJECT_DIR="${PROJECT_DIR:-/home/$USER/LifeEngine}"
+
+# ── Run control (override with -v) ──────────────────────────────────────────
+MAP_SEED="${MAP_SEED:-42}"          # terrain seed (deterministic world)
+CONDITION="${CONDITION:-learning}"  # learning | evolution
+MODE="${MODE:-standard}"            # standard | frozen_pg | pure_rl
+GENERATIONS="${GENERATIONS:-50}"    # number of generations to run
+WIDTH="${WIDTH:-400}"               # grid columns
+HEIGHT="${HEIGHT:-300}"             # grid rows
+LOG_EVERY="${LOG_EVERY:-10000}"     # progress print interval (ticks)
+RUN_NAME="${RUN_NAME:-}"            # output folder name (empty = seed<N>_job<id>)
+
+# ── Tunable hyperparameters (override with -v) ──────────────────────────────
+LEARNING_RATE="${LEARNING_RATE:-0.02}"
+EPSILON_START="${EPSILON_START:-0.5}"
+EPSILON_END="${EPSILON_END:-0.05}"
+HIDDEN_SIZE="${HIDDEN_SIZE:-64}"
+POPULATION_SIZE="${POPULATION_SIZE:-100}"
+MUT_PROB="${MUT_PROB:-0.03}"
+MUT_SIGMA="${MUT_SIGMA:-0.1}"
+DISASTER="${DISASTER:-0}"                 # 1 = enable natural-disaster culls
+DISASTER_PROB="${DISASTER_PROB:-0.1}"     # per-gen chance a disaster hits
+DISASTER_FRACTION="${DISASTER_FRACTION:-0.2}"  # fixed fraction culled per event
+DISASTER_COOLDOWN="${DISASTER_COOLDOWN:-0}"    # min generations between disasters (0=none)
+DISASTER_SEED="${DISASTER_SEED:-0}"       # disaster PRNG seed (0 = unseeded)
+PREDATOR_DRAIN="${PREDATOR_DRAIN:-1.0}"
+PREDATORS_PER_PATCH="${PREDATORS_PER_PATCH:-2}"
+ROAMING_PREDATORS="${ROAMING_PREDATORS:-0}"
+
+# ── Run ─────────────────────────────────────────────────────────────────────
+cd "$PROJECT_DIR" || { echo "ERROR: cannot cd to $PROJECT_DIR"; exit 1; }
+mkdir -p logs
+
+if [ ! -x "$NODE_BIN" ] && ! command -v "$NODE_BIN" >/dev/null 2>&1; then
+    echo "ERROR: Node binary not found at '$NODE_BIN'. Run 'nvm use 16 && which node' and set NODE_BIN."
+    exit 1
+fi
+
+echo "[pbs] node=$NODE_BIN"
+echo "[pbs] map_seed=$MAP_SEED condition=$CONDITION mode=$MODE generations=$GENERATIONS grid=${WIDTH}x${HEIGHT}"
+
+"$NODE_BIN" src/headless.js \
+    --map-seed "$MAP_SEED" \
+    --condition "$CONDITION" \
+    --mode "$MODE" \
+    --generations "$GENERATIONS" \
+    --width "$WIDTH" \
+    --height "$HEIGHT" \
+    --log-every "$LOG_EVERY" \
+    $( [ -n "$RUN_NAME" ] && printf -- "--run-name %s" "$RUN_NAME" ) \
+    --learning-rate "$LEARNING_RATE" \
+    --epsilon-start "$EPSILON_START" \
+    --epsilon-end "$EPSILON_END" \
+    --hidden-size "$HIDDEN_SIZE" \
+    --population-size "$POPULATION_SIZE" \
+    --mut-prob "$MUT_PROB" \
+    --mut-sigma "$MUT_SIGMA" \
+    $( [ "$DISASTER" = "1" ] && printf -- "--disaster" ) \
+    --disaster-prob "$DISASTER_PROB" \
+    --disaster-fraction "$DISASTER_FRACTION" \
+    --disaster-cooldown "$DISASTER_COOLDOWN" \
+    --disaster-seed "$DISASTER_SEED" \
+    --predator-drain "$PREDATOR_DRAIN" \
+    --predators-per-patch "$PREDATORS_PER_PATCH" \
+    --roaming-predators "$ROAMING_PREDATORS"
+
+echo "[pbs] done (exit $?)"

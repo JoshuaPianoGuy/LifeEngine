@@ -357,7 +357,7 @@ class Logger {
 
     // ── Compact binary weight encoding ────────────────────────────────────────
     //
-    // Space breakdown per organism row (GENOME_SIZE=1830, W1_SIZE=1600):
+    // Space breakdown per organism row (GENOME_SIZE=1958, W1_SIZE=1728):
     //   Old text at 6 d.p.:  ~30 KB/row
     //   Float32 + Base64:    ~17 KB/row  (-43%)
     //   Int8   + Base64:      ~5 KB/row  (-85%, ~0.008 resolution, fine for genomes)
@@ -466,7 +466,20 @@ class Logger {
         if (!this._auto_save_enabled) return;
         if (!this._auto_save_every_n || this._auto_save_every_n <= 0) return;
         if (generation % this._auto_save_every_n !== 0) return;
+        this._flush(rl_enabled);
+    }
 
+    /**
+     * Public: force-persist any rows accumulated since the last flush,
+     * regardless of the auto-save interval. Call at end-of-run (e.g. from the
+     * headless runner) so the final partial window of generations isn't lost.
+     */
+    flush(rl_enabled) {
+        if (!this._auto_save_enabled) return;
+        this._flush(rl_enabled);
+    }
+
+    _flush(rl_enabled) {
         try {
             if (this._auto_save_fs_enabled) {
                 const out_dir = this._getRunDir(rl_enabled);
@@ -616,6 +629,28 @@ class Logger {
         return (WorldConfig.MAP_SEED != null) ? WorldConfig.MAP_SEED : '';
     }
 
+    /**
+     * Public: resolve (creating if needed) the auto-save run directory for this
+     * run, e.g. logs/<condition>/<mode>/auto-run/run_N. Used by the headless
+     * runner to write params.txt alongside the CSVs. Returns null in the
+     * browser (no fs). The chosen run_N is cached, so the subsequent CSV
+     * auto-saves land in the same folder.
+     */
+    getRunDir(rl_enabled) {
+        return this._getRunDir(rl_enabled);
+    }
+
+    /**
+     * Force a fixed run-folder NAME instead of the auto-incremented run_N.
+     * Used by the headless runner to make the folder collision-proof for
+     * parallel HPC jobs (e.g. 'seed42_job1234567'): the run_N scheme scans the
+     * directory and picks max+1, which races when several jobs of the same
+     * condition/mode start at once. Must be called before the first getRunDir().
+     */
+    setRunName(name) {
+        if (name) this._forced_run_name = String(name);
+    }
+
     _getRunDir(rl_enabled) {
         if (!this._auto_save_fs_enabled) return null;
 
@@ -626,12 +661,18 @@ class Logger {
 
         if (!this._auto_save_run_dir) {
             fs.mkdirSync(auto_dir, { recursive: true });
-            const entries = fs.readdirSync(auto_dir, { withFileTypes: true })
-                .filter(d => d.isDirectory() && /^run_\d+$/.test(d.name))
-                .map(d => parseInt(d.name.replace('run_', ''), 10))
-                .filter(n => Number.isFinite(n));
-            const next = entries.length > 0 ? Math.max(...entries) + 1 : 1;
-            this._auto_save_run_dir = path.join(auto_dir, `run_${next}`);
+            if (this._forced_run_name) {
+                // Explicit, collision-proof folder (headless/HPC).
+                this._auto_save_run_dir = path.join(auto_dir, this._forced_run_name);
+            } else {
+                // Auto-increment run_N (browser / serial local runs).
+                const entries = fs.readdirSync(auto_dir, { withFileTypes: true })
+                    .filter(d => d.isDirectory() && /^run_\d+$/.test(d.name))
+                    .map(d => parseInt(d.name.replace('run_', ''), 10))
+                    .filter(n => Number.isFinite(n));
+                const next = entries.length > 0 ? Math.max(...entries) + 1 : 1;
+                this._auto_save_run_dir = path.join(auto_dir, `run_${next}`);
+            }
         }
 
         return this._auto_save_run_dir;
