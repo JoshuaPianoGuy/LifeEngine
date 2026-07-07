@@ -238,7 +238,18 @@ if (runName) logger.setRunName(runName);
 // Redirect output off the home-quota'd project tree onto scratch when asked
 // (absolute path recommended). Must precede the first getRunDir().
 if (typeof opts['log-dir'] === 'string' && opts['log-dir']) logger.setAutoSaveDir(opts['log-dir']);
-const runDir = logger.getRunDir(rl_enabled);
+// getRunDir creates the .../auto-run dir; if the output/scratch base isn't
+// creatable this throws. Catch it here so a bad path fails with a clear message
+// instead of an uncaught stack trace (and long before wasting a whole run).
+let runDir;
+try {
+    runDir = logger.getRunDir(rl_enabled);
+} catch (e) {
+    console.error(`[headless] FATAL: cannot create output directory: ${e.message}`);
+    console.error('[headless] The output path (--log-dir / LOG_DIR) is likely wrong or not ' +
+        'writable. Fix it and resubmit.');
+    process.exit(1);
+}
 
 // ─── Write the run's parameter manifest ───────────────────────────────────────
 const params = {
@@ -268,7 +279,14 @@ if (runDir) {
         fs.writeFileSync(path.join(runDir, 'params.json'), JSON.stringify(params, null, 2), 'utf8');
         console.log(`[headless] Params written to ${path.join(runDir, 'params.txt')}`);
     } catch (e) {
-        console.warn('[headless] Could not write params files:', e.message);
+        // The run dir is where the CSVs go too. If we can't write here, the whole
+        // run would otherwise complete but silently produce nothing (Logger's
+        // _flush swallows the same error and disables auto-save). Fail loudly and
+        // immediately instead so a bad --log-dir / scratch path is obvious.
+        console.error(`[headless] FATAL: cannot write to run directory:\n  ${runDir}\n  ${e.message}`);
+        console.error('[headless] The output path (--log-dir / LOG_DIR) is likely wrong or not ' +
+            'writable. Fix it and resubmit — no CSVs would be produced otherwise.');
+        process.exit(1);
     }
 } else {
     console.warn('[headless] No run directory (fs auto-save disabled) — params not written.');

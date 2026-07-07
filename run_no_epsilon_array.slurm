@@ -40,10 +40,13 @@
 
 # ── Environment (EDIT for your account) ─────────────────────────────────────
 NODE_BIN="${NODE_BIN:-$HOME/.nvm/versions/node/v16.20.2/bin/node}"
-PROJECT_DIR="${PROJECT_DIR:-$HOME/LifeEngine}"
-# Base output dir. Point this at SCRATCH so runs do NOT fill the home quota
-# under $PROJECT_DIR/logs. EDIT to match your cluster's scratch path.
-LOG_DIR="${LOG_DIR:-/scratch/$USER/LifeEngine/logs}"
+# Run from wherever you submit: cd into your SCRATCH clone, then `sbatch ...`.
+# SLURM_SUBMIT_DIR is the directory sbatch was invoked from; falls back to a home
+# clone if run some other way. Keeping code + logs in scratch avoids the home
+# quota and the "which clone am I running?" confusion entirely.
+PROJECT_DIR="${PROJECT_DIR:-${SLURM_SUBMIT_DIR:-$HOME/LifeEngine}}"
+# Logs live alongside the project — scratch, when you submit from scratch.
+LOG_DIR="${LOG_DIR:-$PROJECT_DIR/logs}"
 
 # ── Sweep grid ──────────────────────────────────────────────────────────────
 # One factor only (seed). If you change the seed count, update --array above to
