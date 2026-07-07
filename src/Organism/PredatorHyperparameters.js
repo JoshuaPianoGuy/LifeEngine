@@ -18,7 +18,7 @@ const PredatorHyperparameters = {
     // never grows or shrinks below this number — PredatorManager respawns any
     // predator that somehow dies (e.g. future extension) or is removed, so
     // count(tick=1) === count(tick=10,000,000).
-    count: 0,
+    count: 60,
 
     // ── Spatial scaling ────────────────────────────────────────────────────
     // Every distance below (detection/leash/link radii) is an ABSOLUTE number

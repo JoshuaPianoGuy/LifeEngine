@@ -651,6 +651,16 @@ class Logger {
         if (name) this._forced_run_name = String(name);
     }
 
+    /**
+     * Override the base output directory (default 'logs', resolved against the
+     * process cwd). Pass an ABSOLUTE path to write outside the project tree —
+     * e.g. a cluster scratch filesystem instead of the home-quota'd project dir.
+     * Must be called before the first getRunDir().
+     */
+    setAutoSaveDir(dir) {
+        if (dir) this._auto_save_dir = String(dir);
+    }
+
     _getRunDir(rl_enabled) {
         if (!this._auto_save_fs_enabled) return null;
 

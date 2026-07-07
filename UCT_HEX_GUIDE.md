@@ -80,7 +80,7 @@ project code (`-P`) and a generic `serial` queue suffice, the UCT cluster requir
 
 | Partition | Use | Cores/node | Max cores/user | Walltime cap |
 |---|---|---|---|---|
-| `ada` (100-series) | general CPU — faster cores, less RAM | 48 | 200 | 250 h |
+| `ada` (100-series) | general CPU — faster cores, less RAM | 48 | 200 | 250 h |putty
 | `ada` (200-series) | general CPU — slower cores, more RAM (~9 GB/core) | 40 | 200 | 250 h |
 | `l40s` | GPU (4 GPUs/node) | 48 | 96 | 48 h |
 | `a100` | GPU (4 GPUs/node) | 56 | — | — |

@@ -29,6 +29,24 @@ const ExperimentParams = {
     epsilon_start: 0.3,    // EPSILON_START
     epsilon_end:   0.05,   // EPSILON_END
 
+    // Master switch for epsilon-greedy exploration. When false, epsilon is
+    // forced to 0 for the whole lifetime regardless of start/end/shape: the
+    // organism acts purely on-policy (samples straight from the softmax) and
+    // REINFORCE still runs with an importance ratio of exactly 1. Use this to
+    // isolate whether epsilon exploration adds anything on top of REINFORCE.
+    epsilon_enabled: true, // EPSILON_ENABLED
+
+    // Shape of the epsilon decay over lifetime_frac (0 at birth -> 1 at max
+    // lifespan). Applied as lifetime_frac ** exponent in NNBrain.decide():
+    //   'sublinear' (√, exponent 0.5): epsilon drops fast early then flattens
+    //                                  near EPSILON_END (concave, explore-early).
+    //   'linear'    (exponent 1):      constant-rate decay.
+    //   'quadratic' (², exponent 2):   epsilon holds near EPSILON_START then
+    //                                  drops sharply late (convex, explore-late).
+    //                                  This is the original in-code behaviour.
+    // Unknown values fall back to 'quadratic'.
+    epsilon_decay_shape: 'quadratic', // EPSILON_DECAY_SHAPE
+
     // ── Network (NNBrain) ─────────────────────────────────────────────────
     // Hidden-layer width. Changing this resizes the genome (W1/W2), so it is
     // read once at NNBrain load — set it before the sim modules are required.
@@ -65,7 +83,7 @@ const ExperimentParams = {
     // ── Predators (mirrors PredatorHyperparameters) ───────────────────────
     predator_drain:         1.0, // PredatorHyperparameters.drainAmount
     predators_per_patch:    2,   // PredatorHyperparameters.patrol.predatorsPerPatch
-    roaming_predator_count: 0,   // PredatorHyperparameters.count
+    roaming_predator_count: 60,   // PredatorHyperparameters.count
 };
 
 // Keys that may be overridden (everything above; methods are excluded).

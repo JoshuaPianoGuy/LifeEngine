@@ -46,11 +46,14 @@
  *   active_weights === genome_weights (same reference). No RL, no drift.
  *
  * Exploration:
- *   Epsilon-greedy with quadratic decay over the agent's available lifetime
- *   (see AdvancedOrganism._max_possible_lifetime). Exploratory actions are
+ *   Epsilon-greedy decay over the agent's available lifetime (see
+ *   AdvancedOrganism._max_possible_lifetime). The decay shape is tunable via
+ *   ExperimentParams.epsilon_decay_shape: 'sublinear' (√), 'linear', or
+ *   'quadratic' (², the default). Exploratory actions are
  *   importance-weighted (ρ = π(a)/behaviour(a), behaviour = the ε-greedy
  *   mixture) so off-policy noise doesn't bias the REINFORCE update.
- *   Set EPSILON_START = 0 to disable exploration entirely.
+ *   Set ExperimentParams.epsilon_enabled = false to pin epsilon to 0 and run
+ *   pure on-policy REINFORCE (no exploration at all).
  */
 
 'use strict';
@@ -144,6 +147,18 @@ const BASELINE_DECAY   = 0.9;   // exponential moving average decay for running 
 // Exploration (tunable; defaults 0.5 -> 0.05)
 const EPSILON_START = ExperimentParams.epsilon_start;
 const EPSILON_END   = ExperimentParams.epsilon_end;
+// Master switch: when false, epsilon is pinned to 0 (pure on-policy REINFORCE,
+// no random-action injection). See ExperimentParams.epsilon_enabled.
+const EPSILON_ENABLED = ExperimentParams.epsilon_enabled !== false;
+
+// Exponent applied to lifetime_frac (0->1) to shape the epsilon decay. Named
+// shapes keep experiment conditions/logs readable; unknown -> quadratic (the
+// original hard-coded behaviour). See ExperimentParams.epsilon_decay_shape.
+const EPSILON_DECAY_EXPONENTS = { sublinear: 0.5, linear: 1, quadratic: 2 };
+const EPSILON_DECAY_EXPONENT  =
+    EPSILON_DECAY_EXPONENTS[ExperimentParams.epsilon_decay_shape] != null
+        ? EPSILON_DECAY_EXPONENTS[ExperimentParams.epsilon_decay_shape]
+        : EPSILON_DECAY_EXPONENTS.quadratic;
 
 // ── Debugging ─────────────────────────────────────────────────────────────────
 const DEBUG_OBSERVATIONS = false;  // Set to true to log what each eye observes per tick
@@ -465,7 +480,11 @@ class NNBrain {
         // regardless of what the genome encodes.
         let action;
         if (this.rl_enabled) {
-            const epsilon = EPSILON_START + (EPSILON_END - EPSILON_START) * (lifetime_frac ** 2);
+            // epsilon=0 makes the branch below pure on-policy: Math.random() < 0
+            // is never true, and b_a collapses to pi_a so the importance ratio is 1.
+            const epsilon = EPSILON_ENABLED
+                ? EPSILON_START + (EPSILON_END - EPSILON_START) * (lifetime_frac ** EPSILON_DECAY_EXPONENT)
+                : 0;
             if (Math.random() < epsilon) {
                 // Explore: forward pass caches hidden activations AND the true
                 // softmax π (left in this._last_probs); only the chosen action
@@ -624,5 +643,7 @@ NNBrain.PERCEPT_PREDATOR        = PERCEPT_PREDATOR;
 NNBrain.PERCEPT_PATROL_PREDATOR = PERCEPT_PATROL_PREDATOR;
 NNBrain.EPSILON_START    = EPSILON_START;
 NNBrain.EPSILON_END      = EPSILON_END;
+NNBrain.EPSILON_DECAY_EXPONENT = EPSILON_DECAY_EXPONENT;
+NNBrain.EPSILON_ENABLED  = EPSILON_ENABLED;
 
 module.exports = NNBrain;

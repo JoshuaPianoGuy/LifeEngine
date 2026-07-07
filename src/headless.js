@@ -91,6 +91,14 @@ function floatOpt(name, def = null) {
     if (isNaN(v)) { console.error(`ERROR: --${name} must be a number.`); process.exit(1); }
     return v;
 }
+function strOpt(name, def = null, allowed = null) {
+    if (opts[name] === undefined) return def;
+    const v = String(opts[name]);
+    if (allowed && !allowed.includes(v)) {
+        console.error(`ERROR: --${name} must be one of: ${allowed.join(', ')}.`); process.exit(1);
+    }
+    return v;
+}
 
 function usageAndExit() {
     console.error(
@@ -109,10 +117,14 @@ function usageAndExit() {
         '    --log-every  <N>   progress line every N ticks (default 10000, 0 to silence)\n' +
         '    --run-name   <s>   output folder name under logs/<cond>/<mode>/auto-run/\n' +
         '                       (default: seed<N>_job<PBS_JOBID> on the cluster, else run_N)\n' +
+        '    --log-dir    <s>   base output dir (default: ./logs). Pass an absolute\n' +
+        '                       path to write to scratch instead of the project tree.\n' +
         '\n  Tunable hyperparameters (default = current in-code value):\n' +
         '    --learning-rate <f>       RL learning rate              (0.02)\n' +
         '    --epsilon-start <f>       exploration epsilon at birth  (0.5)\n' +
         '    --epsilon-end   <f>       exploration epsilon at death  (0.05)\n' +
+        '    --epsilon-decay-shape <s> sublinear|linear|quadratic    (quadratic)\n' +
+        '    --no-epsilon              disable epsilon entirely (pure on-policy REINFORCE)\n' +
         '    --hidden-size   <N>       NN hidden-layer width         (64)\n' +
         '    --population-size <N>     founders per generation       (100)\n' +
         '    --mut-prob      <f>       between-gen mutation rate      (0.03)\n' +
@@ -152,6 +164,8 @@ const changed = ExperimentParams.applyOverrides({
     learning_rate:          floatOpt('learning-rate'),
     epsilon_start:          floatOpt('epsilon-start'),
     epsilon_end:            floatOpt('epsilon-end'),
+    epsilon_decay_shape:    strOpt('epsilon-decay-shape', null, ['sublinear', 'linear', 'quadratic']),
+    epsilon_enabled:        opts['no-epsilon'] ? false : null,
     hidden_size:            intOpt('hidden-size'),
     population_size:        intOpt('population-size'),
     mut_prob:               floatOpt('mut-prob'),
@@ -221,6 +235,9 @@ if (!runName && process.env.PBS_JOBID) {
     runName = `seed${MAP_SEED}_job${jobnum}`;
 }
 if (runName) logger.setRunName(runName);
+// Redirect output off the home-quota'd project tree onto scratch when asked
+// (absolute path recommended). Must precede the first getRunDir().
+if (typeof opts['log-dir'] === 'string' && opts['log-dir']) logger.setAutoSaveDir(opts['log-dir']);
 const runDir = logger.getRunDir(rl_enabled);
 
 // ─── Write the run's parameter manifest ───────────────────────────────────────

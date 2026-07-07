@@ -20,8 +20,8 @@ const WorldConfig = {
     // null = use canvas size (browser default). Set both to fix a specific map.
     // cell_size is always 2 — changing it rescales everything proportionally.
     // Example: 400×300 at cell_size=2 gives a 200×150 grid.
-    MAP_COLS: null,   // e.g. 200 for a 200-column grid
-    MAP_ROWS: null,   // e.g. 150 for a 150-row grid
+    MAP_COLS: 1000,   // e.g. 200 for a 200-column grid
+    MAP_ROWS: 1000,   // e.g. 150 for a 150-row grid
 
     // ── Generation length scaling ─────────────────────────────────────────
     // TICKS_PER_MAP * MAPS_PER_GEN = total ticks per generation.

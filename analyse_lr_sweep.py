@@ -82,7 +82,9 @@ def final_value(gen_csv, metric, window, max_gen):
         raise KeyError(f"'{metric}' not in {gen_csv}. Have: {list(df.columns)}")
     df = df[df['generation'] <= max_gen].copy()
     df[metric] = pd.to_numeric(df[metric], errors='coerce')
-    df = df.sort_values('generation')
+    # Deduplicate on 'generation' (keep last) so a doubled/appended CSV neither
+    # double-counts the tail nor breaks the axis=1 concat in plot_curves.
+    df = df.drop_duplicates('generation', keep='last').sort_values('generation')
     tail = df[metric].dropna().tail(window)
     return (tail.mean() if len(tail) else np.nan), df
 
