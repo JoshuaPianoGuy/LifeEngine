@@ -4,6 +4,7 @@ dist/js/bundle.js
 dist/js/bundle.js.LICENSE.txt
 /logs
 /output_logs
+/output
 /figures
 .claude
 .venv
