@@ -79,6 +79,17 @@ const ExperimentParams = {
                                // occur at gen >= G + cooldown — a safety window
                                // that lets population/fitness recover.
     disaster_seed:      0,     // PRNG seed (0 = unseeded, use Math.random)
+    disaster_recovery_rate: 0, // GRADUAL-RECOVERY variant. 0 = classic once-off
+                               // cull (default). If > 0, a strike does NOT cull a
+                               // fixed slice once; instead it tapers over
+                               // successive generations, shrinking the culled
+                               // fraction by this many percentage points each
+                               // generation until it reaches 0 and the full
+                               // population is used for selection again. E.g.
+                               // disaster_fraction=0.30, recovery_rate=0.05 →
+                               // culls 0.30, 0.25, 0.20, ... 0.05, 0 over 6 gens.
+                               // No new strike can fire while a taper is in
+                               // progress; the cooldown counts from its last gen.
 
     // ── Predators (mirrors PredatorHyperparameters) ───────────────────────
     predator_drain:         1.0, // PredatorHyperparameters.drainAmount

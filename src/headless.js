@@ -134,6 +134,7 @@ function usageAndExit() {
         '    --disaster-fraction <f>   fixed fraction culled per event (0.2)\n' +
         '    --disaster-cooldown <N>   min generations between disasters (0=none)\n' +
         '    --disaster-seed <N>       disaster PRNG seed, 0=unseeded  (0)\n' +
+        '    --disaster-recovery-rate <f>  taper cull by this fraction/gen (0=once-off)\n' +
         '    --predator-drain <f>      energy drained per contact     (1.0)\n' +
         '    --predators-per-patch <N> patrol predators per prestige patch (2)\n' +
         '    --roaming-predators   <N> roaming predator count         (0)\n'
@@ -175,6 +176,7 @@ const changed = ExperimentParams.applyOverrides({
     disaster_fraction:      floatOpt('disaster-fraction'),
     disaster_cooldown:      intOpt('disaster-cooldown'),
     disaster_seed:          intOpt('disaster-seed'),
+    disaster_recovery_rate: floatOpt('disaster-recovery-rate'),
     predator_drain:         floatOpt('predator-drain'),
     predators_per_patch:    intOpt('predators-per-patch'),
     roaming_predator_count: intOpt('roaming-predators'),

@@ -105,12 +105,17 @@ class GAManager {
         this.disaster_prob      = ExperimentParams.disaster_prob;
         this.disaster_fraction  = ExperimentParams.disaster_fraction;
         this.disaster_cooldown  = ExperimentParams.disaster_cooldown;
+        this.disaster_recovery_rate = ExperimentParams.disaster_recovery_rate;
         this._disaster_rng      = ExperimentParams.disaster_seed
             ? GAManager._mulberry32(ExperimentParams.disaster_seed)
             : Math.random;
         // Generation index of the last disaster (null = never). Used to enforce
         // the cooldown safety window between strikes.
         this._last_disaster_gen = null;
+        // Gradual-recovery state: fraction to cull NEXT generation as part of an
+        // in-progress taper (0 = no taper active). Set when a strike fires and
+        // disaster_recovery_rate > 0; decremented each generation until <= 0.
+        this._disaster_next_frac = 0;
     }
 
     // ── Generation lifecycle ──────────────────────────────────────────────────
@@ -299,13 +304,36 @@ class GAManager {
         // population time to recover. The cooldown check short-circuits the
         // Bernoulli draw, so no PRNG value is consumed while suppressed —
         // keeping the seeded sequence reproducible regardless of the window.
+        //
+        // Gradual-recovery variant (disaster_recovery_rate > 0): once a strike
+        // fires, the cull tapers over successive generations instead of hitting
+        // once. _disaster_next_frac carries the fraction owed to the current
+        // taper; while it is > 0 we continue tapering and consume no PRNG value
+        // (no new Bernoulli draw), so an in-progress recovery neither ends early
+        // nor perturbs the seeded strike-timing sequence.
         let selection_pool = sorted;
-        const cooldown_ok = (this._last_disaster_gen === null) ||
-            (this.generation - this._last_disaster_gen >= this.disaster_cooldown);
-        if (this.disaster_enabled && sorted.length > 1 && cooldown_ok &&
-            this._disaster_rng() < this.disaster_prob) {
-            selection_pool = this._applyDisaster(sorted);
+        let cull_frac = 0;
+        if (this.disaster_enabled && sorted.length > 1) {
+            if (this._disaster_next_frac > 0) {
+                // Mid-recovery: keep tapering the previous strike.
+                cull_frac = this._disaster_next_frac;
+            } else {
+                const cooldown_ok = (this._last_disaster_gen === null) ||
+                    (this.generation - this._last_disaster_gen >= this.disaster_cooldown);
+                if (cooldown_ok && this._disaster_rng() < this.disaster_prob) {
+                    cull_frac = this.disaster_fraction;
+                }
+            }
+        }
+        if (cull_frac > 0) {
+            selection_pool = this._applyDisaster(sorted, cull_frac);
             this._last_disaster_gen = this.generation;
+            // Schedule next generation's tapered fraction. recovery_rate 0 keeps
+            // the classic once-off behaviour (next_frac stays 0). A tiny epsilon
+            // floor absorbs floating-point drift so the taper lands cleanly on 0.
+            const next = cull_frac - this.disaster_recovery_rate;
+            this._disaster_next_frac =
+                (this.disaster_recovery_rate > 0 && next > 1e-9) ? next : 0;
         }
 
         // Tournament selection (k=TOURNAMENT_K) replaces truncation selection.
@@ -402,18 +430,19 @@ class GAManager {
     /**
      * Natural-disaster cull, applied to the SELECTION pool only.
      *
-     * Removes a FIXED fraction (disaster_fraction) of agents chosen uniformly at
+     * Removes the given fraction of agents chosen uniformly at
      * random — shuffle the pool, drop the first N — so a random slice of genes is
      * wiped before tournament selection without regard to fitness. At least one
      * agent always survives. Uses the disaster PRNG (seeded or not) for every
      * shuffle draw so the whole event is reproducible.
      *
      * @param {AdvancedOrganism[]} agents  fitness-sorted full population
+     * @param {number} frac  fraction to cull this generation (the tapered value
+     *                       during gradual recovery, else disaster_fraction)
      * @returns {AdvancedOrganism[]} the surviving subset (selection pool)
      */
-    _applyDisaster(agents) {
+    _applyDisaster(agents, frac) {
         const n = agents.length;
-        const frac = this.disaster_fraction;
         // Cap removal so >=1 agent survives for selection/crossover.
         const remove_count = Math.min(n - 1, Math.round(n * frac));
 

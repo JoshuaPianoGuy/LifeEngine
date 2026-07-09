@@ -1,4 +1,4 @@
-putt#!/bin/bash
+#!/bin/bash
 # ============================================================================
 # run_predator_sweep_array.slurm — roaming-predator DIFFICULTY sweep as a
 # single SLURM job array.
@@ -41,7 +41,13 @@ putt#!/bin/bash
 
 # ── Environment (EDIT for your account) ─────────────────────────────────────
 NODE_BIN="${NODE_BIN:-$HOME/.nvm/versions/node/v16.20.2/bin/node}"
-PROJECT_DIR="${PROJECT_DIR:-$HOME/LifeEngine}"
+# Run from wherever you submit: cd into your SCRATCH clone, then `sbatch ...`.
+# SLURM_SUBMIT_DIR is the directory sbatch was invoked from; falls back to a home
+# clone if run some other way. Keeping code + logs in scratch avoids the home
+# quota and the "which clone am I running?" confusion entirely.
+PROJECT_DIR="${PROJECT_DIR:-${SLURM_SUBMIT_DIR:-$HOME/LifeEngine}}"
+# Logs live alongside the project — scratch, when you submit from scratch.
+LOG_DIR="${LOG_DIR:-$PROJECT_DIR/logs}"
 
 # ── Sweep grid ──────────────────────────────────────────────────────────────
 ROAMING_COUNTS=(15 30 45 60)      # roaming predator population
@@ -88,7 +94,7 @@ RUN_NAME="${CONDITION}_roam${ROAMING_PREDATORS}_drain${PREDATOR_DRAIN}_seed${MAP
 
 # ── Run ─────────────────────────────────────────────────────────────────────
 cd "$PROJECT_DIR" || { echo "ERROR: cannot cd to $PROJECT_DIR"; exit 1; }
-mkdir -p logs
+mkdir -p "$LOG_DIR" logs
 
 if [ ! -x "$NODE_BIN" ] && ! command -v "$NODE_BIN" >/dev/null 2>&1; then
     echo "ERROR: Node binary not found at '$NODE_BIN'. Run 'nvm use 16 && which node' and set NODE_BIN."
@@ -108,6 +114,7 @@ echo "[array]   roaming=$ROAMING_PREDATORS  drain=$PREDATOR_DRAIN  seed=$MAP_SEE
     --width "$WIDTH" \
     --height "$HEIGHT" \
     --run-name "$RUN_NAME" \
+    --log-dir "$LOG_DIR" \
     --learning-rate "$LEARNING_RATE" \
     --predators-per-patch 0 \
     --roaming-predators "$ROAMING_PREDATORS" \
