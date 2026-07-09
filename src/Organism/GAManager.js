@@ -116,6 +116,9 @@ class GAManager {
         // in-progress taper (0 = no taper active). Set when a strike fires and
         // disaster_recovery_rate > 0; decremented each generation until <= 0.
         this._disaster_next_frac = 0;
+        // Fraction culled on the CURRENT generation (0 = none). Set each evolve()
+        // before metrics are recorded; the Logger writes it to generations.csv.
+        this._disaster_cull_this_gen = 0;
     }
 
     // ── Generation lifecycle ──────────────────────────────────────────────────
@@ -288,16 +291,16 @@ class GAManager {
         // Sort all agents by fitness descending
         const sorted = [...this.all_agents].sort((a, b) => b.getFitness() - a.getFitness());
 
-        // Metrics reflect the FULL generation that actually lived (so population
-        // and genome-variance graphs stay truthful); the disaster only prunes
-        // the selection pool below.
-        this._recordMetrics(sorted);
-
-        // Optional natural disaster: with probability disaster_prob, randomly
-        // wipe a fixed slice of this generation's agents BEFORE selection, so
-        // their genes never enter the next gene pool. Removal is fitness-blind
-        // (any agent can perish) — that is the point: it culls genetic diversity
-        // at random, not by merit.
+        // Decide the natural-disaster cull for THIS generation BEFORE recording
+        // metrics, so the generation's row can carry the fraction culled. The
+        // strike is attributed to the generation it fires on (this.generation, N);
+        // its population effect lands on N+1's founders, spawned right after.
+        //
+        // With probability disaster_prob a strike randomly wipes a slice of this
+        // generation's agents from the SELECTION pool BEFORE selection, so their
+        // genes never enter the next gene pool. Removal is fitness-blind (any
+        // agent can perish) — the point is to cull genetic diversity at random,
+        // not by merit.
         //
         // Cooldown safety window: after a strike at generation G, no further
         // strike may occur until generation G + disaster_cooldown, giving the
@@ -311,7 +314,6 @@ class GAManager {
         // taper; while it is > 0 we continue tapering and consume no PRNG value
         // (no new Bernoulli draw), so an in-progress recovery neither ends early
         // nor perturbs the seeded strike-timing sequence.
-        let selection_pool = sorted;
         let cull_frac = 0;
         if (this.disaster_enabled && sorted.length > 1) {
             if (this._disaster_next_frac > 0) {
@@ -325,6 +327,16 @@ class GAManager {
                 }
             }
         }
+        // Stash for the Logger: written to generations.csv as disaster_cull_frac
+        // on this generation's row (0 = no strike this generation).
+        this._disaster_cull_this_gen = cull_frac;
+
+        // Metrics reflect the FULL generation that actually lived (so population
+        // and genome-variance graphs stay truthful); the disaster only prunes
+        // the selection pool below.
+        this._recordMetrics(sorted);
+
+        let selection_pool = sorted;
         if (cull_frac > 0) {
             selection_pool = this._applyDisaster(sorted, cull_frac);
             this._last_disaster_gen = this.generation;
@@ -457,7 +469,7 @@ class GAManager {
         const survivors = shuffled.slice(remove_count);
 
         logger.logEvent('GA',
-            `Gen ${this.generation - 1} | NATURAL DISASTER — culled ${remove_count}/${n} ` +
+            `Gen ${this.generation} | NATURAL DISASTER — culled ${remove_count}/${n} ` +
             `(${(frac * 100).toFixed(1)}%) at random before selection`);
 
         return survivors;

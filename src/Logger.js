@@ -189,6 +189,11 @@ class Logger {
             inter_gen_weight_change: inter_gen_weight_change.toFixed(6),
             genome_variance:         genome_variance.toFixed(6),
             avg_network_weight_mag:  avg_network_weight_mag.toFixed(4),
+            // Fraction of the selection pool culled by a natural disaster on this
+            // generation (0 = no strike). Nonzero marks the strike generation N;
+            // the population effect shows up on N+1. During gradual recovery this
+            // steps down each generation (e.g. 0.30, 0.25, ...) until back to 0.
+            disaster_cull_frac:      (ga._disaster_cull_this_gen || 0).toFixed(4),
         };
 
         this.generation_log.push(entry);
