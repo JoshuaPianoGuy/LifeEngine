@@ -33,20 +33,34 @@
  *
  * Population management
  * ---------------------
- * Population grows freely within episodes via natural reproduction.
- * At each episode boundary, organisms above POPULATION_SIZE are removed
- * RANDOMLY (not by fitness) — random removal has no fitness signal and
- * does not constitute selection pressure.
+ * Within an episode the population grows freely via natural reproduction and
+ * shrinks as organisms die. At each episode boundary it is forced back to
+ * exactly POPULATION_SIZE so every window STARTS full — matching the
+ * learning/evolution conditions, which found each generation with
+ * POPULATION_SIZE organisms (without this, a window that started with 3
+ * survivors would not be comparable to their 100):
  *
- * If the population reaches zero at any point, N organisms are respawned
- * at the next episode boundary using weights sampled randomly from a
- * rolling buffer of the last COLLAPSE_BUFFER_SIZE dead organisms'
- * active_weights. Collapse is often environmental (harsh map, food scarcity,
- * insufficient learning time) rather than a sign the weights are bad, so
- * discarding them would throw away potentially useful learned structure.
- * Random sampling from the buffer preserves real individual strategies
- * rather than averaging, which can produce weight vectors no organism
- * ever actually had.
+ *   - above POPULATION_SIZE : the excess is removed RANDOMLY (not by fitness)
+ *                             — random removal has no fitness signal and is
+ *                             not selection pressure.
+ *   - below POPULATION_SIZE : the deficit is topped up with organisms whose
+ *                             weights are sampled randomly from a rolling
+ *                             buffer of the last COLLAPSE_BUFFER_SIZE dead
+ *                             organisms' active_weights, each mutated around
+ *                             (same Gaussian kernel as between-episode
+ *                             mutation). A full collapse to zero is just the
+ *                             deficit == POPULATION_SIZE case.
+ *
+ * Buffering learned weights (rather than always spawning fresh Xavier) means a
+ * shortfall is refilled with real, already-learned strategies — a shrink is
+ * often environmental (harsh map, food scarcity, insufficient learning time)
+ * rather than a sign the weights are bad, so discarding them would throw away
+ * useful learned structure. Random sampling preserves real individual
+ * strategies rather than averaging (which can produce weight vectors no
+ * organism ever actually had); the per-seed mutation makes the refill a diverse
+ * cloud around those strategies rather than exact clones. The top-up happens
+ * AFTER the window is logged, so the fresh spawns never pollute that window's
+ * metrics.
  *
  * Between-episode mutation
  * ------------------------
@@ -57,9 +71,10 @@
  *           at reproduction.
  *
  *   true  — at each episode boundary, all surviving organisms receive
- *           undirected Gaussian noise on their active_weights (same kernel
- *           as _mutateGenome(): 5% per weight, σ=0.1). The mutated state
- *           is synced to genome_weights so children inherit it.
+ *           undirected Gaussian noise on their active_weights (same kernel as
+ *           the GA between-generation mutation in GAManager — ExperimentParams
+ *           mut_prob / mut_sigma, default 3% per weight, σ=0.1). The mutated
+ *           state is synced to genome_weights so children inherit it.
  *           Mutation without selection is not evolutionary search — it is
  *           an undirected random walk that adds diversity without gradient.
  *
@@ -75,6 +90,7 @@
 const AdvancedOrganism = require('./AdvancedOrganism');
 const CellStates       = require('./Cell/CellStates');
 const logger           = require('../Logger');
+const ExperimentParams = require('../ExperimentParams');  // tunable: mutation prob/sigma
 
 // ── Hyper-parameters ──────────────────────────────────────────────────────────
 
@@ -89,10 +105,16 @@ const { TICKS_PER_MAP, MAPS_PER_GEN, TICKS_PER_GEN } = require('./GenerationCons
 const COLLAPSE_BUFFER_SIZE = 25;
 
 // Toggle between-episode mutation. Does not affect within-episode
-// reproduction mutation, which always runs via _mutateGenome().
+// reproduction mutation, which always runs via _mutateGenome() (0.05 / 0.1).
 const BETWEEN_EPISODE_MUTATION = true;
-const EPISODE_MUT_PROB         = 0.05;   // same kernel as _mutateGenome()
-const EPISODE_MUT_SIGMA        = 0.1;
+// Inter-generation (episode-boundary + collapse top-up) mutation kernel, sourced
+// from ExperimentParams so it is IDENTICAL to the GA between-generation mutation
+// in GAManager (default 0.03 / 0.1) and honours --mut-prob / --mut-sigma. This
+// keeps inter-generation mutation consistent across the learning, evolution and
+// pure-RL conditions. Read at module load, after headless.js applies overrides
+// (same pattern as GAManager).
+const EPISODE_MUT_PROB         = ExperimentParams.mut_prob;   // tunable (default 0.03)
+const EPISODE_MUT_SIGMA        = ExperimentParams.mut_sigma;  // tunable (default 0.1)
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -229,57 +251,68 @@ class PureRLManager {
     closeWindow() {
         const living_arr = Array.from(this.living_agents);
 
-        // ── Collapse: respawn from buffer at episode boundary ─────────────────
-        // If the population hit zero during the episode, wait until the boundary
-        // then seed the next episode from the rolling weight buffer.
-        // Collapse is a legitimate episode outcome — don't paper over it by
-        // mid-episode respawning, which inflates that window's fitness metrics.
-        if (living_arr.length === 0) {
-            logger.logEvent('PureRL',
-                `Window ${this.generation} | collapse — seeding next episode ` +
-                `from buffer (buffer_size=${this._dead_weight_buffer.length})`);
-            this._respawnFromBuffer(POPULATION_SIZE);
-        } else {
-            // ── Random cap (NOT fitness-based) ────────────────────────────────
-            // Remove excess organisms randomly — no fitness signal.
-            if (living_arr.length > POPULATION_SIZE) {
-                // Fisher-Yates shuffle, remove the tail
-                for (let i = living_arr.length - 1; i > 0; i--) {
-                    const j = Math.floor(Math.random() * (i + 1));
-                    [living_arr[i], living_arr[j]] = [living_arr[j], living_arr[i]];
-                }
-                const excess = living_arr.slice(POPULATION_SIZE);
-                for (const org of excess) {
-                    // Buffer their weights before removing, in case of future collapse
-                    this._bufferDeadWeights(org);
-                    org.living = false;
-                    this.living_agents.delete(org);
-                }
-                logger.logEvent('PureRL',
-                    `Window ${this.generation} | random cap: removed ` +
-                    `${excess.length} organisms randomly ` +
-                    `(${living_arr.length} → ${this.living_agents.size})`);
+        // ── Random cap DOWN to POPULATION_SIZE (NOT fitness-based) ────────────
+        // If reproduction pushed the population above the cap, remove the excess
+        // randomly — random removal carries no fitness signal, so it is not
+        // selection pressure.
+        if (living_arr.length > POPULATION_SIZE) {
+            // Fisher-Yates shuffle, remove the tail
+            for (let i = living_arr.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [living_arr[i], living_arr[j]] = [living_arr[j], living_arr[i]];
             }
+            const excess = living_arr.slice(POPULATION_SIZE);
+            for (const org of excess) {
+                // Buffer their weights before removing, so they can feed a future top-up.
+                this._bufferDeadWeights(org);
+                org.living = false;
+                this.living_agents.delete(org);
+            }
+            logger.logEvent('PureRL',
+                `Window ${this.generation} | random cap: removed ` +
+                `${excess.length} organisms randomly ` +
+                `(${living_arr.length} → ${this.living_agents.size})`);
+        }
 
-            // ── Between-episode mutation (optional) ───────────────────────────
-            // Undirected Gaussian noise on active_weights of all survivors.
-            // Synced to genome_weights so children next episode inherit the
-            // mutated learned state. No fitness signal — not selection.
-            if (BETWEEN_EPISODE_MUTATION) {
-                for (const org of this.living_agents) {
-                    if (!org.brain) continue;
-                    this._mutateWeights(org.brain.active_weights);
-                    org.brain.genome_weights =
-                        new Float32Array(org.brain.active_weights);
-                }
+        // ── Between-episode mutation of survivors (optional) ──────────────────
+        // Undirected Gaussian noise on active_weights of all survivors.
+        // Synced to genome_weights so children next episode inherit the mutated
+        // learned state. No fitness signal — not selection.
+        if (BETWEEN_EPISODE_MUTATION) {
+            for (const org of this.living_agents) {
+                if (!org.brain) continue;
+                this._mutateWeights(org.brain.active_weights);
+                org.brain.genome_weights =
+                    new Float32Array(org.brain.active_weights);
             }
         }
 
-        // ── Log ───────────────────────────────────────────────────────────────
+        // ── Log THIS window BEFORE topping up ─────────────────────────────────
+        // logGeneration averages over all_agents_this_window (everyone who
+        // actually lived this window). Top-up organisms are fresh, ~0-fitness
+        // spawns for the NEXT window, so we must log first — otherwise they
+        // would drag down this window's fitness and inflate its agent count.
         const all_sorted = [...this.all_agents_this_window]
             .sort((a, b) => b.getFitness() - a.getFitness());
 
         logger.logGeneration(this, all_sorted);
+
+        // ── Top UP to POPULATION_SIZE from the buffer ─────────────────────────
+        // Every window must START with a full POPULATION_SIZE so pure-RL is
+        // comparable to the learning/evolution conditions, which found each
+        // generation with exactly POPULATION_SIZE organisms. Survivors are kept;
+        // the deficit is filled with organisms sampled RANDOMLY from the
+        // dead-weight buffer and mutated around (see _respawnFromBuffer). A full
+        // collapse (0 survivors) is just the deficit == POPULATION_SIZE case, so
+        // it needs no special branch.
+        const deficit = POPULATION_SIZE - this.living_agents.size;
+        if (deficit > 0) {
+            logger.logEvent('PureRL',
+                `Window ${this.generation} | topping up ${deficit} from buffer ` +
+                `(survivors=${this.living_agents.size}, ` +
+                `buffer_size=${this._dead_weight_buffer.length})`);
+            this._respawnFromBuffer(deficit);
+        }
 
         logger.logEvent('PureRL',
             `Window ${this.generation} closed | ` +
@@ -289,7 +322,9 @@ class PureRLManager {
                 ? all_sorted[0].getFitness().toFixed(2) : 'n/a'} | ` +
             `between_mutation=${BETWEEN_EPISODE_MUTATION}`);
 
-        // ── Reset window counters — population continues uninterrupted ────────
+        // ── Reset window counters — next window starts with the full roster ───
+        // living_agents is now POPULATION_SIZE (survivors + top-ups), so
+        // all_agents_this_window and peak_population reset to that full roster.
         this.generation++;
         this.tick_count          = 0;
         this.map_tick_count      = 0;
@@ -304,10 +339,16 @@ class PureRLManager {
      * Respawn N organisms by randomly sampling from the dead weight buffer.
      * Each organism gets one randomly chosen buffer entry — preserving real
      * individual strategies rather than averaging (which can produce weight
-     * vectors no organism ever actually had).
+     * vectors no organism ever actually had) — then MUTATED around with
+     * undirected Gaussian noise (same kernel as the survivor between-episode
+     * mutation: 5% per weight, σ=0.1). Mutating the seeds means the reseeded
+     * episode is a diverse cloud AROUND the buffered strategies rather than
+     * 100 exact clones drawn from ~COLLAPSE_BUFFER_SIZE vectors. No fitness
+     * signal — this adds diversity, not selection.
      *
      * If the buffer is empty (very first episode collapsed before anyone
-     * died, which is extremely unlikely), falls back to random Xavier.
+     * died, which is extremely unlikely), falls back to random Xavier (no
+     * seed to mutate around).
      */
     _respawnFromBuffer(n) {
         for (let i = 0; i < n; i++) {
@@ -316,6 +357,7 @@ class PureRLManager {
                 const idx = Math.floor(
                     Math.random() * this._dead_weight_buffer.length);
                 seed = new Float32Array(this._dead_weight_buffer[idx]);
+                this._mutateWeights(seed);  // mutate around the learned weights
             }
             const org = this._createOrganism(seed);
             if (!org) continue;
@@ -340,9 +382,10 @@ class PureRLManager {
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     /**
-     * Gaussian mutation on a weight array in-place.
-     * Same kernel as AdvancedOrganism._mutateGenome():
-     *   5% per-weight probability, σ=0.1, clipped to [-1, 1].
+     * Gaussian mutation on a weight array in-place — the inter-generation
+     * kernel. Uses ExperimentParams mut_prob / mut_sigma (default 3% per-weight
+     * probability, σ=0.1, clipped to [-1, 1]), identical to GAManager's
+     * between-generation mutation so all conditions match.
      */
     _mutateWeights(weights) {
         if (!weights) return;

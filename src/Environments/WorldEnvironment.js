@@ -122,24 +122,18 @@ class WorldEnvironment extends Environment {
                 return;
             } else if (status === 'NEXT_WINDOW') {
                 // PureRLManager: log metrics and reset window counters but do
-                // NOT reset the population — organisms continue living.
+                // NOT reset the population — surviving organisms continue living.
+                // closeWindow() also handles COLLAPSE (population hit zero during
+                // the episode) by reseeding from its rolling weight buffer at
+                // THIS boundary — per its design, collapse is recovered here, not
+                // mid-episode. So after it returns the population is repopulated
+                // either way, and we simply start the next window on a fresh map,
+                // mirroring the NEXT_MAP path.
                 this.ga_manager.closeWindow();
-                if (this.ga_manager.living_agents && this.ga_manager.living_agents.size === 0) {
-                    if (this.ga_manager.respawnPopulationAtCenter()) {
-                        this.renderFull();
-                    }
-                } else {
-                    this.generateWorld();
-                    this.ga_manager.startNextMap();
-                    this.predator_manager.relocateAll();
-                    this.renderFull();
-                }
-            }
-
-            if (WorldConfig.experiment_mode === 'pure_rl' && this.ga_manager.living_agents && this.ga_manager.living_agents.size === 0) {
-                if (this.ga_manager.respawnPopulationAtCenter()) {
-                    this.renderFull();
-                }
+                this.generateWorld();
+                this.ga_manager.startNextMap();
+                this.predator_manager.relocateAll();
+                this.renderFull();
             }
         }
 
