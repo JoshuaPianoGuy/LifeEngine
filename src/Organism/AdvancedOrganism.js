@@ -92,10 +92,14 @@ const DECAY_PENALTY  = 0.05;   // reward penalty per unit of energy lost to deca
 // Multiplied by actual decay each tick, so accelerated decay (2x in day-cave
 // or night-outside) produces 2x the penalty signal automatically.
 // Normal: 0.05*1=0.05, accelerated: 0.05*2=0.10, night-cave: 0.05*0=0 (no penalty).
-const EXPLORE_BONUS  = 0.15;  // positive reward for visiting a new cell
+// Positive reward for visiting a new cell. Read from ExperimentParams at module
+// load so the headless runner can sweep it via --explore-bonus (the override is
+// applied before this module is required). Browser build keeps the 0.15 default.
 //try 0.1--0.3? initially 0.02, but organisms had less incentive to explore after eating high tier food
 //ignore previous comment. maybe make this lower (like 0.02 or so) because epsilon ensure exploration and the importance
 //should be on finding food
+const ExperimentParams = require('../ExperimentParams');
+const EXPLORE_BONUS  = ExperimentParams.explore_bonus;
 
 // Multiplier on energy lost to a predator drain contact.
 // At 0.5, one drain unit (drainAmount=1.0) gives reward -0.5 — equal to one

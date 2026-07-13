@@ -29,6 +29,13 @@ const ExperimentParams = {
     epsilon_start: 0.3,    // EPSILON_START
     epsilon_end:   0.05,   // EPSILON_END
 
+    // Per-tick REINFORCE reward added the first time an organism steps onto a
+    // grid cell it has not visited this lifetime (AdvancedOrganism.EXPLORE_BONUS).
+    // Read at AdvancedOrganism module load, so set it before the sim modules
+    // are required. Larger values push organisms to roam/explore more; 0
+    // disables the exploration bonus entirely.
+    explore_bonus: 0.15,   // EXPLORE_BONUS
+
     // Master switch for epsilon-greedy exploration. When false, epsilon is
     // forced to 0 for the whole lifetime regardless of start/end/shape: the
     // organism acts purely on-policy (samples straight from the softmax) and
