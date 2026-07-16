@@ -34,7 +34,11 @@ const ExperimentParams = {
     // Read at AdvancedOrganism module load, so set it before the sim modules
     // are required. Larger values push organisms to roam/explore more; 0
     // disables the exploration bonus entirely.
-    explore_bonus: 0.15,   // EXPLORE_BONUS
+    // Default 0 (bonus OFF): the explore-bonus sweep found it did not help
+    // fitness or meaningfully shift cave usage, so RL conditions now run without
+    // it. The sweep scripts still pass explicit --explore-bonus values to probe
+    // the effect; every other run inherits this 0 default.
+    explore_bonus: 0,   // EXPLORE_BONUS
 
     // Master switch for epsilon-greedy exploration. When false, epsilon is
     // forced to 0 for the whole lifetime regardless of start/end/shape: the

@@ -119,6 +119,10 @@ function usageAndExit() {
         '                       (default: seed<N>_job<PBS_JOBID> on the cluster, else run_N)\n' +
         '    --log-dir    <s>   base output dir (default: ./logs). Pass an absolute\n' +
         '                       path to write to scratch instead of the project tree.\n' +
+        '    --log-genomes      also write genome.csv: per-gen centroid + fittest\n' +
+        '                       founder genomes (all founders every 250 gens), full\n' +
+        '                       float32 precision. Off by default (tens of MB/run —\n' +
+        '                       enable only for final runs, not tuning sweeps).\n' +
         '\n  Tunable hyperparameters (default = current in-code value):\n' +
         '    --learning-rate <f>       RL learning rate              (0.02)\n' +
         '    --epsilon-start <f>       exploration epsilon at birth  (0.5)\n' +
@@ -157,6 +161,9 @@ const WIDTH     = intOpt('width', 400);
 const HEIGHT    = intOpt('height', 300);
 const CELL_SIZE = intOpt('cell-size', 2);
 const LOG_EVERY = intOpt('log-every', 10000);
+// Founder-genome logging (genome.csv) is opt-in: off for tuning sweeps, on for
+// the final runs that feed the fitness-landscape analysis. See Logger.setGenomeLogging.
+const LOG_GENOMES = opts['log-genomes'] ? true : false;
 
 // ─── Apply tunable params BEFORE any sim module loads ─────────────────────────
 // NNBrain and GAManager read these at module load, so the override must happen
@@ -208,6 +215,9 @@ const GenerationConstants = require('./Organism/GenerationConstants');
 const logger              = require('./Logger');
 const fs                  = require('fs');
 const path                = require('path');
+
+// Apply the genome-logging choice for this run (default off; --log-genomes to enable).
+logger.setGenomeLogging(LOG_GENOMES);
 
 const TICKS_PER_GEN = GenerationConstants.TICKS_PER_GEN;
 const MAX_TICKS_EFF = (MAX_TICKS != null) ? MAX_TICKS : GENERATIONS * TICKS_PER_GEN;
@@ -268,6 +278,7 @@ const params = {
     grid_cols:      WIDTH,
     grid_rows:      HEIGHT,
     cell_size:      CELL_SIZE,
+    log_genomes:    LOG_GENOMES,
     ...ExperimentParams.snapshot(),
     started_at:     new Date().toISOString(),
     node_version:   process.version,

@@ -80,6 +80,12 @@ class GAManager {
         // their fitness scores are available for evolve().
         this.all_agents    = [];
 
+        // The founding population of the current generation (the POPULATION_SIZE
+        // agents spawned by spawnGeneration, excluding their descendants). Kept
+        // as its own list — even after they die — so the genome logger can read
+        // the founders' inherited genome_weights + fitness at generation end.
+        this.founders      = [];
+
         // Living agents this generation — updated by tick() and registerAgent().
         this.living_agents = new Set();
 
@@ -130,6 +136,7 @@ class GAManager {
      */
     spawnGeneration() {
         this.all_agents      = [];
+        this.founders        = [];
         this.living_agents   = new Set();
         this.tick_count      = 0;
         this.map_tick_count  = 0;
@@ -206,6 +213,9 @@ class GAManager {
 
             this.env.addOrganism(org);
             this.registerAgent(org);
+            // Track this founder separately so its inherited genome + fitness can
+            // be logged at generation end (descendants are excluded).
+            this.founders.push(org);
         }
 
         this.generation++;

@@ -13,7 +13,8 @@ const ALLOWED_LOG_FILES = new Set([
     'life-engine-logs.csv',
     'generations.csv',
     'organisms.csv',
-    'events.csv'
+    'events.csv',
+    'genome.csv'
 ]);
 const runDirCache = new Map();
 

@@ -67,6 +67,19 @@ const LOG_FULL_GENOME_SNAPSHOT = false;
 // weight snapshots, where per-row size is now just a dozen scalar fields.
 const MAX_ORGANISM_LOG_ROWS = 20000;
 
+// ── Founder-genome logging (genome.csv) ───────────────────────────────────────
+// Every generation we log the mean (centroid) genome of the founding population
+// and the genome of the fittest founder. Every FULL_GENOME_DUMP_EVERY_N_GENS we
+// additionally dump the genome of EVERY founder. Genomes are stored at full
+// precision as Base64-encoded raw float32 bytes (the genome's native precision —
+// no quantisation or decimal truncation).
+//
+// Decode a genome_b64 field in Python:
+//   import base64, numpy as np
+//   g = np.frombuffer(base64.b64decode(field), dtype='<f4')   # little-endian float32
+const LOG_FOUNDER_GENOMES = true;
+const FULL_GENOME_DUMP_EVERY_N_GENS = 250;
+
 const AUTO_SAVE_ENABLED = true;
 const AUTO_SAVE_EVERY_N_GENS = 5;
 const AUTO_SAVE_DIR = 'logs';
@@ -82,6 +95,7 @@ class Logger {
         this.generation_log = [];   // one entry per generation
         this.organism_log   = [];   // one entry per top-5 organism per generation
         this.event_log      = [];   // freeform timestamped events
+        this.genome_log     = [];   // founder-genome rows (centroid/fittest/founder)
         this._start_time    = Date.now();
         this._auto_save_enabled = AUTO_SAVE_ENABLED;
         this._auto_save_fs_enabled = AUTO_SAVE_ENABLED && !!fs && !!path;
@@ -96,6 +110,12 @@ class Logger {
         this._last_saved_gen_idx = 0;
         this._last_saved_org_idx = 0;
         this._last_saved_evt_idx = 0;
+        this._last_saved_genome_idx = 0;
+        // Founder-genome logging (genome.csv). Defaults to the module constant so
+        // the browser keeps its historical behaviour; the headless runner flips
+        // this per-run via setGenomeLogging() (default off for tuning sweeps,
+        // opt-in with --log-genomes for the final runs that need the genomes).
+        this._log_founder_genomes = LOG_FOUNDER_GENOMES;
         this._auto_download_enabled = AUTO_DOWNLOAD_ENABLED;
         this._auto_download_every_ticks = AUTO_DOWNLOAD_EVERY_TICKS;
         this._last_auto_download_tick = 0;
@@ -216,6 +236,11 @@ class Logger {
             this.logOrganism(ga.generation, i + 1, top20pct_log[i], ga.rl_enabled);
         }
 
+        // Log founder genomes (centroid + fittest every generation; all founders
+        // every FULL_GENOME_DUMP_EVERY_N_GENS). Rows accumulate in genome_log and
+        // are persisted by the same flush cycle as everything else.
+        this.logFounderGenomes(ga);
+
         this._autoSaveIfNeeded(ga.generation, ga.rl_enabled);
         this._autoDownloadIfNeeded(ga);
 
@@ -299,6 +324,101 @@ class Logger {
             this.organism_log = this.organism_log.slice(-keep);
             this._last_saved_org_idx = 0;  // treat remainder as unsaved
             console.warn(`[Logger] organism_log trimmed to ${keep} rows (cap=${MAX_ORGANISM_LOG_ROWS})`);
+        }
+    }
+
+    // ── Founder-genome logging (genome.csv) ───────────────────────────────────
+
+    /**
+     * Record founder genomes for the generation that just ended.
+     *
+     * Every generation:
+     *   - one 'centroid' row: the per-position mean genome across all founders
+     *   - one 'fittest'  row: the genome of the highest-fitness founder
+     *
+     * Every FULL_GENOME_DUMP_EVERY_N_GENS generations, additionally:
+     *   - one 'founder' row per founder (its full inherited genome)
+     *
+     * Genomes are the inherited genome_weights (not RL-drifted active_weights),
+     * stored at full float32 precision as Base64 (see genome_b64 note above).
+     *
+     * @param {object} ga  GAManager instance (exposes ga.founders + ga.generation)
+     */
+    logFounderGenomes(ga) {
+        if (!this._log_founder_genomes) return;
+        if (!ga || !Array.isArray(ga.founders) || ga.founders.length === 0) return;
+
+        // Founders with a usable genome. Founders never lose genome_weights (RL
+        // only touches active_weights), so this is normally the full population.
+        const founders = ga.founders.filter(a => a && a.brain && a.brain.genome_weights);
+        if (founders.length === 0) return;
+
+        const generation = ga.generation;
+        const map_seed   = this._mapSeed(ga);
+        const condition  = ga.condition_label || (ga.rl_enabled ? 'learning' : 'natural_selection');
+        const genome_len = founders[0].brain.genome_weights.length;
+
+        // ── Centroid (per-position mean) genome ──────────────────────────────
+        // Accumulate in float64 for numerical stability, then store as float32
+        // (the genome's native precision).
+        const sum = new Float64Array(genome_len);
+        let fitness_sum = 0;
+        for (const a of founders) {
+            const gw = a.brain.genome_weights;
+            const lim = Math.min(genome_len, gw.length);
+            for (let i = 0; i < lim; i++) sum[i] += gw[i];
+            fitness_sum += a.getFitness();
+        }
+        const centroid = new Float32Array(genome_len);
+        for (let i = 0; i < genome_len; i++) centroid[i] = sum[i] / founders.length;
+
+        this.genome_log.push({
+            generation,
+            map_seed,
+            condition,
+            record_type:   'centroid',
+            founder_index: '',
+            fitness:       (fitness_sum / founders.length).toFixed(6),
+            num_founders:  founders.length,
+            genome_b64:    this._encodeFloat32B64(centroid),
+        });
+
+        // ── Fittest founder genome ───────────────────────────────────────────
+        let best = founders[0];
+        let best_idx = 0;
+        for (let i = 1; i < founders.length; i++) {
+            if (founders[i].getFitness() > best.getFitness()) {
+                best = founders[i];
+                best_idx = i;
+            }
+        }
+        this.genome_log.push({
+            generation,
+            map_seed,
+            condition,
+            record_type:   'fittest',
+            founder_index: best_idx,
+            fitness:       best.getFitness().toFixed(6),
+            num_founders:  founders.length,
+            genome_b64:    this._encodeFloat32B64(best.brain.genome_weights),
+        });
+
+        // ── Full dump of every founder, every N generations ──────────────────
+        if (FULL_GENOME_DUMP_EVERY_N_GENS > 0 &&
+            generation % FULL_GENOME_DUMP_EVERY_N_GENS === 0) {
+            for (let i = 0; i < founders.length; i++) {
+                const a = founders[i];
+                this.genome_log.push({
+                    generation,
+                    map_seed,
+                    condition,
+                    record_type:   'founder',
+                    founder_index: i,
+                    fitness:       a.getFitness().toFixed(6),
+                    num_founders:  founders.length,
+                    genome_b64:    this._encodeFloat32B64(a.brain.genome_weights),
+                });
+            }
         }
     }
 
@@ -494,15 +614,18 @@ class Logger {
                 const genPath = path.join(out_dir, 'generations.csv');
                 const orgPath = path.join(out_dir, 'organisms.csv');
                 const evtPath = path.join(out_dir, 'events.csv');
+                const genomePath = path.join(out_dir, 'genome.csv');
 
                 if (this._auto_save_append) {
                     this._appendCSVRows(this.generation_log, this._last_saved_gen_idx, genPath);
                     this._appendCSVRows(this.organism_log, this._last_saved_org_idx, orgPath);
                     this._appendCSVRows(this.event_log, this._last_saved_evt_idx, evtPath);
+                    this._appendCSVRows(this.genome_log, this._last_saved_genome_idx, genomePath);
                 } else {
                     fs.writeFileSync(genPath, this.generationsCSV(), 'utf8');
                     fs.writeFileSync(orgPath, this.organismsCSV(), 'utf8');
                     fs.writeFileSync(evtPath, this.eventsCSV(), 'utf8');
+                    fs.writeFileSync(genomePath, this.genomesCSV(), 'utf8');
                 }
             } else if (this._server_enabled) {
                 const condition = rl_enabled ? 'learning' : 'evolution';
@@ -510,11 +633,13 @@ class Logger {
                 this._postAppendRows(this.generation_log, this._last_saved_gen_idx, 'generations.csv', condition, mode);
                 this._postAppendRows(this.organism_log, this._last_saved_org_idx, 'organisms.csv', condition, mode);
                 this._postAppendRows(this.event_log, this._last_saved_evt_idx, 'events.csv', condition, mode);
+                this._postAppendRows(this.genome_log, this._last_saved_genome_idx, 'genome.csv', condition, mode);
             }
 
             this._last_saved_gen_idx = this.generation_log.length;
             this._last_saved_org_idx = this.organism_log.length;
             this._last_saved_evt_idx = this.event_log.length;
+            this._last_saved_genome_idx = this.genome_log.length;
 
             // ── Trim in-memory arrays after a successful flush ─────────────────
             // Keep only the last generation entry so inter_gen_weight_change can
@@ -533,6 +658,10 @@ class Logger {
             if (this.event_log.length > 0) {
                 this.event_log = [];
                 this._last_saved_evt_idx = 0;
+            }
+            if (this.genome_log.length > 0) {
+                this.genome_log = [];
+                this._last_saved_genome_idx = 0;
             }
         } catch (err) {
             this._auto_save_enabled = false;
@@ -666,6 +795,16 @@ class Logger {
         if (dir) this._auto_save_dir = String(dir);
     }
 
+    /**
+     * Enable/disable founder-genome logging (genome.csv) for this run. Called by
+     * the headless runner from the --log-genomes flag. Off = no centroid/fittest/
+     * founder rows are recorded and genome.csv is never written — the right
+     * default for tuning sweeps, which don't need the (~tens-of-MB) genome dump.
+     */
+    setGenomeLogging(enabled) {
+        this._log_founder_genomes = !!enabled;
+    }
+
     _getRunDir(rl_enabled) {
         if (!this._auto_save_fs_enabled) return null;
 
@@ -710,6 +849,7 @@ class Logger {
     generationsCSV()  { return this._toCSV(this.generation_log); }
     organismsCSV()    { return this._toCSV(this.organism_log); }
     eventsCSV()       { return this._toCSV(this.event_log); }
+    genomesCSV()      { return this._toCSV(this.genome_log); }
 
     // ── Download helpers ──────────────────────────────────────────────────────
 
@@ -763,10 +903,12 @@ class Logger {
         this.generation_log = [];
         this.organism_log   = [];
         this.event_log      = [];
+        this.genome_log     = [];
         this._start_time    = Date.now();
         this._last_saved_gen_idx = 0;
         this._last_saved_org_idx = 0;
         this._last_saved_evt_idx = 0;
+        this._last_saved_genome_idx = 0;
     }
 
     summary() {
@@ -774,6 +916,7 @@ class Logger {
             generations_recorded: this.generation_log.length,
             organisms_recorded:   this.organism_log.length,
             events_recorded:      this.event_log.length,
+            genome_rows_recorded: this.genome_log.length,
             elapsed_s:            ((Date.now() - this._start_time) / 1000).toFixed(1),
         };
     }
