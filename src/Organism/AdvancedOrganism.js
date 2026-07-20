@@ -118,7 +118,12 @@ const ASEXUAL_MUT_PROB  = 0.05;  // 5% per-weight mutation probability
 const ASEXUAL_MUT_SIGMA = 0.1;   // Gaussian noise std-dev
 
 // ── Reproduction control ──────────────────────────────────────────────────────
-const REPRODUCTION_SUCCESS_RATE = 0.8;  // 80% chance a child successfully spawns
+// Probability a within-generation asexual child spawns once the parent banks
+// the energy threshold. Read from ExperimentParams at module load so the
+// headless runner / fitness-landscape probe can override it before this module
+// is required (the probe forces 0 to keep the founding cohort a fixed 100
+// monomorphic clones of θ). Browser build keeps the 0.8 default.
+const REPRODUCTION_SUCCESS_RATE = ExperimentParams.reproduction_success_rate;  // default 0.8
 
 // ─────────────────────────────────────────────────────────────────────────────
 

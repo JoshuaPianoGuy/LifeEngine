@@ -1,0 +1,12 @@
+{
+  "start_label": "random",
+  "rl": false,
+  "steps": 25,
+  "repeats": 2,
+  "rho1": 0.6090741656611289,
+  "lambda": 2.016880336479644,
+  "fit_min": 0.8619,
+  "fit_max": 1.3699999999999999,
+  "fit_mean": 1.0883807692307692,
+  "config_overrides": null
+}

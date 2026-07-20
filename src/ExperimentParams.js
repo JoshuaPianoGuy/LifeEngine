@@ -68,6 +68,20 @@ const ExperimentParams = {
     mut_prob:        0.03, // MUT_PROB  (between-generation per-weight mutation rate)
     mut_sigma:       0.1,  // MUT_SIGMA (between-generation Gaussian std-dev)
 
+    // ── Reproduction (AdvancedOrganism) ───────────────────────────────────
+    // Probability a within-generation asexual child successfully spawns once
+    // the parent has banked the reproduction energy threshold. Read at
+    // AdvancedOrganism module load. Default 0.8 = normal browser/experiment
+    // behaviour. The fitness-landscape probe harness sets this to 0 so the
+    // founding cohort stays a fixed monomorphic population of exactly
+    // population_size clones of θ — no descendants drift the population away
+    // from the genome being measured, and density (competition for food /
+    // predators) matches a real generation's founder count. Note: reproduction
+    // costs NO energy in this sim (the threshold is a separate counter, not an
+    // energy debit), so 0 vs 0.8 is an energy-neutral change — it only controls
+    // whether the population grows. See AdvancedOrganism.reproduce().
+    reproduction_success_rate: 0.8, // REPRODUCTION_SUCCESS_RATE
+
     // ── Natural disaster (GAManager) ──────────────────────────────────────
     // Optional mass-mortality event applied BEFORE tournament selection: a
     // FIXED fraction of the generation's agents are culled from the SELECTION

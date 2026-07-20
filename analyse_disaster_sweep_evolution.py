@@ -26,6 +26,17 @@ the disaster_fraction (culling severity):
 
     [ snap-back ] [ recovery 0.05 ] [ recovery 0.10 ]
 
+REPLICATES (10-runs-per-seed variants): a (recovery, fraction, seed) cell may be
+run several independent times (e.g. run_disaster_sweep_roaming_10rep_array.slurm
+does 10 replicates/seed). All runs sharing a (recovery, fraction, seed) — whether
+from the original 1-run sweep or a 10-rep campaign — are treated as REPLICATES of
+that cell and averaged FIRST into one per-seed value/curve. Only THEN are seeds
+aggregated (mean +/- std across seeds). So the band is always the between-seed
+spread, never inflated by replicate noise, and a single run per cell reduces to
+the original behaviour exactly. (Runs are pooled by params.json alone, so point
+this at a logs-root holding ONE environment's disaster runs — e.g. the roaming
+sweep — not baseline + roaming mixed.)
+
 Each line is the mean across the 3 map seeds (shaded +/-1 std). Because the
 strike PRNG is shared but the taper length (fraction / rate) shifts each strike's
 cooldown, strike timing drifts a few generations across fractions/seeds — so the
@@ -71,6 +82,7 @@ import json
 import os
 import re
 import warnings
+from collections import defaultdict
 import numpy as np
 import pandas as pd
 import matplotlib
@@ -116,7 +128,8 @@ def discover_runs(logs_root):
     """Find every run under logs_root with params.json + generations.csv that is an
     EVOLUTION disaster run (disaster_enabled true). params.json is authoritative
     (folder names are only a hint): the panel is disaster_recovery_rate, the line
-    is disaster_fraction, aggregated over map_seed. Returns list of dicts:
+    is disaster_fraction, aggregated over map_seed (and, first, over any replicate
+    runs sharing a (panel, fraction, seed) cell). Returns list of dicts:
         {panel, fraction, seed, dir, gen_csv}."""
     runs = []
     for params_path in glob.glob(os.path.join(logs_root, '*', 'params.json')):
@@ -200,29 +213,75 @@ def cluster_onsets(onsets, gap):
     return [int(np.median(c)) for c in clusters]
 
 
+def average_replicate_curves(dfs, metrics):
+    """Average several replicate generations.csv frames (same cell) into one
+    per-generation frame: the mean of each metric across replicates, aligned on
+    generation. Replicates share terrain + disaster timing, so their generations
+    line up; any per-run tail difference degrades to a NaN-skipping mean. Returns
+    a DataFrame with a 'generation' column + one column per present metric."""
+    per = [df.drop_duplicates('generation', keep='last').set_index('generation')
+           for df in dfs if len(df)]
+    if not per:
+        return pd.DataFrame(columns=['generation'] + list(metrics))
+    cols = {}
+    for m in metrics:
+        series = [d[m] for d in per if m in d.columns]
+        if series:
+            cols[m] = pd.concat(series, axis=1).mean(axis=1)
+    out = pd.DataFrame(cols).sort_index()
+    out.index.name = 'generation'
+    return out.reset_index()
+
+
 def build_table(runs, metrics, window, max_gen):
-    """Per-run final metrics -> long dataframe (one row per run) + curve frames +
-    per-run strike onsets."""
-    rows, curves, onsets = [], {}, {}
+    """Per-CELL final metrics -> long dataframe (one row per (panel, fraction,
+    seed)) + replicate-averaged curve frames + pooled strike onsets.
+
+    Runs sharing a (panel, fraction, seed) are REPLICATES of one cell: their final
+    metrics are averaged into the per-seed value, their curves into one per-seed
+    curve, and their strike onsets pooled. With one run per cell this is a no-op
+    (identical to the original per-run behaviour); with N replicates the row is the
+    seed's replicate-mean, so the later across-seed aggregation never sees the
+    replicate noise. n_reps records how many runs backed each cell."""
+    groups = defaultdict(list)
     for r in runs:
-        finals, df = load_run(r['gen_csv'], metrics, window, max_gen)
-        row = {'panel': r['panel'], 'fraction': r['fraction'], 'seed': r['seed'],
-               'n_gens': int(df['generation'].max()) if len(df) else 0}
-        row.update(finals)
+        groups[(r['panel'], r['fraction'], r['seed'])].append(r)
+
+    rows, curves, onsets = [], {}, {}
+    for key in sorted(groups, key=lambda k: (str(k[0]), k[1], k[2])):
+        panel, fraction, seed = key
+        grp = groups[key]
+        finals_list, dfs, pooled_onsets = [], [], []
+        for r in grp:
+            finals, df = load_run(r['gen_csv'], metrics, window, max_gen)
+            finals_list.append(finals)
+            dfs.append(df)
+            pooled_onsets.extend(disaster_onsets(df))
+        # Replicate-mean of the per-run finals (NaN-skipping); replicate-mean curve.
+        finals_mean = {m: np.nanmean([f[m] for f in finals_list]) for m in metrics}
+        avg_df = average_replicate_curves(dfs, metrics)
+        n_gens = int(avg_df['generation'].max()) if len(avg_df) else 0
+
+        row = {'panel': panel, 'fraction': fraction, 'seed': seed,
+               'n_reps': len(grp), 'n_gens': n_gens}
+        row.update(finals_mean)
         rows.append(row)
-        key = (r['panel'], r['fraction'], r['seed'])
-        curves[key] = df
-        onsets[key] = disaster_onsets(df)
-        vals = '  '.join(f"{m}={finals[m]:.4g}" if not np.isnan(finals[m]) else f"{m}=nan"
+        curves[key] = avg_df
+        onsets[key] = pooled_onsets
+        vals = '  '.join(f"{m}={finals_mean[m]:.4g}" if not np.isnan(finals_mean[m]) else f"{m}=nan"
                          for m in metrics)
-        print(f"  {r['panel']:<10} frac={r['fraction']:<4g} seed={r['seed']:<5d} "
-              f"{vals}  ({row['n_gens']} gens, {len(onsets[key])} strikes)")
+        reps_note = f"{len(grp)} reps" if len(grp) > 1 else "1 run"
+        print(f"  {panel:<10} frac={fraction:<4g} seed={seed:<5d} "
+              f"{vals}  ({reps_note}, {n_gens} gens)")
     return pd.DataFrame(rows), curves, onsets
 
 
 def aggregate(table, metrics):
     """Aggregate each metric across seeds so (recovery, fraction) is the only
-    factor. Returns tidy long frame: panel, fraction, metric, mean, std, sem, count."""
+    factor. `table` has one row per (panel, fraction, seed) — already the
+    replicate-mean — so mean/std/sem/count here are strictly across SEEDS (count =
+    number of seeds, not runs). Returns tidy long frame: panel, fraction, metric,
+    mean, std, sem, count."""
     frames = []
     for m in metrics:
         g = (table.groupby(['panel', 'fraction'])[m]
