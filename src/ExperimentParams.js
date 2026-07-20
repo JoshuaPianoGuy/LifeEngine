@@ -120,6 +120,25 @@ const ExperimentParams = {
     predator_drain:         1.0, // PredatorHyperparameters.drainAmount
     predators_per_patch:    2,   // PredatorHyperparameters.patrol.predatorsPerPatch
     roaming_predator_count: 60,   // PredatorHyperparameters.count
+
+    // ── Non-stationary "shuffle" environment (FoodShuffle) ─────────────────
+    // Periodically permute which food TIER pays which ENERGY VALUE, forcing
+    // within-lifetime learning: a fixed evolved colour preference is optimal in
+    // a stationary world but is penalised after each reshuffle, while an RL
+    // agent can re-taste and adapt. Only the payoff mapping permutes; the food /
+    // landmark cell layout is untouched. See FoodShuffle.js.
+    //
+    // period = ticks between reshuffles, on the global env.total_ticks clock (so
+    // it changes WITHIN a lifetime, not at generation boundaries). 0 = DISABLED
+    // (the default: baseline / roam / every existing run is unaffected — the base
+    // {low:0.5, medium:1.0, prestige:2.0} mapping holds for the whole run). The
+    // shuffle environment is defined by passing a positive period (recommended
+    // ~300 ≈ 4-5 shuffles per ~1200-1600-tick lifetime; sweepable).
+    food_shuffle_period: 0,
+    // PRNG seed for the reshuffle schedule (0 = unseeded, use Math.random).
+    // Seed it for reproducibility — a seeded schedule is common-mode across
+    // fitness-landscape grid points (like terrain), so it cancels between points.
+    food_shuffle_seed:   0,
 };
 
 // Keys that may be overridden (everything above; methods are excluded).

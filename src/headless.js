@@ -142,7 +142,10 @@ function usageAndExit() {
         '    --disaster-recovery-rate <f>  taper cull by this fraction/gen (0=once-off)\n' +
         '    --predator-drain <f>      energy drained per contact     (1.0)\n' +
         '    --predators-per-patch <N> patrol predators per prestige patch (2)\n' +
-        '    --roaming-predators   <N> roaming predator count         (0)\n'
+        '    --roaming-predators   <N> roaming predator count         (0)\n' +
+        '    --food-shuffle-period <N> ticks between food-tier payoff reshuffles;\n' +
+        '                              0=off. Non-stationary env forcing in-life learning (0)\n' +
+        '    --food-shuffle-seed   <N> reshuffle-schedule PRNG seed, 0=unseeded (0)\n'
     );
     process.exit(1);
 }
@@ -189,6 +192,8 @@ const changed = ExperimentParams.applyOverrides({
     predator_drain:         floatOpt('predator-drain'),
     predators_per_patch:    intOpt('predators-per-patch'),
     roaming_predator_count: intOpt('roaming-predators'),
+    food_shuffle_period:    intOpt('food-shuffle-period'),
+    food_shuffle_seed:      intOpt('food-shuffle-seed'),
 });
 
 const WorldConfig = require('./WorldConfig');

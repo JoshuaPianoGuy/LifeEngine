@@ -23,10 +23,13 @@
 # CORE PACKING
 # ------------
 # One array task == one shard == one core (single-threaded Node). N_SHARDS is
-# PER PLANE; TOTAL tasks = N_PLANES * N_SHARDS. With N_SHARDS=64 that is
-# 2 * 64 = 128 tasks (--array=0-127), ~195 jobs/shard ~ 33 min each.
-#   If you change N_SHARDS you MUST update the #SBATCH --array line to
-#   N_PLANES*N_SHARDS - 1. Indices beyond TOTAL are skipped (harmless).
+# PER PLANE; TOTAL tasks = N_PLANES * N_SHARDS. With N_SHARDS=20 that is
+# 2 * 20 = 40 tasks (--array=0-39) = at most 40 concurrent cores — kept well
+# under the ~100 per-job core cap. Each shard is ~625 jobs ~ 1.7 h (the
+# --time=6h below leaves ~3x headroom for slower nodes).
+#   Fewer/longer shards were chosen deliberately over 64 short ones so the array
+#   never exceeds the core cap. To go finer, raise N_SHARDS and set
+#   --array=0-(N_PLANES*N_SHARDS - 1) to match. Indices beyond TOTAL are skipped.
 #
 # Re-running is safe: run_probe.js skips job ids already present in a shard CSV,
 # so a timed-out or failed shard can be resubmitted with --array=<i>.
@@ -42,12 +45,12 @@
 #SBATCH --job-name="landscape_stage3_s999"
 #SBATCH --account=compsci
 #SBATCH --partition=ada
-#SBATCH --time=12:00:00
+#SBATCH --time=06:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=6G
-#SBATCH --array=0-127
+#SBATCH --array=0-39
 #SBATCH --output=logs/landscape_stage3_s999_%A_%a.out
 #SBATCH --error=logs/landscape_stage3_s999_%A_%a.err
 #SBATCH --mail-type=BEGIN,END,FAIL
@@ -71,8 +74,8 @@ PLANE_PARAMS=(
 N_PLANES=${#PLANE_NAMES[@]}
 
 # ── Sharding ─────────────────────────────────────────────────────────────────
-N_SHARDS="${N_SHARDS:-64}"              # shards PER plane (must match --array below)
-TOTAL_TASKS=$(( N_PLANES * N_SHARDS ))  # 128 with defaults
+N_SHARDS="${N_SHARDS:-20}"              # shards PER plane (must match --array below)
+TOTAL_TASKS=$(( N_PLANES * N_SHARDS ))  # 40 with defaults
 
 # ── Preflight ────────────────────────────────────────────────────────────────
 cd "$PROJECT_DIR" || { echo "ERROR: cannot cd to $PROJECT_DIR"; exit 1; }

@@ -13,6 +13,9 @@ const EnvironmentController = require('../Controllers/EnvironmentController');
 const Hyperparams = require('../Hyperparameters.js');
 const FossilRecord = require('../Stats/FossilRecord');
 const WorldConfig = require('../WorldConfig');
+const ExperimentParams = require('../ExperimentParams');
+const FoodShuffle = require('./FoodShuffle');
+const logger = require('../Logger');
 const SerializeHelper = require('../Utils/SerializeHelper');
 const Species = require('../Stats/Species');
 
@@ -42,6 +45,12 @@ class WorldEnvironment extends Environment {
         this.reset_count = 0;
         this.total_ticks = 0;
         this.data_update_rate = 100;
+
+        // Non-stationary shuffle environment: restore the base food-tier payoffs
+        // and (re)seed the reshuffle schedule so this fresh world never inherits
+        // a stale permutation from a previous run/probe (FOOD_ENERGY_VALUES is
+        // process-global). No-op when food_shuffle_period is 0. See FoodShuffle.js.
+        FoodShuffle.reset(ExperimentParams.food_shuffle_seed);
 
         // Day/night cycle — equal length
         this.day_length   = 300;
@@ -103,6 +112,14 @@ class WorldEnvironment extends Environment {
             this.generateFood();
         }
         this.total_ticks++;
+
+        // Non-stationary shuffle environment: on schedule, permute which food
+        // tier pays which energy value (in place, on the global env clock so it
+        // changes within a lifetime). No-op when food_shuffle_period is 0.
+        const shuffled = FoodShuffle.maybeShuffle(this.total_ticks, ExperimentParams.food_shuffle_period);
+        if (shuffled) {
+            logger.logEvent('FOOD', `Food payoffs reshuffled @tick ${this.total_ticks}`, shuffled);
+        }
 
         // Delegate generation/map lifecycle check to the GA Manager if present
         if (this.ga_manager) {
@@ -943,6 +960,9 @@ class WorldEnvironment extends Environment {
         this.total_mutability = 0;
         this.total_ticks = 0;
         this.largest_cell_count = 0;
+        // Restart the shuffle schedule from the base mapping alongside the tick
+        // clock (no-op when food_shuffle_period is 0). See FoodShuffle.js.
+        FoodShuffle.reset(ExperimentParams.food_shuffle_seed);
         FossilRecord.clear_record();
         this.generateWorld();  // generates fresh random layout + takes new snapshot
         if (reset_life) {

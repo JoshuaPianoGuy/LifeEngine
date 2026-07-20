@@ -27,10 +27,11 @@
 # CORE PACKING
 # ------------
 # One array task == one shard == one core. N_SHARDS is PER WALK; TOTAL tasks =
-# N_WALKS * N_SHARDS. With N_SHARDS=16 that is 4 * 16 = 64 tasks (--array=0-63),
-# ~63 jobs/shard ~ a few minutes each (walks are cheap vs the stage-3 planes).
-#   If you change N_SHARDS you MUST update the #SBATCH --array line to
-#   N_WALKS*N_SHARDS - 1. Indices beyond TOTAL are skipped (harmless).
+# N_WALKS * N_SHARDS. With N_SHARDS=8 that is 4 * 8 = 32 tasks (--array=0-31) =
+# at most 32 concurrent cores, kept well under the ~100 per-job core cap. Each
+# shard is ~126 jobs ~ 21 min (walks are cheap vs the stage-3 planes).
+#   To go finer, raise N_SHARDS and set --array=0-(N_WALKS*N_SHARDS - 1) to
+#   match. Indices beyond TOTAL are skipped (harmless).
 #
 # Re-running is safe: run_probe.js skips job ids already present in a shard CSV.
 #
@@ -51,7 +52,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=6G
-#SBATCH --array=0-63
+#SBATCH --array=0-31
 #SBATCH --output=logs/landscape_lambda_s999_%A_%a.out
 #SBATCH --error=logs/landscape_lambda_s999_%A_%a.err
 #SBATCH --mail-type=BEGIN,END,FAIL
@@ -76,8 +77,8 @@ WALK_PARAMS=("$HARD_PARAMS" "$HARD_PARAMS" "$BASE_PARAMS" "$BASE_PARAMS")
 N_WALKS=${#WALK_NAMES[@]}
 
 # ── Sharding ─────────────────────────────────────────────────────────────────
-N_SHARDS="${N_SHARDS:-16}"             # shards PER walk (must match --array below)
-TOTAL_TASKS=$(( N_WALKS * N_SHARDS ))  # 64 with defaults
+N_SHARDS="${N_SHARDS:-8}"              # shards PER walk (must match --array below)
+TOTAL_TASKS=$(( N_WALKS * N_SHARDS ))  # 32 with defaults
 
 # ── Preflight ────────────────────────────────────────────────────────────────
 cd "$PROJECT_DIR" || { echo "ERROR: cannot cd to $PROJECT_DIR"; exit 1; }
