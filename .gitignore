@@ -8,7 +8,14 @@ dist/js/bundle.js.LICENSE.txt
 /figures
 .claude
 .venv
-/landscape
+.DS_Store
+# Landscape pipeline: the Python/analysis SOURCE stays tracked; only the
+# generated artefacts are ignored. landscape/out holds jobs.json files of
+# base64 genomes (~52 MB each) plus probe results — all regenerable from a
+# run's genome.csv via landscape/stage{2,3,4,6}_*.py ... jobs, so they are
+# scratch/HPC data, not repo data.
+/landscape/out/
+landscape/__pycache__/
 
 # Per-seed map caches are regenerable from the seed (node generate_map_pool.js
 # --seed N); the seed is the reproducible artifact, so don't bloat the repo with
