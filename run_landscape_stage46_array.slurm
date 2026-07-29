@@ -43,12 +43,35 @@
 # (12500/20 = 625; 20040/32 = 626) — uniform tasks mean no straggler holds the
 # tail. 248 tasks at ~625 probes x ~5-10 s = ~1-2 h per task.
 #
-# `--array=0-247%100` caps CONCURRENCY at 100 tasks = 100 cores, staying under
-# the ~100 per-job core cap while still letting stages 4 and 6 run TOGETHER:
-# SLURM simply feeds the 248 tasks through 100 slots in ~3 waves. Total work is
-# ~300 core-hours, so expect ~3-6 h wall clock end to end.
-#   Lower the cap (e.g. %50) if you are sharing the allocation; raise the shard
-#   counts and the array upper bound together if you want finer tasks.
+# --time is PER TASK, not for the whole array. The stage-3 planes measured
+# ~4-7 s/probe (625-probe shards finished in 40-75 min), so a task here should
+# take ~1-1.5 h; stage-6 shards are RL-off only and should sit at the fast end.
+# 12:00:00 is deliberate over-provisioning (~10x headroom, tolerating up to
+# ~70 s/probe). The only cost is backfill priority — long walltime requests are
+# harder for the scheduler to slot into gaps, so tasks may queue a little
+# longer. Drop to 06:00:00 if the queue looks slow; a task killed on walltime
+# is cheap anyway, since resubmitting skips every probe already in its CSV.
+#
+# CORES REQUESTED = the %N throttle on --array x --cpus-per-task (1). Nothing
+# else in this file affects it — the task->unit offset math below only decides
+# WHICH out-dir an already-running task reads.
+#
+# `--array=0-247%50` caps CONCURRENCY at 50 tasks = 50 cores, comfortably under
+# the ~100 per-job cap (%100 sits exactly ON that ceiling and gets rejected once
+# anything else of yours is queued). Stages 4 and 6 still run TOGETHER: SLURM
+# feeds all 248 tasks through the 50 slots in ~5 waves.
+#
+#   throttle   concurrent cores   waves   approx wall clock
+#     %32              32          7.8         ~10 h
+#     %50              50          5.0          ~6 h     <- default
+#     %64              64          3.9          ~5 h
+#     %100            100          2.5          ~3 h     (at the cap; risky)
+#
+# Total work is fixed at ~300 core-hours either way. To change it, edit ONLY the
+# number after % in --array below — the 248 upper bound must stay in sync with
+# sum(UNIT_SHARDS), but the throttle is free.
+#   If the rejection is about memory rather than cores, --mem=6G per task is
+#   generous for a single-genome probe; 2-3G is ample.
 #
 # RESUMING
 # --------
@@ -82,12 +105,12 @@
 #SBATCH --job-name="landscape_s46_s999"
 #SBATCH --account=compsci
 #SBATCH --partition=ada
-#SBATCH --time=06:00:00
+#SBATCH --time=12:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=6G
-#SBATCH --array=0-247%100
+#SBATCH --array=0-247%50
 #SBATCH --output=logs/landscape_s46_%A_%a.out
 #SBATCH --error=logs/landscape_s46_%A_%a.err
 #SBATCH --mail-type=BEGIN,END,FAIL

@@ -7,7 +7,7 @@
 # WHY a dedicated script: bakes in the four out-dirs + their matching
 # learning-run params so submitting is all that's needed:
 #
-#     N_SHARDS=32 sbatch --array=0-127%100 run_landscape_lambda_seed999_array.slurm
+#     N_SHARDS=32 sbatch --array=0-127%50 run_landscape_lambda_seed999_array.slurm
 #
 # Each condition's jobs.json is written LOCALLY first by
 #   landscape/stage6_lambda.py jobs --start <random|centroid> --out-dir <dir> ...
@@ -32,10 +32,12 @@
 # ------------
 # One array task == one shard == one core. N_SHARDS is PER CONDITION; TOTAL tasks
 # = N_CONDITIONS * N_SHARDS. With N_SHARDS=32 that is 4 * 32 = 128 tasks
-# (--array=0-127), throttled to 100 concurrent with %100 to respect the ~100
-# per-job core cap. Each shard is ~627 probes ~ 1-2 h at the ~5-10 s/probe the
-# stage-3 planes measured; --time=08:00:00 leaves headroom on a slow node.
-#   To go finer, raise N_SHARDS and set --array=0-(N_CONDITIONS*N_SHARDS - 1)%100
+# (--array=0-127), throttled to 50 concurrent with %50. Cores requested = that
+# throttle x --cpus-per-task(1); %100 sits exactly ON the ~100 per-job cap and
+# gets rejected once anything else of yours is queued, so stay under it. Each
+# shard is ~627 probes ~ 1-2 h at the ~5-10 s/probe the stage-3 planes measured;
+# --time=08:00:00 leaves headroom on a slow node.
+#   To go finer, raise N_SHARDS and set --array=0-(N_CONDITIONS*N_SHARDS - 1)%50
 #   to match. Indices beyond TOTAL are skipped (harmless).
 #
 # Re-running is safe: run_probe.js skips job ids already present in a shard CSV,
@@ -66,7 +68,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=6G
-#SBATCH --array=0-127%100
+#SBATCH --array=0-127%50
 #SBATCH --output=logs/landscape_lambda_s999_%A_%a.out
 #SBATCH --error=logs/landscape_lambda_s999_%A_%a.err
 #SBATCH --mail-type=BEGIN,END,FAIL
