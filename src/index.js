@@ -1,5 +1,11 @@
 'use strict';
 
+// MUST stay above the Engine import. Import declarations are hoisted but
+// evaluate in source order, and BrowserPreset has to mutate ExperimentParams /
+// PredatorHyperparameters BEFORE NNBrain, AdvancedOrganism and GAManager load
+// and freeze their constants. Edit CONDITION / ENVIRONMENT in BrowserPreset.js
+// to pick which experiment this build runs.
+import './BrowserPreset';
 import Engine from './Engine';
 
 window.onload = function() {

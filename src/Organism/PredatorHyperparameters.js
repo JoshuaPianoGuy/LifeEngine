@@ -12,6 +12,12 @@
 
 'use strict';
 
+// NOTE: `count`, `drainAmount` and `patrol.predatorsPerPatch` define which
+// ENVIRONMENT (baseline vs hard) a run happens in, and are set per run — by
+// src/BrowserPreset.js in the browser, by src/headless.js from its CLI flags on
+// the cluster. Editing their literals below has no effect on either path; change
+// BrowserPreset.js's ENVIRONMENT constant instead. Everything else here (radii,
+// leash, move intervals, patch detection) is fixed design, not swept per run.
 const PredatorHyperparameters = {
     // ── Population ─────────────────────────────────────────────────────────
     // Fixed for the entire run. Predators do not reproduce and the population

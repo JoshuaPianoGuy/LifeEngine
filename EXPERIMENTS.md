@@ -180,7 +180,15 @@ Each experiment is a SLURM **job array**: one array task per point in the factor
 | `run_evolution_condition_roaming_array.slurm` | `--condition evolution --mode standard` (no RL knobs) | `logs/evolution/standard/auto-run/roam60d5_g1k_evolution_…` |
 | `run_pure_rl_condition_roaming_array.slurm` | `--condition learning --mode pure_rl --no-epsilon --learning-rate 0.02` | `logs/learning/pure_rl/auto-run/roam60d5_g1k_purerl_…` |
 
-The two RL‑using conditions share identical hyperparameters (no epsilon, LR 0.02 in this roaming environment), so **learning vs pure‑RL isolates the GA's contribution**, and **learning vs evolution isolates within‑life learning**. LR 0.02 / no‑epsilon were selected from the LR sweep below. A predator‑free **baseline** version of the same three‑way comparison uses **LR 0.01** for the RL‑using conditions (its own LR sweep optimum); those baseline SLURM scripts are not yet written.
+The two RL‑using conditions share identical hyperparameters (no epsilon, LR 0.02 in this roaming environment), so **learning vs pure‑RL isolates the GA's contribution**, and **learning vs evolution isolates within‑life learning**. LR 0.02 / no‑epsilon were selected from the LR sweep below.
+
+A predator‑free **baseline** version of the same three‑way comparison uses **LR 0.01** for the RL‑using conditions (its own LR sweep optimum) and disables both predator types (`--roaming-predators 0 --predators-per-patch 0`). Same scripts with `_baseline_` in place of `_roaming_`:
+
+| Script | Condition flags | Output tree |
+|--------|-----------------|-------------|
+| `run_learning_condition_baseline_array.slurm` | `--condition learning --mode standard --no-epsilon --learning-rate 0.01` | `logs/learning/standard/auto-run/baseline_g1k_learning_…` |
+| `run_evolution_condition_baseline_array.slurm` | `--condition evolution --mode standard` (no RL knobs) | `logs/evolution/standard/auto-run/baseline_g1k_evolution_…` |
+| `run_pure_rl_condition_baseline_array.slurm` | `--condition learning --mode pure_rl --no-epsilon --learning-rate 0.01` | `logs/learning/pure_rl/auto-run/baseline_g1k_purerl_…` |
 
 ### 5.2 Learning‑rate sweeps (tuning)
 
@@ -215,7 +223,77 @@ Because overrides bake in at module load, a run is fully described by its `param
 
 ---
 
-## 7. Outputs / logging schema (`src/Logger.js`)
+## 7. Running in the browser (`src/BrowserPreset.js`)
+
+The browser build runs the **same** experiment code as the cluster (same managers, map pool, predators, logger) but has no CLI, so it cannot call `ExperimentParams.applyOverrides`. Instead **`src/BrowserPreset.js`** — imported on the first line of `src/index.js`, before `Engine` — applies one named preset at startup. It mirrors the §5.1 SLURM scripts, so a browser run is directly comparable to a cluster run.
+
+### 7.1 Configuring a run
+
+Edit the constants at the top of `src/BrowserPreset.js` and rebuild:
+
+```js
+const CONDITION   = 'learning';   // 'learning' | 'evolution' | 'pure_rl'
+const ENVIRONMENT = 'hard';       // 'baseline' | 'hard'
+const MAP_SEED    = 1;            // 1 | 42 | 999 | 123 | 456
+const GRID_COLS   = 500;          // 500x500 matches every cluster run
+const GRID_ROWS   = 500;
+```
+
+```bash
+node generate_map_pool.js --seed <MAP_SEED>   # ONLY when MAP_SEED changes
+npm run build                                 # or npm run build-watch
+npm run serve                                 # http://localhost:3000
+```
+
+Everything else is derived from the preset tables, which encode the SLURM flags:
+
+| `ENVIRONMENT` | Learning rate | Roaming predators | Drain | Patrol | Equivalent flags |
+|---------------|---------------|-------------------|-------|--------|------------------|
+| `baseline` | **0.01** | 0 | 1.0 (inert) | 0 | `--roaming-predators 0 --predators-per-patch 0` |
+| `hard` | **0.02** | 60 | 5 | 0 | `--roaming-predators 60 --predator-drain 5 --predators-per-patch 0` |
+
+| `CONDITION` | `learning_enabled` | `experiment_mode` | Manager | Equivalent flags |
+|-------------|--------------------|-------------------|---------|------------------|
+| `learning` | `true` | `standard` | `GAManager` (RL on) | `--condition learning --mode standard` |
+| `evolution` | `false` | `standard` | `GAManager` (RL off) | `--condition evolution --mode standard` |
+| `pure_rl` | `true` | `pure_rl` | `PureRLManager` | `--condition learning --mode pure_rl` |
+
+Epsilon is forced **off** in every preset (`epsilon_enabled = false`), matching the production `--no-epsilon` runs. An unrecognised `CONDITION` / `ENVIRONMENT` throws at startup with the valid list rather than silently running a wrong configuration.
+
+### 7.2 Why the preset exists (and what NOT to edit)
+
+`NNBrain`, `AdvancedOrganism` and `GAManager` read their constants from `ExperimentParams` **at module load**, so the preset must be evaluated first. That is why `src/index.js` imports it above `import Engine`: ES import declarations are hoisted but evaluate in source order, and `BrowserPreset` requires only the three leaf config modules (no simulation code).
+
+Configuring a browser run previously meant hand-editing three files, and missing any one of them — usually `patrol.predatorsPerPatch`, which every production run disables — silently produced a run that did not match the cluster results it was being compared against. With the preset in place, **editing these fields directly now has no effect in the browser**; change `BrowserPreset.js` instead:
+
+| File | Preset-owned (do not edit for a browser run) | Still edited here |
+|------|---------------------------------------------|-------------------|
+| `src/WorldConfig.js` | `learning_enabled`, `experiment_mode`, `MAP_SEED`, `MAP_COLS`, `MAP_ROWS` | everything else |
+| `src/ExperimentParams.js` | `learning_rate`, `epsilon_enabled` | mutation, disaster, food-shuffle, `hidden_size`, `population_size`, … |
+| `src/Organism/PredatorHyperparameters.js` | `count`, `drainAmount`, `patrol.predatorsPerPatch` | radii, leash, move intervals (fixed design, not swept) |
+
+The preset is imported **only** by `src/index.js` (the webpack entry point), so `src/headless.js`, the `src/eval` probe harness and the landscape tooling are unaffected — they keep configuring themselves from their own flags.
+
+### 7.3 Reading back what is running
+
+The browser writes **no `params.txt`** (unlike §6 step 4), so two readouts stand in for it:
+
+* **About tab** — `ControlPanel.renderRunConfig()` renders condition, environment, RL settings and map seed / grid into the panel.
+* **Devtools console** — a `[BrowserPreset] …` banner at startup, e.g.
+  `condition=learning (learning_enabled=true, mode=standard) environment=hard lr=0.02 epsilon=off predators: roaming=60 drain=5 patrol=0 map_seed=1 grid=500x500`
+
+Check one of them before comparing a browser run against cluster results. `WorldEnvironment` separately warns if the bundled `map_pool.json` was generated for a different seed than `MAP_SEED`.
+
+### 7.4 Limits vs. the cluster runs
+
+* **No generation cap** — the browser runs until you stop it; there is no `--generations` equivalent.
+* **CSV output requires `npm run serve`** (not opening `dist/index.html` directly): `server.js` receives the logger's POSTs and writes to `logs/<condition>/<mode>/auto-run/run_N/`, the same layout as headless.
+* **Genome logging** (`--log-genomes`) is not exposed by the preset.
+* **Speed** — a 500x500 world in a browser is far slower than a headless cluster task; the browser build is for inspecting behaviour, not for producing comparison data.
+
+---
+
+## 8. Outputs / logging schema (`src/Logger.js`)
 
 Each run directory contains:
 
@@ -237,7 +315,7 @@ Each run directory contains:
 
 ---
 
-## 8. Analysis scripts
+## 9. Analysis scripts
 
 All are standalone `python analyse_*.py` scripts (matplotlib, Agg backend) that discover runs via `params.json`, aggregate across seeds (mean ± std), and write PNGs + a summary CSV under `output/`.
 
@@ -248,7 +326,7 @@ All are standalone `python analyse_*.py` scripts (matplotlib, Agg backend) that 
 
 ---
 
-## 9. Key constants (current)
+## 10. Key constants (current)
 
 | Constant | Value | Meaning |
 |----------|-------|---------|
@@ -277,7 +355,7 @@ All are standalone `python analyse_*.py` scripts (matplotlib, Agg backend) that 
 
 ---
 
-## 10. Reproducibility notes
+## 11. Reproducibility notes
 
 * **Seeded:** only map terrain (`--map-seed`) and, optionally, the disaster PRNG (`--disaster-seed`). A seed fixes the 50‑map pool identically for every condition.
 * **Unseeded (deliberate):** GA mutation, RL exploration, reproduction chance, predator wandering. Multiple seeds × the across‑seed aggregation in the analysis scripts capture this stochasticity.

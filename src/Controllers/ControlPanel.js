@@ -31,21 +31,55 @@ class ControlPanel {
         this.setHyperparamDefaults();
         LoadController.control_panel = this;
         
-        // Display experiment status in About tab
-        let mode_label = 'Standard';
-        if (WorldConfig.experiment_mode === 'frozen_pg') {
-            mode_label = 'Frozen PG';
+        this.renderRunConfig();
+    }
+
+    /**
+     * Render the run's full configuration into the About tab.
+     *
+     * The browser writes no params.txt (unlike src/headless.js), so this readout
+     * is the only in-app record of what the build is actually configured as —
+     * it exists so a browser run can be checked against the cluster runs it is
+     * being compared with. Values come from WorldConfig.browser_preset, set by
+     * src/BrowserPreset.js; when that is absent (a build with no preset applied)
+     * it degrades to the raw WorldConfig switches it can still see.
+     */
+    renderRunConfig() {
+        const preset = WorldConfig.browser_preset;
+        const esc = (s) => $('<div>').text(String(s)).html();
+        const row = (label, value) =>
+            `<span class='run-config-row'><span class='run-config-label'>${esc(label)}</span>` +
+            `<span class='run-config-value'>${esc(value)}</span></span>`;
+
+        if (!preset) {
+            // No preset applied — report only what WorldConfig itself reveals,
+            // and say so rather than inventing an environment/seed label.
+            const mode = WorldConfig.experiment_mode === 'frozen_pg' ? 'Frozen PG'
+                       : WorldConfig.experiment_mode === 'pure_rl'   ? 'Pure RL'
+                       : 'Standard';
+            const learning = WorldConfig.learning_enabled ? '🟢 enabled' : '🔴 disabled';
+            $('#learning-status').html(
+                row('Mode', mode) +
+                row('Learning', learning) +
+                row('Config', 'no BrowserPreset applied')
+            );
+            return;
         }
-        const learning_status = WorldConfig.learning_enabled
-            ? '🟢 ENABLED'
-            : '🔴 DISABLED';
-        let detail = WorldConfig.learning_enabled
-            ? 'Reinforcement Learning Active'
-            : 'Genetic Algorithm Only';
-        if (WorldConfig.experiment_mode === 'frozen_pg') {
-            detail = 'Frozen policy; single PG update per generation';
-        }
-        $('#learning-status').text(`Mode: ${mode_label} | Learning: ${learning_status} (${detail})`);
+
+        const rl_on   = preset.condition !== 'evolution';
+        const rl_dot  = rl_on ? '🟢' : '🔴';
+        // Learning rate and epsilon only mean anything when RL actually runs;
+        // showing "lr 0.01" next to the evolution condition would be misleading.
+        const rl_line = rl_on
+            ? `lr ${preset.learning_rate}, epsilon ${preset.epsilon_enabled ? 'on' : 'off (on-policy)'}`
+            : 'no within-life learning';
+
+        $('#learning-status').html(
+            row('Condition',   `${rl_dot} ${preset.condition_label} — ${preset.condition_detail}`) +
+            row('Environment', `${preset.environment_label} — ${preset.environment_detail}`) +
+            row('RL',          rl_line) +
+            row('World',       `map seed ${preset.map_seed} · ${preset.grid_cols}×${preset.grid_rows} grid`)
+        );
     }
 
     defineMinMaxControls(){

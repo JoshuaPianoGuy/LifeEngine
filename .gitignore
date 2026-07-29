@@ -8,6 +8,7 @@ dist/js/bundle.js.LICENSE.txt
 /figures
 .claude
 .venv
+/landscape
 
 # Per-seed map caches are regenerable from the seed (node generate_map_pool.js
 # --seed N); the seed is the reproducible artifact, so don't bloat the repo with

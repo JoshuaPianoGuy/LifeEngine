@@ -1,3 +1,9 @@
+// NOTE: for the BROWSER build, do not edit learning_enabled / experiment_mode /
+// MAP_SEED / MAP_COLS / MAP_ROWS here — src/BrowserPreset.js overwrites all five
+// at startup from its CONDITION / ENVIRONMENT constants, so edits here are
+// silently discarded. Edit BrowserPreset.js instead. (src/headless.js likewise
+// overwrites them from its CLI flags.) The literals below are the fallback
+// defaults for any entry point that configures neither.
 const WorldConfig = {
     headless: false,
     clear_walls_on_reset: false,

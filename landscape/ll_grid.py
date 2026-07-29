@@ -103,6 +103,87 @@ def reconstruct_grid(results_df, axes, rl):
     return mean_g, std_g
 
 
+def clipping_diagnostics(plane, axes, clip=1.0):
+    """How far the [-1,1] weight clamp pushed each grid genome off its nominal
+    plane position.
+
+    build_grid_jobs() clips every grid genome because the simulator clips
+    weights — an unclipped genome is one the system cannot produce, so its
+    fitness would be meaningless. The cost is that in the outer regions the cell
+    labelled (alpha, beta) is no longer anchor + alpha*u + beta*v, so the
+    coordinate system degrades toward the edges. This measures the damage, which
+    is typically far larger than the usual "corners are clipped" caption implies
+    (~half the cells at coarse extents).
+
+    Note the displacement is mostly PERPENDICULAR to the plane: clipping moves
+    the genome off the slice rather than sliding it along the axes, so the
+    (alpha, beta) label stays roughly honest while "this point lies in the
+    plane" does not.
+
+    Returns dict of (N,N) arrays: clip_fraction (share of the 3910 weights
+    clamped) and displacement (L2 from the nominal point).
+    """
+    anchor, u, v = plane['anchor'], plane['u'], plane['v']
+    alphas = np.array(axes['alphas']); betas = np.array(axes['betas'])
+    N = axes['resolution']
+    frac = np.zeros((N, N)); disp = np.zeros((N, N))
+    for i, a in enumerate(alphas):
+        for j, b in enumerate(betas):
+            ideal = anchor + a * u + b * v
+            frac[i, j] = float(np.mean(np.abs(ideal) > clip))
+            disp[i, j] = float(np.linalg.norm(np.clip(ideal, -clip, clip) - ideal))
+    return {'clip_fraction': frac, 'displacement': disp}
+
+
+def reconstruct_cube(results_df, axes, rl):
+    """Return the per-repeat cube shaped (resolution, resolution, R).
+
+    reconstruct_grid() collapses the R repeats immediately; the paired
+    difference statistics need them intact. Repeat index r corresponds to
+    map index axes['maps'][r] in BOTH RL passes, so cube_on - cube_off is a
+    genuine paired difference (same terrain on both sides).
+    """
+    N = axes['resolution']
+    R = axes['R']
+    tag = 'on' if rl else 'off'
+    cube = np.full((N, N, R), np.nan)
+    df = results_df.copy()
+    ex = df['id'].str.extract(r'p(\d+)_(\d+)_r(\d+)_(on|off)')
+    df['i'] = ex[0].astype('Int64'); df['j'] = ex[1].astype('Int64')
+    df['r'] = ex[2].astype('Int64'); df['tag'] = ex[3]
+    df = df[df['tag'] == tag]
+    cube[df['i'].to_numpy(dtype=int),
+         df['j'].to_numpy(dtype=int),
+         df['r'].to_numpy(dtype=int)] = df['mean_fitness'].to_numpy()
+    return cube
+
+
+def map_offset_decomposition(cube):
+    """Split the within-cell repeat variance into the part explained by map
+    IDENTITY (common-mode across the whole grid, since every cell uses the same
+    map set) and the part that actually varies per genome.
+
+    The σ panels plot std across repeats, but the repeats are different MAPS —
+    stage 2 measured σ_vary ≈ 6-8 vs σ_fixed ≈ 0.1-1.0, so that std is
+    dominated by terrain, not by anything spatial. This quantifies it.
+
+    Returns dict: map_offsets (R,), explained_fraction, sigma_within (N,N).
+    """
+    R = cube.shape[2]
+    dev = cube - np.nanmean(cube, axis=2, keepdims=True)
+    map_off = np.nanmean(dev, axis=(0, 1))
+    n_cells = np.isfinite(cube[:, :, 0]).sum()
+    ss_map = float((map_off ** 2).sum() * n_cells)
+    ss_tot = float(np.nansum(dev ** 2))
+    resid = dev - map_off[None, None, :]
+    sigma_within = np.sqrt(np.nansum(resid ** 2, axis=2) / max(R - 1, 1))
+    return {
+        'map_offsets': map_off,
+        'explained_fraction': (ss_map / ss_tot) if ss_tot > 0 else float('nan'),
+        'sigma_within': sigma_within,
+    }
+
+
 def count_peaks(grid):
     """Count strict 2D local maxima (8-neighbour). NaNs ignored. A rough basin
     counter for the 'peak count per panel' scalar."""

@@ -1,8 +1,9 @@
 {
   "start": "centroid",
   "start_label": "centroid_g1000",
-  "steps": 100,
-  "repeats": 10,
+  "walks": 5,
+  "steps": 500,
+  "repeats": 8,
   "rl": false,
   "walk_seed": 0,
   "config_overrides": {

@@ -1,45 +1,59 @@
 #!/bin/bash
 # ============================================================================
 # run_landscape_lambda_seed999_array.slurm — self-contained runner for ALL FOUR
-# Stage-6 ruggedness (lambda) mutational walks (seed 999):
+# Stage-6 ruggedness (lambda) CONDITIONS (seed 999):
 #   {hard, baseline} x {random-start, centroid-start}.
 #
-# WHY a dedicated script: bakes in the four walk out-dirs + their matching
+# WHY a dedicated script: bakes in the four out-dirs + their matching
 # learning-run params so submitting is all that's needed:
 #
-#     sbatch run_landscape_lambda_seed999_array.slurm
+#     N_SHARDS=32 sbatch --array=0-127%100 run_landscape_lambda_seed999_array.slurm
 #
-# Each walk's jobs.json is written LOCALLY first by
+# Each condition's jobs.json is written LOCALLY first by
 #   landscape/stage6_lambda.py jobs --start <random|centroid> --out-dir <dir> ...
 # Genomes are embedded in jobs.json — no genome.csv needed on the cluster.
 #
-# lambda = -1 / ln rho(1) (Weinberger 1990 random-walk autocorrelation). Running
-# BOTH environments and BOTH start points is the "ruggedness is a property of the
-# ENVIRONMENT, not a seed/start accident" comparison.
+# lambda = correlation length from the random-walk autocorrelation (Weinberger
+# 1990); headline estimator is the LS fit of ln rho(k) = -k/lambda over k=1..10.
+# Running BOTH environments and BOTH start points is the "ruggedness is a
+# property of the ENVIRONMENT, not a seed/start accident" comparison.
 #
-#   WALKS (walk-major, shard varies fastest):
+#   CONDITIONS (condition-major, shard varies fastest):
 #     0  hard_random      landscape/out/stage6_hard_random       roam60d5 params
 #     1  hard_centroid    landscape/out/stage6_hard_centroid     roam60d5 params
 #     2  baseline_random  landscape/out/stage6_baseline_random   baseline params
 #     3  baseline_centroid landscape/out/stage6_baseline_centroid baseline params
-#   Each walk = 1,010 probes (101 steps x 10 repeats) split into N_SHARDS.
+#   Each condition = 20,040 probes: 5 INTERNAL walks x 501 steps x 8 map repeats.
+#   (The 5 internal walks are what gives lambda its cross-walk error bar; they
+#   live inside one jobs.json and are NOT the four conditions above.)
+#   TOTAL across the four conditions = 80,160 probes.
 #
 # CORE PACKING
 # ------------
-# One array task == one shard == one core. N_SHARDS is PER WALK; TOTAL tasks =
-# N_WALKS * N_SHARDS. With N_SHARDS=8 that is 4 * 8 = 32 tasks (--array=0-31) =
-# at most 32 concurrent cores, kept well under the ~100 per-job core cap. Each
-# shard is ~126 jobs ~ 21 min (walks are cheap vs the stage-3 planes).
-#   To go finer, raise N_SHARDS and set --array=0-(N_WALKS*N_SHARDS - 1) to
-#   match. Indices beyond TOTAL are skipped (harmless).
+# One array task == one shard == one core. N_SHARDS is PER CONDITION; TOTAL tasks
+# = N_CONDITIONS * N_SHARDS. With N_SHARDS=32 that is 4 * 32 = 128 tasks
+# (--array=0-127), throttled to 100 concurrent with %100 to respect the ~100
+# per-job core cap. Each shard is ~627 probes ~ 1-2 h at the ~5-10 s/probe the
+# stage-3 planes measured; --time=08:00:00 leaves headroom on a slow node.
+#   To go finer, raise N_SHARDS and set --array=0-(N_CONDITIONS*N_SHARDS - 1)%100
+#   to match. Indices beyond TOTAL are skipped (harmless).
 #
-# Re-running is safe: run_probe.js skips job ids already present in a shard CSV.
+# Re-running is safe: run_probe.js skips job ids already present in a shard CSV,
+# so a walltime kill just needs a resubmit.
+#   *** BUT: if you REGENERATE a jobs.json, delete that out-dir's stale
+#   results_shard_*.csv and results.csv FIRST. *** The resume check is by job id
+#   only — it cannot tell that an id now refers to a different genome. The
+#   pre-2026-07-21 jobs (100 steps x 10 repeats, single walk) also used the
+#   legacy id format s{t}_r{r}; the current format is w{walk}_s{step}_r{repeat},
+#   and merging the two breaks stage6_lambda.py analyze outright.
 #
 # AFTER the array finishes, merge + compute lambda LOCALLY (needs Python):
 #   for OD in stage6_hard_random stage6_hard_centroid \
 #             stage6_baseline_random stage6_baseline_centroid; do
 #     python landscape/merge_shards.py     --out-dir landscape/out/$OD
-#     python landscape/stage6_lambda.py analyze --out-dir landscape/out/$OD
+#     python landscape/stage6_lambda.py analyze --out-dir landscape/out/$OD \
+#            --kfit 10 --detrend linear
+#     python landscape/stage8_nk.py        --out-dir landscape/out/$OD
 #   done
 #
 # (sbatch SCHEDULES this file — you do not execute it yourself.)
@@ -47,12 +61,12 @@
 #SBATCH --job-name="landscape_lambda_s999"
 #SBATCH --account=compsci
 #SBATCH --partition=ada
-#SBATCH --time=04:00:00
+#SBATCH --time=08:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=6G
-#SBATCH --array=0-31
+#SBATCH --array=0-127%100
 #SBATCH --output=logs/landscape_lambda_s999_%A_%a.out
 #SBATCH --error=logs/landscape_lambda_s999_%A_%a.err
 #SBATCH --mail-type=BEGIN,END,FAIL
@@ -63,7 +77,7 @@ NODE_BIN="${NODE_BIN:-$HOME/.nvm/versions/node/v16.20.2/bin/node}"
 PROJECT_DIR="${PROJECT_DIR:-${SLURM_SUBMIT_DIR:-$HOME/LifeEngine}}"
 LOG_DIR="${LOG_DIR:-$PROJECT_DIR/logs}"
 
-# ── Walks (baked in) ─────────────────────────────────────────────────────────
+# ── Conditions (baked in) ────────────────────────────────────────────────────
 WALK_NAMES=(hard_random hard_centroid baseline_random baseline_centroid)
 WALK_OUT=(
     landscape/out/stage6_hard_random
@@ -77,8 +91,8 @@ WALK_PARAMS=("$HARD_PARAMS" "$HARD_PARAMS" "$BASE_PARAMS" "$BASE_PARAMS")
 N_WALKS=${#WALK_NAMES[@]}
 
 # ── Sharding ─────────────────────────────────────────────────────────────────
-N_SHARDS="${N_SHARDS:-8}"              # shards PER walk (must match --array below)
-TOTAL_TASKS=$(( N_WALKS * N_SHARDS ))  # 32 with defaults
+N_SHARDS="${N_SHARDS:-32}"             # shards PER condition (must match --array)
+TOTAL_TASKS=$(( N_WALKS * N_SHARDS ))  # 128 with defaults
 
 # ── Preflight ────────────────────────────────────────────────────────────────
 cd "$PROJECT_DIR" || { echo "ERROR: cannot cd to $PROJECT_DIR"; exit 1; }

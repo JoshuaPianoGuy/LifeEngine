@@ -1,5 +1,23 @@
 const CellStates = require("../Organism/Cell/CellStates");
 
+// ── Scheme-invariant colours ────────────────────────────────────────────────
+// Two groups are deliberately IDENTICAL in every scheme below, because they
+// carry experimental meaning rather than aesthetics and must stay readable
+// whichever scheme is selected:
+//
+//   * Food tiers + landmarks — low #ff0000 / medium #ff8000 / prestige #00ffff
+//     (pre-existing convention).
+//   * Predator cells — a bright pink/magenta ramp (hue ~325-330deg). Predators
+//     were previously dark red, which was nearly indistinguishable from low
+//     food (#ff0000, hue 0) at cell_size 2 on a 500x500 grid: red bodies on a
+//     field of red food. Pink is far enough round the wheel to separate them at
+//     a glance while staying visible on every scheme's dark background.
+//     Note this sits near neon's `killer` (#F82380); killer cells never appear
+//     in the experiments (organism anatomy is fixed to mover/eyes/mouths) but
+//     can show up in the editor.
+//
+// `predator eye-slit` is the exception — it is the scheme's own background
+// colour, so it stays per-scheme.
 const color_schemes = {
     "neon":{
         "empty":"#0E1318",
@@ -19,11 +37,11 @@ const color_schemes = {
         "armor":"#7230DB",
         "eye":"#B6C1EA",
         "eye-slit": "#0E1318",
-        "predator body":"#3D0000",
-        "predator mover":"#5C0011",
-        "predator eye":"#FF003C",
+        "predator body":"#FF1F8F",
+        "predator mover":"#FF63B5",
+        "predator eye":"#FFD1EA",
         "predator eye-slit": "#0E1318",
-        "predator drain":"#8C0030"
+        "predator drain":"#FF00C8"
     },
     "classic":{
         "empty":"#121D29",
@@ -43,11 +61,11 @@ const color_schemes = {
         "armor":"purple",
         "eye":"yellow",
         "eye-slit": "#121D29",
-        "predator body":"#4A0000",
-        "predator mover":"#660000",
-        "predator eye":"#FF1A1A",
+        "predator body":"#FF1F8F",
+        "predator mover":"#FF63B5",
+        "predator eye":"#FFD1EA",
         "predator eye-slit": "#121D29",
-        "predator drain":"#8B0000"
+        "predator drain":"#FF00C8"
     },
     "soft":{
         "empty":"#0B0E11",
@@ -67,11 +85,11 @@ const color_schemes = {
         "armor":"#7C69B5",
         "eye":"#AEB4C2",
         "eye-slit": "#0B0E11",
-        "predator body":"#4D1A22",
-        "predator mover":"#6B2531",
-        "predator eye":"#C24B5E",
+        "predator body":"#FF1F8F",
+        "predator mover":"#FF63B5",
+        "predator eye":"#FFD1EA",
         "predator eye-slit": "#0B0E11",
-        "predator drain":"#8C3344"
+        "predator drain":"#FF00C8"
     },
     "dark":{
         "empty":"black",
@@ -91,11 +109,11 @@ const color_schemes = {
         "armor":"#5632B5",
         "eye":"#8892B3",
         "eye-slit": "black",
-        "predator body":"#3D0A14",
-        "predator mover":"#591020",
-        "predator eye":"#C41E3A",
+        "predator body":"#FF1F8F",
+        "predator mover":"#FF63B5",
+        "predator eye":"#FFD1EA",
         "predator eye-slit": "black",
-        "predator drain":"#7A1530"
+        "predator drain":"#FF00C8"
     },
     "grayscale":{
         "empty":"black",
@@ -115,11 +133,11 @@ const color_schemes = {
         "armor":"#999999",
         "eye":"#888888",
         "eye-slit": "black",
-        "predator body":"#222222",
-        "predator mover":"#333333",
-        "predator eye":"#444444",
+        "predator body":"#FF1F8F",
+        "predator mover":"#FF63B5",
+        "predator eye":"#FFD1EA",
         "predator eye-slit": "black",
-        "predator drain":"#111111"
+        "predator drain":"#FF00C8"
     }
 }
 const color_scheme_names = Object.keys(color_schemes);

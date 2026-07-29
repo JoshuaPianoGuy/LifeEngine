@@ -8,8 +8,12 @@
  * is required and the new values bake in correctly (including hidden_size,
  * which resizes the network genome).
  *
- * Defaults below are identical to the original in-code constants, so the
- * browser build — which never calls applyOverrides — behaves exactly as before.
+ * Defaults below are identical to the original in-code constants. The browser
+ * build never calls applyOverrides; instead src/BrowserPreset.js assigns
+ * learning_rate and epsilon_enabled directly at startup (before any sim module
+ * loads) from its CONDITION / ENVIRONMENT constants. So for a browser run, edit
+ * BrowserPreset.js — editing those two literals below has no effect. Every other
+ * field here still takes its value from this file in the browser.
  *
  * Predator knobs (drain / patrol count / roaming count) live on the already
  * mutable PredatorHyperparameters object; the headless runner copies the values

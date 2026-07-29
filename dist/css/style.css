@@ -195,6 +195,37 @@ input:hover,input:active {
     display: grid;
 }
 
+/* Run-configuration readout in the About tab — condition / environment / RL
+   settings / seed for the currently running build. Populated by
+   ControlPanel.renderRunConfig(). */
+#learning-status {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 1px 8px;
+    margin: 6px 0;
+    padding: 6px 8px;
+    border-left: 3px solid var(--tab-active);
+    background: rgba(65, 103, 136, 0.08);
+    font-size: 0.9em;
+    line-height: 1.4;
+}
+
+#learning-status .run-config-row {
+    display: contents;
+}
+
+#learning-status .run-config-label {
+    grid-column: 1;
+    font-weight: bold;
+    color: var(--tab);
+}
+
+#learning-status .run-config-value {
+    grid-column: 2;
+    /* Long seeds / detail strings wrap instead of widening the control panel. */
+    overflow-wrap: anywhere;
+}
+
 .left-half {
     grid-column: 1;
 }
