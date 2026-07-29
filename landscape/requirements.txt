@@ -1,6 +1,0 @@
-# Python deps for the landscape/ analysis scripts (jobs generation + plotting).
-# These run LOCALLY (or on an HPC login node) — NOT on the compute nodes, which
-# only need Node.js to run src/eval/run_probe.js. No sklearn (PCA is numpy SVD).
-numpy>=1.24
-pandas>=2.0
-matplotlib>=3.7
