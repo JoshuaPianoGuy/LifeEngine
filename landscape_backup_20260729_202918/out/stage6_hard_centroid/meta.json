@@ -1,0 +1,15 @@
+{
+  "start": "centroid",
+  "start_label": "centroid_g1000",
+  "walks": 5,
+  "steps": 500,
+  "repeats": 8,
+  "rl": false,
+  "walk_seed": 0,
+  "config_overrides": {
+    "roaming_predator_count": 60,
+    "predator_drain": 5
+  },
+  "mut_prob": 0.03,
+  "mut_sigma": 0.1
+}

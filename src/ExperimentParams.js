@@ -33,6 +33,15 @@ const ExperimentParams = {
     epsilon_start: 0.3,    // EPSILON_START
     epsilon_end:   0.05,   // EPSILON_END
 
+    // Eligibility-trace decay γ in the REINFORCE update (NNBrain.TRACE_DECAY):
+    // trace <- γ * trace + ∇log π(a). It sets how far back in a lifetime credit
+    // for the current reward is spread — the trace's effective horizon is
+    // ~1/(1-γ) ticks (0.90 → ~10, 0.99 → ~100). Larger γ credits older actions
+    // more (better for delayed rewards, higher variance); smaller γ keeps credit
+    // local to the last few ticks. Read at NNBrain module load, so set it before
+    // the sim modules are required. Default 0.90 = the original in-code constant.
+    trace_decay:   0.90,   // TRACE_DECAY
+
     // Per-tick REINFORCE reward added the first time an organism steps onto a
     // grid cell it has not visited this lifetime (AdvancedOrganism.EXPLORE_BONUS).
     // Read at AdvancedOrganism module load, so set it before the sim modules

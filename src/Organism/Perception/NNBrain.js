@@ -141,7 +141,7 @@ const GENOME_SIZE = W1_SIZE + B1_SIZE + W2_SIZE + B2_SIZE;  // 1958
 
 // RL hyper-parameters
 const RL_LR            = ExperimentParams.learning_rate;  // tunable (default 0.02)
-const TRACE_DECAY      = 0.90;
+const TRACE_DECAY      = ExperimentParams.trace_decay;  // tunable (default 0.90)
 const BASELINE_DECAY   = 0.9;   // exponential moving average decay for running mean baseline (0.9 * mean + 0.1 * reward)
 
 // Exploration (tunable; defaults 0.5 -> 0.05)

@@ -129,6 +129,7 @@ function usageAndExit() {
         '    --epsilon-end   <f>       exploration epsilon at death  (0.05)\n' +
         '    --epsilon-decay-shape <s> sublinear|linear|quadratic    (quadratic)\n' +
         '    --no-epsilon              disable epsilon entirely (pure on-policy REINFORCE)\n' +
+        '    --trace-decay   <f>       eligibility-trace decay gamma  (0.90)\n' +
         '    --explore-bonus <f>       reward per newly visited cell   (0.15)\n' +
         '    --hidden-size   <N>       NN hidden-layer width         (64)\n' +
         '    --population-size <N>     founders per generation       (100)\n' +
@@ -178,6 +179,7 @@ const changed = ExperimentParams.applyOverrides({
     epsilon_end:            floatOpt('epsilon-end'),
     epsilon_decay_shape:    strOpt('epsilon-decay-shape', null, ['sublinear', 'linear', 'quadratic']),
     epsilon_enabled:        opts['no-epsilon'] ? false : null,
+    trace_decay:            floatOpt('trace-decay'),
     explore_bonus:          floatOpt('explore-bonus'),
     hidden_size:            intOpt('hidden-size'),
     population_size:        intOpt('population-size'),
