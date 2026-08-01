@@ -3,6 +3,7 @@ dist/js/bundle.js
 ./package-lock.json
 dist/js/bundle.js.LICENSE.txt
 /logs
+/logs_landscapes
 /output_logs
 /output
 /figures

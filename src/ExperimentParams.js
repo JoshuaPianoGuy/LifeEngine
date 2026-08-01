@@ -81,6 +81,20 @@ const ExperimentParams = {
     mut_prob:        0.03, // MUT_PROB  (between-generation per-weight mutation rate)
     mut_sigma:       0.1,  // MUT_SIGMA (between-generation Gaussian std-dev)
 
+    // ── Pure-RL collapse respawn (PureRLManager) ──────────────────────────
+    // Size of the rolling buffer of active_weight snapshots taken from recently
+    // dead organisms (PureRLManager.COLLAPSE_BUFFER_SIZE). When the population
+    // collapses or falls below population_size, the shortfall is respawned by
+    // sampling this buffer and mutating around the drawn weights — it is the
+    // pure-RL condition's ONLY mechanism for carrying strategies forward, since
+    // there is no GA. The size sets how far back "recent" reaches: small keeps
+    // the pool current with the latest learning but narrow (a collapse can
+    // refill the world from a handful of near-identical vectors); large keeps
+    // more diversity but reaches back to staler, less-learned weights.
+    // Read at PureRLManager module load, so set it before the sim modules are
+    // required. Default 25 = the original in-code constant.
+    collapse_buffer_size: 25, // COLLAPSE_BUFFER_SIZE
+
     // ── Reproduction (AdvancedOrganism) ───────────────────────────────────
     // Probability a within-generation asexual child successfully spawns once
     // the parent has banked the reproduction energy threshold. Read at

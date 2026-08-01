@@ -131,6 +131,8 @@ function usageAndExit() {
         '    --no-epsilon              disable epsilon entirely (pure on-policy REINFORCE)\n' +
         '    --trace-decay   <f>       eligibility-trace decay gamma  (0.90)\n' +
         '    --explore-bonus <f>       reward per newly visited cell   (0.15)\n' +
+        '    --collapse-buffer <N>     pure_rl: rolling dead-weight buffer sampled\n' +
+        '                              to respawn after a collapse    (25)\n' +
         '    --hidden-size   <N>       NN hidden-layer width         (64)\n' +
         '    --population-size <N>     founders per generation       (100)\n' +
         '    --mut-prob      <f>       between-gen mutation rate      (0.03)\n' +
@@ -181,6 +183,7 @@ const changed = ExperimentParams.applyOverrides({
     epsilon_enabled:        opts['no-epsilon'] ? false : null,
     trace_decay:            floatOpt('trace-decay'),
     explore_bonus:          floatOpt('explore-bonus'),
+    collapse_buffer_size:   intOpt('collapse-buffer'),
     hidden_size:            intOpt('hidden-size'),
     population_size:        intOpt('population-size'),
     mut_prob:               floatOpt('mut-prob'),

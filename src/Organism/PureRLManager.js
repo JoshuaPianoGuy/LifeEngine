@@ -101,8 +101,10 @@ const SPAWN_RADIUS    = 30;
 const { TICKS_PER_MAP, MAPS_PER_GEN, TICKS_PER_GEN } = require('./GenerationConstants');
 
 // Rolling buffer size for collapse respawn — recent enough to reflect
-// current learning, large enough to have meaningful diversity.
-const COLLAPSE_BUFFER_SIZE = 25;
+// current learning, large enough to have meaningful diversity. Sourced from
+// ExperimentParams so it honours --collapse-buffer; read at module load, after
+// headless.js applies overrides (same pattern as EPISODE_MUT_PROB below).
+const COLLAPSE_BUFFER_SIZE = ExperimentParams.collapse_buffer_size; // tunable (default 25)
 
 // Toggle between-episode mutation. Does not affect within-episode
 // reproduction mutation, which always runs via _mutateGenome() (0.05 / 0.1).
