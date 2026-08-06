@@ -282,6 +282,68 @@ def fig_gnr(out_png, G, env, gnr_evo, gnr_learn):
     plt.close(fig)
 
 
+def fig_fdc(out_png, G, env, fdc_evo, fdc_learn):
+    """Fitness against distance-to-reference, one panel per RL pass (A3).
+
+    The reference is NOT the true global optimum — it is the best cell actually
+    sampled on this 2-D slice (see ll_difficulty.fdc). Both proxies are drawn:
+    points are positioned by distance to the top-5% centroid (the stable one),
+    and the best-cell r is quoted alongside as the robustness check.
+
+    Sign convention: r < 0 means fitness RISES as distance falls, i.e. the
+    landscape points a searcher at the optimum. r ~ 0 = no global signal,
+    r > 0 = deceptive. There is no absolute scale — a perfectly linear surface
+    on this square domain scores only about -0.69 — so read the two
+    environments against EACH OTHER, never against -1.
+    """
+    A, B = G['A'], G['B']
+    fig, axs = plt.subplots(1, 2, figsize=(11, 4.4), sharex=True, sharey=True)
+    colour = _env_color(env)
+
+    for ax, f, d, lab in ((axs[0], G['f_evo'], fdc_evo, 'RL off (evolution)'),
+                          (axs[1], G['f_learn'], fdc_learn, 'RL on (learning)')):
+        ra, rb = d['fdc_top5_ref']
+        a = np.asarray(A, dtype=float).ravel()
+        b = np.asarray(B, dtype=float).ravel()
+        fv = np.asarray(f, dtype=float).ravel()
+        m = np.isfinite(a) & np.isfinite(b) & np.isfinite(fv)
+        a, b, fv = a[m], b[m], fv[m]
+        dist = np.sqrt((a - ra) ** 2 + (b - rb) ** 2)
+
+        ax.scatter(dist, fv, s=9, alpha=0.35, color=colour, edgecolors='none',
+                   rasterized=True)
+        # OLS fit of f on distance — the visual slope behind the r value.
+        if dist.size >= 2 and np.ptp(dist) > 0:
+            slope, intercept = np.polyfit(dist, fv, 1)
+            xs = np.array([dist.min(), dist.max()])
+            ax.plot(xs, slope * xs + intercept, '-', lw=2, color='#B91C1C',
+                    label=f'OLS slope {slope:+.4f}')
+            ax.legend(fontsize=7.5, loc='upper right')
+
+        r_top = d['fdc_top5_centroid']
+        se_top = d['fdc_top5_centroid_se']
+        ax.text(0.02, 0.02,
+                f'r (top-5% centroid) = {r_top:+.3f} ± {se_top:.3f}\n'
+                f'r (best cell)       = {d["fdc_best"]:+.3f} ± {d["fdc_best_se"]:.3f}\n'
+                f'reference α={ra:.2f}, β={rb:.2f}',
+                transform=ax.transAxes, va='bottom', ha='left', fontsize=7.5,
+                family='monospace',
+                bbox=dict(fc='white', alpha=0.8, ec='#CCCCCC', pad=3))
+        ax.set_title(f'{lab}', fontsize=9)
+        ax.set_xlabel('distance to top-5% centroid  (in-plane, α–β)', fontsize=8)
+        ax.grid(alpha=0.3)
+        ax.tick_params(labelsize=7)
+
+    axs[0].set_ylabel('f(θ)', fontsize=8)
+    fig.suptitle(f'A3 fitness-distance correlation — {env}\n'
+                 'r < 0 = fitness rises toward the reference (guided);  r ~ 0 = no global '
+                 'signal;  r > 0 = deceptive.  No absolute scale — compare environments, not to -1.',
+                 fontsize=9)
+    fig.tight_layout()
+    fig.savefig(out_png, dpi=130)
+    plt.close(fig)
+
+
 def fig_lift(out_png, G, env, lift):
     """Relative-lift map + the two diagnostic scatters (A6)."""
     fig, axs = plt.subplots(1, 3, figsize=(15, 4.2))
@@ -446,6 +508,7 @@ def cmd_metrics(args):
         out['learn'][key] = gl[key]
 
     # ── A3 fitness-distance correlation ───────────────────────────────────────
+    fdc_by_pass = {}
     for tag, f in (('', G['f_evo']), ('learn', G['f_learn'])):
         r_best, n_c, ref_b = ld.fdc(A, B, f, reference='best')
         r_top, _, ref_t = ld.fdc(A, B, f, reference='top5')
@@ -454,6 +517,7 @@ def cmd_metrics(args):
              'fdc_top5_centroid_se': ld.corr_se(r_top, n_c),
              'fdc_best_ref': list(ref_b), 'fdc_top5_ref': list(ref_t)}
         (out if tag == '' else out['learn']).update(d)
+        fdc_by_pass[tag or 'evo'] = d
 
     # ── A4 dispersion ─────────────────────────────────────────────────────────
     out['dispersion'] = ld.dispersion_profile(A, B, G['f_evo'])
@@ -531,6 +595,8 @@ def cmd_metrics(args):
 
     fig_viability(os.path.join(out_dir, f'difficulty_{env}_viability.png'), G, env, k, sens)
     fig_gnr(os.path.join(out_dir, f'difficulty_{env}_gnr.png'), G, env, ge['gnr'], gl['gnr'])
+    fig_fdc(os.path.join(out_dir, f'difficulty_{env}_fdc.png'), G, env,
+            fdc_by_pass['evo'], fdc_by_pass['learn'])
     fig_lift(os.path.join(out_dir, f'difficulty_{env}_lift.png'), G, env, lift)
     if lam_by_start:
         fig_lambda(os.path.join(out_dir, f'difficulty_{env}_lambda.png'), env, lam_by_start)
@@ -615,8 +681,10 @@ COMPARE_ROWS = [
     ('gnr_median_lowf', 'A2 median GNR (low f)', None),
     ('gnr_median_highf', 'A2 median GNR (high f)', None),
     ('gnr_frac_below_1', 'A2 fraction of cells GNR < 1', None),
-    ('fdc_best', 'A3 FDC (best cell)', 'fdc_best_se'),
-    ('fdc_top5_centroid', 'A3 FDC (top-5% centroid)', 'fdc_top5_centroid_se'),
+    ('fdc_best', 'A3 FDC (best cell, evo)', 'fdc_best_se'),
+    ('learn.fdc_best', 'A3 FDC (best cell, learn)', 'learn.fdc_best_se'),
+    ('fdc_top5_centroid', 'A3 FDC (top-5% centroid, evo)', 'fdc_top5_centroid_se'),
+    ('learn.fdc_top5_centroid', 'A3 FDC (top-5% centroid, learn)', 'learn.fdc_top5_centroid_se'),
     ('r2_linear', 'A5 R² linear', None),
     ('r2_quadratic', 'A5 R² quadratic', None),
     ('r2_nonquadratic_residual', 'A5 non-quadratic residual', None),
@@ -635,6 +703,25 @@ COMPARE_ROWS = [
 ]
 
 
+def _mget(m, key):
+    """Fetch a metric by flat key, or by dotted path for the nested RL-on pass.
+
+    The RL-off/evolution metrics sit at the top level and the RL-on/learning
+    ones under "learn" (see the key convention in the module docstring), so
+    'learn.fdc_best' reaches the learning-pass value.
+    """
+    if key is None:
+        return None
+    cur = m
+    for part in key.split('.'):
+        if not isinstance(cur, dict):
+            return None
+        cur = cur.get(part)
+        if cur is None:
+            return None
+    return cur
+
+
 def cmd_compare(args):
     metrics = [json.load(open(p)) for p in args.metrics]
     envs = [m['env'] for m in metrics]
@@ -647,20 +734,20 @@ def cmd_compare(args):
 
     rows = []
     for key, label, se_key in COMPARE_ROWS:
-        vals = [m.get(key) for m in metrics]
+        vals = [_mget(m, key) for m in metrics]
         if all(v is None for v in vals):
             continue
         row = {'metric': key, 'label': label}
         for env, m in zip(envs, metrics):
-            row[env] = m.get(key)
+            row[env] = _mget(m, key)
             if se_key:
-                row[f'{env}_se'] = m.get(se_key)
+                row[f'{env}_se'] = _mget(m, se_key)
         if len(metrics) >= 2:
             a, b = metrics[0], metrics[1]
-            va = a.get(key)
-            vb = b.get(key)
-            sa = a.get(se_key) if se_key else None
-            sb = b.get(se_key) if se_key else None
+            va = _mget(a, key)
+            vb = _mget(b, key)
+            sa = _mget(a, se_key)
+            sb = _mget(b, se_key)
             cmpres = ld.compare_metric(
                 float(va) if va is not None else float('nan'),
                 float(vb) if vb is not None else float('nan'),

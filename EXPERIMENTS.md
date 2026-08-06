@@ -197,6 +197,29 @@ Both sweep `learning_rate ∈ {0.005, 0.01, 0.02, 0.03}` × 3 seeds in the same 
 * `run_lr_no_epsilon_sweep_roaming_array.slurm` — **no‑epsilon** family (pure on‑policy REINFORCE). 4 LR × 3 seeds = 12 tasks. Analysed by `analyse_lr_sweep_noeps.py`.
 * `run_lr_epsilon_sweep_roaming_array.slurm` — **epsilon** family, additionally sweeping `epsilon_start ∈ {0.2,0.3,0.5,0.7}` × `decay_shape ∈ {sublinear,linear,quadratic}` (4×4×3×3 seeds = 144 runs, packed into 48 array tasks that each loop the 3 seeds to respect the queue's submit limit). Analysed by `analyse_lr_sweep_epsilon.py` (panel per decay, line per LR).
 
+### 5.2b The 1000×1000 world (current standing setup)
+
+From here on the standing defaults are **`hidden_size 128`** and **`collapse_buffer 100`** (the buffer is inert outside `--mode pure_rl`; it is passed anyway so `params.json` records it consistently), on a **1000×1000 grid for 500 generations**.
+
+* `run_lr_sweep_learning_w1k_array.slurm` — learning condition (GA + RL, no epsilon), `learning_rate ∈ {0.01, 0.02, 0.03}` × {baseline, hard} × 3 seeds (`1 42 999`) × 5 replicates = **90 runs**, one per array task (~58 h baseline / ~44 h hard; 90 h wall clock, 24 G).
+* `run_evolution_condition_hard_w1k_array.slurm` — evolution condition (GA only) in the hard environment, 5 seeds (`1 42 999 123 456`) × 5 replicates = **25 runs** (~10 h median, ~21 h worst; 60 h wall clock, 16 G). Sized for the bimodal stall/take‑off split the capacity sweep found in this cell.
+
+Both fit together inside the 120‑core allowance (90 + 25 = **115 tasks, one run each**); submit the evolution job first so its shorter runs clear early.
+
+**Timing model (measured, not assumed).** Fitting per‑generation wall clock against population in the h128 logs gives a near‑zero intercept — `sec/gen ≈ 0.089 × agents` (learning baseline), `0.075 ×` (learning hard), `0.037 ×` (evolution hard) — so **cost is linear in population**, and a 4× world at matched food density costs 4× per generation. But **halving the generations does not halve the cost**: population grows over a run, so generations 1–500 are only **46.7 %** of a full baseline run's wall clock (43.6 % hard learning, 38.0 % hard evolution). Hence `31 h × 4 × 0.467 ≈ 58 h`, not `31 h × 2`.
+
+**Packing (`RUNS_PER_JOB`) is available but is not a speed‑up.** One run per task is already the most parallel layout the allowance permits; packing serialises runs that would otherwise be concurrent, so it only makes sense to free cores for a *third* job. The learning sweep cannot pack anyway — its stride pairs a baseline run with a hard one, so 2 runs/task is ~102 h against a 90 h limit, and 3 runs/task packs three baseline runs into one task (~174 h) because the stride then equals `PER_LR`. The evolution job packs cleanly: 2/task = 13 tasks (~41 h worst), 3/task = 9 tasks (~63 h worst, needs `--time=72:00:00`). Every packing factor still covers the full grid.
+
+**Predator density is held constant, not predator count.** Hard has always meant 60 roaming predators on 500×500 = 2.4e‑4 per cell; on 1000×1000 that is **240 roaming predators**, drain 5 (per‑contact, does not scale).
+
+**Food density is held constant too, via `--food-density-scale 4`.** Map pools store relative coordinates against a 400×300 reference grid; `WorldEnvironment._loadMapFromPool` fills caves and landmark lines as footprints (so they scale with area) but historically placed **food as single points**, one runtime cell per reference cell — fixing the food *count* while the area grew (~3,400 food cells is 1.4% cover at 500×500 but 0.34% at 1000×1000). `food_density_scale` (`ExperimentParams`, CLI `--food-density-scale`) now places N runtime cells per reference food cell, scattered inside that cell's runtime footprint by a PRNG seeded from the map, so a seed still reproduces its terrain exactly. Set it to the **area ratio** being matched — `(1000·1000)/(500·500) = 4`. Extras land on **empty cells only**, so they never overwrite a cave or already-placed food, and the request is capped at the footprint area (3×4 = 12 at 1000×1000, comfortably above 4). Each map load logs `food_cells=13652 (x4/ref)` so a run proves its own density.
+
+> **Default is 1 = the historical behaviour, bit for bit.** No existing run, log or analysis is affected by the parameter's introduction; only runs that pass a value > 1 differ.
+
+Even so, do **not** compare absolute fitness against the 500×500 runs: matched density on a 4× larger world still changes travel distances, patch spacing and the fraction of the map reachable in one lifetime.
+
+**Known caveat (patrol predators only).** `_extractPrestigeCentres` clusters prestige cells with an absolute `patchLinkRadius` and drops components below `minPatchCells: 8`, so a bigger world — and denser prestige food — changes the *patch count* it reports (map 1 of seed 1: 8 patches at 500×500, 54 at 1000×1000 with scaled food). Patrol predators spawn `predatorsPerPatch` per patch, so enabling them on a 1000×1000 world would multiply the predator count unexpectedly. Both scripts above run `--predators-per-patch 0`, so patrol predators never spawn and `prestige_patch_centres` is unused there.
+
 ### 5.3 Other sweeps (context / earlier work)
 
 * `run_epsilon_sweep_array.slurm` + `run_no_epsilon_array.slurm` — epsilon‑start × decay vs no‑epsilon at fixed LR (`analyse_epsilon_sweep.py`).
@@ -269,7 +292,7 @@ Configuring a browser run previously meant hand-editing three files, and missing
 | File | Preset-owned (do not edit for a browser run) | Still edited here |
 |------|---------------------------------------------|-------------------|
 | `src/WorldConfig.js` | `learning_enabled`, `experiment_mode`, `MAP_SEED`, `MAP_COLS`, `MAP_ROWS` | everything else |
-| `src/ExperimentParams.js` | `learning_rate`, `epsilon_enabled` | mutation, disaster, food-shuffle, `hidden_size`, `population_size`, … |
+| `src/ExperimentParams.js` | `learning_rate`, `epsilon_enabled` | mutation, disaster, food-shuffle, `food_density_scale`, `hidden_size`, `population_size`, … |
 | `src/Organism/PredatorHyperparameters.js` | `count`, `drainAmount`, `patrol.predatorsPerPatch` | radii, leash, move intervals (fixed design, not swept) |
 
 The preset is imported **only** by `src/index.js` (the webpack entry point), so `src/headless.js`, the `src/eval` probe harness and the landscape tooling are unaffected — they keep configuring themselves from their own flags.
@@ -321,6 +344,7 @@ All are standalone `python analyse_*.py` scripts (matplotlib, Agg backend) that 
 
 * **`analyse_lr_sweep_noeps.py` / `analyse_lr_sweep_epsilon.py`** — the LR tuning (§5.2). Fitness, top‑20%, population, and MAD over generations and as final‑window endpoints per seed; epsilon version panels by decay shape with a line per LR.
 * **`analyse_condition_behaviour.py`** — **learning vs evolution** behaviour over generations at 60/5: behaviour curves (cells explored, predator encounters, ticks drained, cave entries, food eaten, lifetime), fitness/population outcomes, population‑average lifetime, death‑cause composition, food‑tier line panels, and per‑seed detail sheets. All population‑averaged then averaged across seeds.
+* **`analyse_hidden_size_sweep.py`** — the **network‑capacity** sweep (hidden width 32 / 64 / 128) from the matched `run_hidden_size_sweep_{evolution,learning,pure_rl}_array.slurm` trio, compared **across all three conditions**. Every figure has the same structure: one column per condition, one row per metric, one line per width (mean ± std over the arm's 15 runs = 3 seeds × 5 replicates, pooled). Writes fitness/population, lifetime + death‑cause, behaviour, food‑tier, cave day/night and learning‑diagnostic figures, plus a final‑window `hid_vs_width.png` (value vs width, one line per condition) and a run‑level Mann‑Whitney/Cliff's‑δ table of each width against the 64 control. `hid_consistency.png` + `hid_band_counts.csv` answer the **consistency** question separately from the performance one: how many of each arm's 15 runs ended in each fitness region, with the regions cut from the environment's pooled runs — a clear two‑group gap becomes a *plateaued low / took off* split (the hard environment: 11/15, 8/15, 5/15 evolution runs plateau at h32/h64/h128), otherwise pooled quartiles. Each run is also flagged *still climbing* vs *plateaued* from its last two windows. `--env baseline|hard|both`; baseline and hard are never mixed (they ran at different LRs). Caches each run's `organisms.csv` summary under `output/.cache_hidden_curves`.
 * **`analyse_lr_sweep.py` / `analyse_lr_sweep_learning.py` / `analyse_lr_sweep_behaviour.py`** — earlier LR‑sweep views (fitness / learning diagnostics / behaviour).
 * **`analyse_epsilon_sweep.py`, `analyse_predator_sweep.py`, `analyse_predator_metrics.py`, `analyse_disaster_sweep_evolution.py`, `analyse_weights*.py`, `compare_weights.py`** — the other sweeps / diagnostics.
 

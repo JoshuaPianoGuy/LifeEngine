@@ -148,6 +148,34 @@ const ExperimentParams = {
     predators_per_patch:    2,   // PredatorHyperparameters.patrol.predatorsPerPatch
     roaming_predator_count: 60,   // PredatorHyperparameters.count
 
+    // ── Food density on a rescaled world ───────────────────────────────────
+    // How many runtime food cells each REFERENCE food cell becomes when a map
+    // pool is loaded (WorldEnvironment._loadMapFromPool).
+    //
+    // Map pools are authored on a 400x300 reference grid and store relative
+    // coordinates. Caves and landmark lines are drawn as filled footprints, so
+    // they scale with AREA; food is placed as single points, one runtime cell
+    // per reference cell, because it is meant to read as an organic scattered
+    // blob rather than solid blocks. The side effect is that food COUNT is
+    // fixed while area is not, so food per unit area falls as the world grows:
+    //     ~6,100 food cells is 2.4% cover on 500x500 and 0.6% on 1000x1000.
+    // Predator pressure is set by an explicit count and is normally rescaled to
+    // hold density constant, so leaving food unscaled changes two things at
+    // once and confounds "bigger world" with "much scarcer food".
+    //
+    // This is the knob that holds food density constant instead. Set it to the
+    // AREA RATIO between the new world and the one being matched:
+    //     500x500  -> 1000x1000 : (1000*1000)/(500*500) = 4
+    // 1 = every reference food cell places exactly one runtime cell, i.e. the
+    // historical behaviour, byte for byte — every existing run is unaffected.
+    // Values above 1 place the extra cells at deterministic positions inside
+    // the same reference cell's runtime footprint (seeded by the map, so a seed
+    // still reproduces its terrain exactly), on EMPTY cells only, so extra food
+    // never lands on a cave or on food already placed. The value is capped at
+    // the footprint area — a reference cell cannot become more runtime cells
+    // than it covers — and capping is reported once per map load.
+    food_density_scale: 1,
+
     // ── Non-stationary "shuffle" environment (FoodShuffle) ─────────────────
     // Periodically permute which food TIER pays which ENERGY VALUE, forcing
     // within-lifetime learning: a fixed evolved colour preference is optimal in

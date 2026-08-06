@@ -479,7 +479,11 @@ class WorldEnvironment extends Environment {
         // cells. To keep caves solid and landmark lines continuous at any scale,
         // those two cell types are drawn by filling the whole runtime footprint
         // each reference cell scales to, closing the inter-cell gaps. Food stays
-        // as single points (it's an organic, scattered blob by design).
+        // as single points (it's an organic, scattered blob by design) UNLESS
+        // ExperimentParams.food_density_scale > 1, which places that many points
+        // per reference cell inside the same footprint — enough to hold food per
+        // unit area constant across a change of world size without turning the
+        // blobs into solid rectangles. See the parameter's own comment.
         //
         // Placement order also guarantees caves never intersect food/landmarks:
         //   1. Caves first, as solid footprint blocks on the empty grid.
@@ -526,16 +530,85 @@ class WorldEnvironment extends Environment {
             const r = Math.round(entry.r_rel * rows);
             fillFootprint(c, r, CellStates.cave, false);
         }
-        // Pass 2: food — single points, never over a cave.
+        // Pass 2: food — single points, never over a cave. With
+        // food_density_scale > 1, each reference cell places that many points
+        // instead of one, spread over its runtime footprint, so food per unit
+        // area can be held constant when the world is resized (see
+        // ExperimentParams.food_density_scale).
+        //
+        // A reference cell cannot become more runtime cells than its footprint
+        // covers, so the request is capped there. At 1000x1000 off a 400x300
+        // reference the footprint is 3x4 = 12, comfortably above the 4 the
+        // 500x500 -> 1000x1000 rescale needs.
+        const fp_area    = fp_w * fp_h;
+        const food_want  = Math.max(1, Math.round(Number(ExperimentParams.food_density_scale) || 1));
+        const food_per   = Math.min(food_want, fp_area);
+        if (food_want > fp_area) {
+            console.warn(`[WorldEnv] food_density_scale ${food_want} exceeds the ` +
+                `${fp_w}x${fp_h}=${fp_area}-cell footprint of one reference cell — ` +
+                `capped at ${fp_area}. Food density will be lower than requested.`);
+        }
+        // Offset visiting order for the EXTRA points. Shuffled per reference
+        // cell so the added food scatters instead of always hugging the top-left
+        // of the footprint, and seeded from (map, cell) so a map seed still
+        // reproduces its terrain exactly. Allocated once and shuffled in place —
+        // this runs for every food cell of every map load.
+        const order = (food_per > 1) ? new Int32Array(fp_area) : null;
+        if (order) for (let i = 0; i < fp_area; i++) order[i] = i;
+
+        let food_idx = 0;
+        let food_placed = 0;
         for (const entry of map.cells) {
             const state = stateMap[entry.name];
             if (!state || state === CellStates.cave || landmarkStates.has(state)) continue;
             const c = Math.round(entry.c_rel * cols);
             const r = Math.round(entry.r_rel * rows);
-            if (c < 0 || c >= cols || r < 0 || r >= rows) continue;
-            const existing = this.grid_map.cellAt(c, r);
-            if (existing && existing.state === CellStates.cave) continue;
-            this.changeCell(c, r, state, null);
+            const cell_i = food_idx++;
+
+            // The primary point: exactly what a scale of 1 has always placed,
+            // including its failure cases (out of bounds, or on a cave -> drop
+            // the cell). Kept bit-identical so food_density_scale = 1 leaves
+            // every existing run's terrain untouched.
+            let placed = 0;
+            if (c >= 0 && c < cols && r >= 0 && r < rows) {
+                const existing = this.grid_map.cellAt(c, r);
+                if (!existing || existing.state !== CellStates.cave) {
+                    this.changeCell(c, r, state, null);
+                    placed = 1;
+                }
+            }
+            // The extras: EMPTY cells only, so they never overwrite a cave or a
+            // food cell already placed (including one from a neighbouring
+            // reference cell, whose footprint overlaps this one at non-integer
+            // scales). Placing only on empty is what makes the count add up —
+            // overwriting existing food would spend the quota without raising
+            // the density.
+            if (food_per > 1) {
+                let rng = ((target_map_index * 0x9E3779B1) ^ (cell_i * 0x85EBCA77)) >>> 0;
+                const next = () => {
+                    rng = (rng + 0x6D2B79F5) >>> 0;
+                    let t = rng;
+                    t = Math.imul(t ^ (t >>> 15), 1 | t);
+                    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+                    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+                };
+                for (let i = fp_area - 1; i > 0; i--) {      // Fisher-Yates
+                    const j = Math.floor(next() * (i + 1));
+                    const tmp = order[i]; order[i] = order[j]; order[j] = tmp;
+                }
+                for (let k = 0; k < fp_area && placed < food_per; k++) {
+                    const off = order[k];
+                    if (off === 0) continue;                 // primary, already tried
+                    const fc = c + (off % fp_w);
+                    const fr = r + ((off / fp_w) | 0);
+                    if (fc < 0 || fc >= cols || fr < 0 || fr >= rows) continue;
+                    const existing = this.grid_map.cellAt(fc, fr);
+                    if (!existing || existing.state !== CellStates.empty) continue;
+                    this.changeCell(fc, fr, state, null);
+                    placed++;
+                }
+            }
+            food_placed += placed;
         }
         // Pass 3: landmarks — footprint-filled over empty cells only, so lines
         // become continuous without intersecting caves or food.
@@ -554,8 +627,13 @@ class WorldEnvironment extends Environment {
         // can be repositioned onto the correct patches after each map swap.
         this.prestige_patch_centres = this._extractPrestigeCentres();
 
+        // food_placed vs cells is the density check: at food_density_scale 1 it
+        // is the reference food count (minus any cells lost to caves/bounds),
+        // and at 4 it should be ~4x that. Logged so a run's own output proves
+        // the rescale took effect rather than being read off params.json alone.
         console.log(`[WorldEnv] Map ${this._sequence_index}/${this._map_sequence.length} ` +
             `(pool idx ${target_map_index}) profile=${map.profile} cells=${map.cell_count} ` +
+            `food_cells=${food_placed} (x${food_per}/ref) ` +
             `prestige_patches=${this.prestige_patch_centres.length}`);
     }
 
