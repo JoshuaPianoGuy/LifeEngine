@@ -11,11 +11,12 @@ rate:
     peak_population          -- carrying capacity reached (ecological outcome)
     total_agents             -- total agents alive (plotted alongside peak, as
                                 the individual-run analyse_weights.py does)
-    avg_learned_weight_diff  -- MAD: mean |active - genome| over the top-20
-                                organisms, i.e. how much is learned WITHIN a
-                                lifetime (see StatsPanel.calculateDrift)
-    avg_network_weight_mag   -- RMS magnitude of the network weights
-                                (see StatsPanel._calcRMSWeight)
+    avg_learned_weight_diff  -- mean absolute weight difference: mean |active - genome| over the WHOLE
+                                generation (every agent that lived, not just the
+                                selected cohort), i.e. how much is learned WITHIN
+                                a lifetime (see Logger._calcDrift)
+    avg_network_weight_mag   -- RMS magnitude of the network weights, likewise
+                                averaged over all agents (see Logger._calcRMSWeight)
 
 Like the fitness script it uses ALL runs (3 LRs x 3 seeds), collapses each run
 to a final value (mean of the last --final-window generations, to smooth
@@ -68,7 +69,7 @@ LR_COLOURS = ['#2563EB', '#059669', '#DC2626', '#D97706', '#7C3AED', '#0891B2']
 METRICS = {
     'peak_population':         ('Peak population',            '#0891B2', '{:.0f}'),
     'total_agents':            ('Total agents',               '#92400E', '{:.0f}'),
-    'avg_learned_weight_diff': ('Learned weight diff (MAD)',  '#7C3AED', '{:.4f}'),
+    'avg_learned_weight_diff': ('Mean absolute weight difference',  '#7C3AED', '{:.4f}'),
     'avg_network_weight_mag':  ('RMS weight magnitude',       '#DB2777', '{:.4f}'),
 }
 DEFAULT_METRICS = list(METRICS)
@@ -261,7 +262,7 @@ def main():
         label = METRICS[m][0]
         sub = agg[agg['metric'] == m][['lr', 'mean', 'std', 'sem', 'count']]
         print(f"\n{label} ({m}):")
-        # {:.4g} (sig-figs) not {:.4f}: MAD spans ~1e-5..1e-3, which fixed
+        # {:.4g} (sig-figs) not {:.4f}: mean absolute weight difference spans ~1e-5..1e-3, which fixed
         # 4-decimal formatting would flatten to 0.0000.
         print(sub.to_string(index=False,
               formatters={'lr': '{:g}'.format, 'mean': '{:.4g}'.format,

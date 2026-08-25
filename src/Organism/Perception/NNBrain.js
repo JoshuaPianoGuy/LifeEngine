@@ -5,14 +5,16 @@
  * learning influences the rate at which effective food-seeking behaviours become
  * encoded in heritable neural network weights across generations.
  *
- * Architecture:  54 -> 32 -> 6
+ * Architecture:  54 -> H -> 6, where H = ExperimentParams.hidden_size
  *   Input  (54): 4 eye directions x 13 one-hot percept types  +  1 energy scalar + 1 rotation scalar
- *   Hidden (32): ReLU
+ *   Hidden  (H): ReLU. Default 64; the production runs use 128 (--hidden-size).
  *   Output  (6): softmax -> up / right / down / left / rotate-left / rotate-right
- *   Genome: 54x32 + 32 + 32x6 + 6 = 1728 + 32 + 192 + 6 = 1958 weights
+ *   Genome: 54xH + H + Hx6 + 6 = 61H + 6 weights (3910 at H=64, 7814 at H=128)
+ *   Init:   Glorot/Xavier UNIFORM per layer, biases 0 — see xavierRandom()
  *
  * Perception:
- *   Uses the existing EyeCell.look() raycast (lookRange = 30 by default).
+ *   Uses the existing EyeCell.look() raycast (Hyperparameters.lookRange = 200,
+ *   i.e. an eye sees up to 200 cells ahead — 40% of a 500-wide world).
  *   Each of the 4 directional eye cells returns the first non-empty cell within
  *   range. NNBrain reads those observations directly rather than going through
  *   the Brain.observe() / Brain.decide() pipeline.
@@ -133,11 +135,11 @@ const OUTPUT_SIZE = 6;   // up, right, down, left, rotate-left, rotate-right
 
 const DEBUG_STATE_VECTOR = false;  // Set to true to log the 54-element input vector
 
-const W1_SIZE     = STATE_SIZE  * HIDDEN_SIZE;   // 1728
-const B1_SIZE     = HIDDEN_SIZE;                 //   32
-const W2_SIZE     = HIDDEN_SIZE * OUTPUT_SIZE;   //  192
-const B2_SIZE     = OUTPUT_SIZE;                 //    6
-const GENOME_SIZE = W1_SIZE + B1_SIZE + W2_SIZE + B2_SIZE;  // 1958
+const W1_SIZE     = STATE_SIZE  * HIDDEN_SIZE;   // 3456 at H=64, 6912 at H=128
+const B1_SIZE     = HIDDEN_SIZE;                 //   64  /  128
+const W2_SIZE     = HIDDEN_SIZE * OUTPUT_SIZE;   //  384  /  768
+const B2_SIZE     = OUTPUT_SIZE;                 //    6  /    6
+const GENOME_SIZE = W1_SIZE + B1_SIZE + W2_SIZE + B2_SIZE;  // 61H + 6: 3910 / 7814
 
 // RL hyper-parameters
 const RL_LR            = ExperimentParams.learning_rate;  // tunable (default 0.02)

@@ -73,16 +73,47 @@ console.error(`[run_probe] ${jobs.length} jobs${shardN > 1 ? ` (shard ${shardI}/
 
 const { Probe } = require('./probe');
 
-// ── resume support: read already-done ids from --out ───────────────────────────
-const COLUMNS = ['id', 'rl', 'map_index', 'ticks', 'mean_fitness', 'std_clones', 'n_clones',
+// ── output schema ─────────────────────────────────────────────────────────────
+// BASE is what every landscape stage has always written; do not reorder or
+// insert into it, several readers index these by name and the merged
+// results.csv files on disk carry exactly this header.
+const BASE_COLUMNS = ['id', 'rl', 'map_index', 'ticks', 'mean_fitness', 'std_clones', 'n_clones',
     'mean_lifetime', 'mean_cave_entries', 'mean_drained_ticks', 'mean_predator_touches',
     'deaths_survived', 'deaths_starved', 'deaths_drained', 'deaths_lifespan'];
 
+// Opt-in extras, requested by the jobs file as "metrics": "founder". APPENDED,
+// never interleaved, so a BASE reader that selects by name is unaffected.
+// Off by default precisely so an existing landscape shard CSV can still be
+// resumed by a newer build of this script without the row width changing
+// underneath it.
+const EXTRA_COLUMNS = { founder: ['mean_weight_drift'] };
+
+const metricsMode = typeof spec.metrics === 'string' ? spec.metrics : 'base';
+if (metricsMode !== 'base' && !EXTRA_COLUMNS[metricsMode]) {
+    console.error(`Unknown "metrics": ${JSON.stringify(metricsMode)} in the jobs file. ` +
+        `Known: base, ${Object.keys(EXTRA_COLUMNS).join(', ')}.`);
+    process.exit(1);
+}
+const COLUMNS = BASE_COLUMNS.concat(EXTRA_COLUMNS[metricsMode] || []);
+
+// ── resume support: read already-done ids from --out ───────────────────────────
 const done = new Set();
 let needHeader = true;
 if (fs.existsSync(opts.out)) {
     const prev = fs.readFileSync(opts.out, 'utf8').split('\n');
     if (prev.length && prev[0].startsWith('id,')) {
+        // Schema guard: appending rows of a different width to an existing file
+        // produces a ragged CSV that pandas rejects only later, after the
+        // walltime has been spent. Refuse now and say what to do.
+        const prevHeader = prev[0].trim();
+        if (prevHeader !== COLUMNS.join(',')) {
+            console.error(`Schema mismatch: ${opts.out} has header\n  ${prevHeader}\n` +
+                `but this run would write\n  ${COLUMNS.join(',')}\n` +
+                `(jobs file "metrics": ${JSON.stringify(metricsMode)}). Resuming would ` +
+                `append rows of a different width. Either match the jobs file to the ` +
+                `existing output, or delete it and start that shard clean.`);
+            process.exit(1);
+        }
         needHeader = false;
         for (let i = 1; i < prev.length; i++) {
             const c = prev[i].split(',');
@@ -114,13 +145,15 @@ for (let j = 0; j < jobs.length; j++) {
 
     const res = probeFor(rl).evaluate(theta, { mapIndex: job.map_index | 0, ticks: job.ticks });
 
-    const row = [
+    const cells = [
         job.id, rl ? 1 : 0, res.map_index, res.ticks,
         res.mean_fitness.toFixed(6), res.std_clones.toFixed(6), res.n_clones,
         res.mean_lifetime.toFixed(2), res.mean_cave_entries.toFixed(4),
         res.mean_drained_ticks.toFixed(4), res.mean_predator_touches.toFixed(4),
         res.deaths.survived, res.deaths.starved, res.deaths.drained, res.deaths.lifespan,
-    ].join(',');
+    ];
+    if (metricsMode === 'founder') cells.push(res.mean_weight_drift.toFixed(8));
+    const row = cells.join(',');
     fs.writeSync(outFd, row + '\n');
     ran++;
 

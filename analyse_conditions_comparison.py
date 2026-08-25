@@ -48,7 +48,7 @@ spread across seeds, not within the population. Conditions can differ in run
 length (e.g. a still-running condition may only reach generation ~700); each line
 is drawn over its own available range (pass --max-gen N for a strict head-to-head).
 
-MAD (avg_learned_weight_diff — the within-life weight change, the learning
+Mean absolute weight difference (avg_learned_weight_diff — the within-life weight change, the learning
 signal) is reported for BOTH RL-using conditions (learning and pure RL) and is
 ~0 for evolution (active === genome), in the learning-diagnostics plot.
 
@@ -75,9 +75,9 @@ Outputs (into --out, default output/condition_comparison_<env>):
     condition_fitness_population.png     -- generations.csv outcome metrics
                                             (avg_fitness, top-20% fitness,
                                             peak_population, total_agents).
-    condition_learning_diagnostics.png   -- MAD (avg_learned_weight_diff) and
+    condition_learning_diagnostics.png   -- mean absolute weight difference (avg_learned_weight_diff) and
                                             genome_variance over generations, one
-                                            line per condition (MAD ~0 evolution,
+                                            line per condition (mean absolute weight difference ~0 evolution,
                                             non-zero learning & pure RL).
     condition_behaviour_death.png        -- per-condition stacked-area death-cause
                                             composition over generations.
@@ -281,10 +281,10 @@ GEN_METRICS = {
     'peak_population':      'Peak population',
     'total_agents':         'Total agents',
 }
-# MAD = avg_learned_weight_diff (within-life weight change; non-zero for learning
+# Mean absolute weight difference = avg_learned_weight_diff (within-life weight change; non-zero for learning
 # AND pure RL, ~0 for evolution). genome_variance = GA population diversity.
 DIAG_METRICS = {
-    'avg_learned_weight_diff': 'Learned weight diff (MAD)',
+    'avg_learned_weight_diff': 'Mean absolute weight difference',
     'genome_variance':         'Genome variance',
 }
 GEN_COLS = list(GEN_METRICS) + ['avg_lifetime'] + list(DIAG_METRICS)
@@ -427,17 +427,17 @@ def plot_gen_metrics(cond_gen, smooth, out_dir):
 
 
 def plot_learning_diagnostics(cond_gen, smooth, out_dir):
-    """MAD + genome variance over generations (from generations.csv), one panel
-    each, one line per condition (mean ± std across seeds). MAD (avg_learned_
+    """Mean absolute weight difference + genome variance over generations (from generations.csv), one panel
+    each, one line per condition (mean ± std across seeds). Mean absolute weight difference (avg_learned_
     weight_diff) is the within-life learning signal — non-zero for BOTH RL-using
     conditions (learning and pure RL), ~0 for evolution (active === genome);
     genome_variance is the GA's population diversity (~0 / absent for pure RL,
-    which has no GA). y-axes auto-scaled per panel (MAD is tiny vs variance)."""
-    print("  Plotting learning diagnostics (MAD, genome variance) ...")
+    which has no GA). y-axes auto-scaled per panel (mean absolute weight difference is tiny vs variance)."""
+    print("  Plotting learning diagnostics (mean absolute weight difference, genome variance) ...")
     metrics = [m for m in DIAG_METRICS
                if any(m in md.columns for md, _sd in cond_gen.values())]
     if not cond_gen or not metrics:
-        print("  (no generations.csv MAD / genome_variance columns — skipping)")
+        print("  (no generations.csv mean absolute weight difference / genome_variance columns — skipping)")
         return
     n = len(metrics)
     fig, axs = plt.subplots(1, n, figsize=(7 * n, 5))
@@ -453,7 +453,7 @@ def plot_learning_diagnostics(cond_gen, smooth, out_dir):
     if handles:
         axs[0].legend(handles, labels, fontsize=10, title='condition')
     plt.suptitle('Learning diagnostics over generations — three conditions\n'
-                 '(MAD = within-life weight change, for learning & pure RL; '
+                 '(mean absolute weight difference = within-life weight change, for learning & pure RL; '
                  f'genome variance = GA diversity; {_ENV_DESC}; mean ± std across seeds)',
                  fontsize=13, fontweight='bold', y=1.02)
     plt.tight_layout()

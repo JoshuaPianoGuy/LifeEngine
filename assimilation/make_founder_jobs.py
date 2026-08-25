@@ -1,0 +1,381 @@
+"""
+assimilation/make_founder_jobs.py
+======================================================================
+Build probe jobs for EVERY logged founder genome, to test genetic assimilation.
+
+Logger.js dumps the full genome of all 100 founders every
+FULL_GENOME_DUMP_EVERY_N_GENS = 250 generations, so a 1000-generation run carries
+400 founder genomes (100 each at generations 250, 500, 750 and 1000) in its
+genome.csv under record_type='founder'. This script turns those into a jobs.json
+per run for src/eval/run_probe.js, which re-evaluates each genome as a
+monomorphic 100-clone cohort with the GA off — ONCE WITH LEARNING DISABLED and
+ONCE WITH IT ENABLED, on the same maps.
+
+WHAT THE TEST ACTUALLY IS
+-------------------------
+Genetic assimilation means a behaviour that at first REQUIRED in-lifetime
+learning ends up encoded in the inherited genome. The probe gives the two halves
+of that directly, at the same theta on the same terrain:
+
+    f_off(theta)  what the inherited weights do on their own   = INNATE
+    f_on(theta)   what they do with learning switched on       = EXPRESSED
+    lift = f_on - f_off                                        = what learning still adds
+
+Assimilation predicts three things about the LEARNING condition as the
+generation of the dump increases:
+
+    1. f_off rises            — the innate behaviour gets better
+    2. lift shrinks           — learning has less left to contribute
+    3. weight drift shrinks   — and it has to move the weights less to do it
+                                (mean_weight_drift, the "metrics": "founder"
+                                column; see probe.js _collect)
+
+THE CONTROL IS THE POINT, NOT AN EXTRA
+---------------------------------------
+None of those three is evidence on its own. Fitness rises over generations in
+every condition, and a fitter genome has less headroom, so "lift shrinks" is
+exactly what a plain ceiling effect also predicts. That is why the EVOLUTION
+condition is probed too: its lineages never learned during evolution, so
+whatever their lift does over generations is the ceiling effect with the
+assimilation removed.
+
+The claim is therefore a DIFFERENCE OF TRAJECTORIES, not a trajectory:
+
+    assimilation  <=>  lift falls FASTER in learning than in evolution,
+                       and lower at MATCHED innate fitness f_off.
+
+The matched-f_off form is the stronger one, because it does not depend on the
+two conditions reaching the same fitness at the same generation. Both are
+available from these results, and neither needs another simulation.
+
+Pure RL is NOT probed and cannot be: those runs set log_genomes=false, so no
+pure_rl run on disk has a genome.csv at all.
+
+PAIRING — WHY SEEDS ARE MATCHED ACROSS CONDITIONS
+--------------------------------------------------
+map_seed fixes the terrain pool, so map_index 0 of the evolution run on seed 2001
+is the SAME map as map_index 0 of the learning run on seed 2001. Selecting one
+run per (condition, seed) therefore makes the condition contrast paired on
+terrain, which matters here for the same reason it matters everywhere else in
+this project: terrain variance (sigma_vary ~ 6-8) is far larger than the effect
+being measured.
+
+Within a seed there are up to 10 replicate runs. Taking the best or the worst
+would bias the comparison, so the default picks the MEDIAN-fitness replicate
+(--rep-pick median). The seed remains the unit of replication.
+
+CONFIG THE PROBE CANNOT INFER — both are mandatory here
+--------------------------------------------------------
+  hidden_size  these are h128 runs (genome 7814). run_probe.js builds its
+               network from ExperimentParams, so without the override it builds
+               a 64-wide brain and mis-reads every genome QUIETLY.
+  map_seed     a genome evolved on seed 2005 has to be probed on seed 2005
+               terrain.
+Both are written into each unit's config_overrides, and params.json is copied in
+beside jobs.json so the unit dir is self-contained on the cluster.
+
+JOB ORDER: ALL RL-OFF FIRST, THEN ALL RL-ON
+--------------------------------------------
+run_probe.js shards with `idx % N`, so the order the jobs are written in decides
+both how evenly the array is loaded and what survives a task that runs out of
+walltime. Two things are wanted at once, and this ordering gets both.
+
+BALANCE. If the jobs ALTERNATE off/on — the natural way to emit them, and what
+the landscape jobs files do — then an EVEN N preserves parity: every even shard
+draws only RL-off jobs and every odd shard only RL-on. The RL-on pass is ~2.4x
+slower, so half the array hits the walltime and truncates while the other half
+finishes early. That is exactly how the h128 companion slice run lost 8,468
+probes. Writing the off jobs as one contiguous block and the on jobs as another
+removes the parity coupling for ANY N: shard i takes every Nth index, and since
+the off jobs occupy the first half of the list it receives about half its work
+from each block whatever N is.
+
+PRIORITY, which is the reason this beats a shuffle. f_off is the primary
+measurement — it is what the INHERITED genome does on its own, and the whole
+experiment is about how that changes over evolutionary time. Because the off
+jobs come first globally, they also come first WITHIN every shard, so a task
+killed on walltime loses RL-on probes and never RL-off ones. The primary result
+completes by construction, and only the secondary half degrades.
+
+A shuffle would balance the load equally well but spread the damage of a
+truncation across both passes, leaving the primary measurement with holes in it.
+That is the trade this ordering exists to avoid.
+
+Usage
+-----
+  python assimilation/make_founder_jobs.py \\
+      --logs-root logs_hard --env-label hard \\
+      --out-root assimilation/out/founders_hard
+
+  python assimilation/make_founder_jobs.py \\
+      --logs-root logs --env-label baseline \\
+      --out-root assimilation/out/founders_baseline
+
+Then transfer the out-root and submit run_founder_probe_array.slurm; the
+preflight there prints the --array line to use.
+"""
+
+import argparse
+import glob
+import json
+import os
+import sys
+
+import numpy as np
+import pandas as pd
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..',
+                                'landscape'))
+import ll_common as ll
+
+
+# Logger.js FULL_GENOME_DUMP_EVERY_N_GENS = 250 over 1000 generations.
+DEFAULT_GENERATIONS = (250, 500, 750, 1000)
+
+# The condition families that actually log genomes. pure_rl sets
+# log_genomes=false, so it has no genome.csv and cannot be included.
+CONDITIONS = {
+    'evolution': ('evolution', 'standard'),
+    'learning':  ('learning',  'standard'),
+}
+
+def run_final_fitness(run_dir):
+    """Mean avg_fitness over the last 50 generations of generations.csv."""
+    path = os.path.join(run_dir, 'generations.csv')
+    try:
+        v = pd.read_csv(path, usecols=['avg_fitness'])['avg_fitness']
+    except (OSError, ValueError, KeyError):
+        return float('nan')
+    v = v.to_numpy(dtype=float)
+    v = v[np.isfinite(v)]
+    return float(v[-50:].mean()) if v.size else float('nan')
+
+
+def discover(logs_root, condition):
+    """Every run of one condition that has BOTH a genome.csv and params.json."""
+    cond, family = CONDITIONS[condition]
+    out = []
+    pat = os.path.join(logs_root, cond, family, 'auto-run', '*')
+    for d in sorted(glob.glob(pat)):
+        gp, pp = os.path.join(d, 'genome.csv'), os.path.join(d, 'params.json')
+        if not (os.path.exists(gp) and os.path.exists(pp)):
+            continue
+        p = json.load(open(pp))
+        out.append({
+            'dir': d, 'name': os.path.basename(d),
+            'seed': int(p['map_seed']),
+            'hidden_size': int(p.get('hidden_size', 64)),
+            'ticks': int(p.get('ticks_per_map', 2000)),
+            'maps_per_gen': int(p.get('maps_per_gen', 5)),
+            'params': p,
+            'f': run_final_fitness(d),
+        })
+    return out
+
+
+def pick_replicate(runs, how):
+    """One run per seed, so the seed stays the unit of replication.
+
+    'median' is the default because best/worst would bias the very comparison
+    the design exists to make — an assimilation signal read off the best
+    learning replicate against the worst evolution one would be an artefact of
+    the picking, not of the lineage.
+    """
+    by_seed = {}
+    for r in runs:
+        by_seed.setdefault(r['seed'], []).append(r)
+    chosen = []
+    for seed in sorted(by_seed):
+        reps = [r for r in by_seed[seed] if np.isfinite(r['f'])]
+        if not reps:
+            continue
+        reps.sort(key=lambda r: r['f'])
+        if how == 'median':
+            chosen.append(reps[len(reps) // 2])
+        elif how == 'best':
+            chosen.append(reps[-1])
+        elif how == 'worst':
+            chosen.append(reps[0])
+        else:                                    # 'first' — by run name
+            chosen.append(sorted(by_seed[seed], key=lambda r: r['name'])[0])
+    return chosen
+
+
+def load_founders(run_dir, generations, n_founders):
+    """The founder rows for the requested generations, as (meta, b64) pairs.
+
+    genome.csv runs to ~100 MB per run and is mostly the per-generation centroid
+    and fittest rows, so it is read with usecols and filtered before anything is
+    decoded — the genomes stay as base64 strings the whole way through, since
+    that is exactly the form jobs.json wants. Nothing here needs the float array.
+    """
+    df = pd.read_csv(os.path.join(run_dir, 'genome.csv'),
+                     usecols=['generation', 'record_type', 'founder_index',
+                              'fitness', 'genome_b64'],
+                     dtype={'genome_b64': str})
+    df = df[(df['record_type'] == 'founder')
+            & (df['generation'].isin(generations))]
+    out = []
+    for gen in sorted(generations):
+        sub = df[df['generation'] == gen].sort_values('founder_index')
+        if sub.empty:
+            continue
+        if n_founders and len(sub) > n_founders:
+            # Evenly spaced by founder_index rather than the first k: the
+            # founders are ordered by the GA's selection, so a prefix is the
+            # fitter end of the cohort, not a sample of it.
+            idx = np.linspace(0, len(sub) - 1, n_founders).round().astype(int)
+            sub = sub.iloc[np.unique(idx)]
+        for _, row in sub.iterrows():
+            out.append({'generation': int(gen),
+                        'founder_index': int(row['founder_index']),
+                        'logged_fitness': float(row['fitness']),
+                        'b64': row['genome_b64']})
+    return out
+
+
+def build_unit(run, condition, env_label, generations, n_founders, repeats,
+               out_root):
+    """One run -> one self-contained probe unit directory."""
+    founders = load_founders(run['dir'], generations, n_founders)
+    if not founders:
+        return None
+
+    genome_size = len(ll.decode_b64(founders[0]['b64']))
+    expected = 61 * run['hidden_size'] + 6
+    if genome_size != expected:
+        raise SystemExit(
+            f"{run['name']}: genome length {genome_size} does not match "
+            f"hidden_size={run['hidden_size']} (expects {expected}). Refusing to "
+            f"build jobs that run_probe.js would silently mis-read.")
+
+    genomes, index = {}, []
+    off_jobs, on_jobs = [], []
+    for f in founders:
+        key = f"g{f['generation']}_{f['founder_index']}"
+        genomes[key] = f['b64']
+        index.append({'genome': key, 'generation': f['generation'],
+                      'founder_index': f['founder_index'],
+                      'logged_fitness': f['logged_fitness']})
+        for r in range(repeats):
+            for rl, bucket in ((False, off_jobs), (True, on_jobs)):
+                bucket.append({'id': f"{key}_r{r}_{'on' if rl else 'off'}",
+                               'genome': key, 'map_index': r, 'rl': rl,
+                               'ticks': run['ticks']})
+
+    # See JOB ORDER in the module docstring. Two blocks, RL-off first: balances
+    # every shard for any N, AND makes a walltime kill cost RL-on probes rather
+    # than the primary RL-off measurement.
+    jobs = off_jobs + on_jobs
+
+    cfg = {'hidden_size': run['hidden_size'], 'map_seed': run['seed']}
+    unit = f"{condition}_{env_label}_seed{run['seed']}_{run['name']}"
+    out_dir = os.path.join(out_root, unit)
+    os.makedirs(out_dir, exist_ok=True)
+
+    with open(os.path.join(out_dir, 'jobs.json'), 'w') as fh:
+        json.dump({'metrics': 'founder', 'config_overrides': cfg,
+                   'genomes': genomes, 'jobs': jobs}, fh)
+    # params.json for the world settings config_overrides does not carry (grid
+    # size, food density, predator counts) — the unit dir must stand alone on
+    # the cluster, which runs Node only.
+    with open(os.path.join(out_dir, 'params.json'), 'w') as fh:
+        json.dump(run['params'], fh, indent=2)
+    meta = {'kind': 'founder_assimilation', 'condition': condition,
+            'environment': env_label, 'run': run['name'], 'seed': run['seed'],
+            'run_final_fitness': run['f'], 'hidden_size': run['hidden_size'],
+            'ticks': run['ticks'], 'repeats': repeats,
+            'generations': sorted(set(g['generation'] for g in index)),
+            'n_genomes': len(genomes), 'n_jobs': len(jobs),
+            'config_overrides': cfg, 'genome_index': index}
+    with open(os.path.join(out_dir, 'meta.json'), 'w') as fh:
+        json.dump(meta, fh, indent=2)
+    return meta
+
+
+def main():
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument('--logs-root', required=True,
+                    help='logs (baseline) or logs_hard (predator environment)')
+    ap.add_argument('--env-label', required=True, help='baseline | hard')
+    ap.add_argument('--out-root', required=True)
+    ap.add_argument('--conditions', default='evolution,learning',
+                    help='Comma-separated. evolution is the CONTROL and dropping '
+                         'it leaves the result uninterpretable — see the module '
+                         'docstring.')
+    ap.add_argument('--generations', default=','.join(str(g) for g in DEFAULT_GENERATIONS),
+                    help='Founder dump generations to probe.')
+    ap.add_argument('--n-founders', type=int, default=0,
+                    help='Founders per dump, 0 = all 100 (the default).')
+    ap.add_argument('--repeats', type=int, default=3,
+                    help='Maps per genome per RL pass. Averages terrain; map r '
+                         'is the same terrain in every condition on the same seed.')
+    ap.add_argument('--seeds', default='',
+                    help='Comma-separated map seeds. Default: all seeds found.')
+    ap.add_argument('--rep-pick', choices=('median', 'best', 'worst', 'first'),
+                    default='median',
+                    help='Which replicate to take per seed. Default median — see '
+                         'pick_replicate().')
+    ap.add_argument('--shards-per-unit', type=int, default=4,
+                    help='Only used for the cost estimate and the --array line.')
+    args = ap.parse_args()
+
+    generations = [int(g) for g in args.generations.split(',') if g.strip()]
+    want_seeds = {int(s) for s in args.seeds.split(',') if s.strip()}
+    conditions = [c.strip() for c in args.conditions.split(',') if c.strip()]
+    for c in conditions:
+        if c not in CONDITIONS:
+            raise SystemExit(f'unknown condition {c!r}; known: {list(CONDITIONS)}')
+    if 'evolution' not in conditions:
+        print('  [warn] no evolution arm: without the control, a shrinking lift '
+              'cannot be told from a ceiling effect.')
+
+    os.makedirs(args.out_root, exist_ok=True)
+    manifest, total_jobs = [], 0
+    for cond in conditions:
+        runs = discover(args.logs_root, cond)
+        if want_seeds:
+            runs = [r for r in runs if r['seed'] in want_seeds]
+        chosen = pick_replicate(runs, args.rep_pick)
+        print(f'\n{cond}: {len(runs)} runs with genomes -> {len(chosen)} units '
+              f'({args.rep_pick} replicate per seed)')
+        for r in chosen:
+            meta = build_unit(r, cond, args.env_label, generations,
+                              args.n_founders, args.repeats, args.out_root)
+            if meta is None:
+                print(f'  [skip] {r["name"]}: no founder rows at {generations}')
+                continue
+            manifest.append(meta)
+            total_jobs += meta['n_jobs']
+            print(f'  seed {r["seed"]:<5} f={r["f"]:.2f}  {meta["n_genomes"]:>4} '
+                  f'genomes  {meta["n_jobs"]:>6} jobs  {r["name"]}')
+
+    if not manifest:
+        raise SystemExit('no units built — check --logs-root and --generations')
+
+    n_units = len(manifest)
+    tasks = n_units * args.shards_per_unit
+    # Measured on the h128 companion slices: ~7 s per RL-off probe and ~17 s per
+    # RL-on one at w500/2000 ticks, i.e. ~12 s averaged over the two passes.
+    core_h = total_jobs * 12.0 / 3600.0
+    per_task_h = core_h / tasks if tasks else float('nan')
+
+    with open(os.path.join(args.out_root, 'manifest.json'), 'w') as fh:
+        json.dump({'environment': args.env_label, 'logs_root': args.logs_root,
+                   'conditions': conditions, 'generations': generations,
+                   'repeats': args.repeats, 'rep_pick': args.rep_pick,
+                   'n_units': n_units, 'n_jobs': total_jobs,
+                   'units': manifest}, fh, indent=2)
+
+    print(f'\n  {n_units} units, {total_jobs:,} probes total')
+    print(f'  ~{core_h:.0f} core-hours at ~12 s/probe')
+    print(f'  SHARDS_PER_UNIT={args.shards_per_unit} -> {tasks} tasks, '
+          f'~{per_task_h:.1f} h each')
+    print(f'\n  UNITS_ROOT={args.out_root} SHARDS_PER_UNIT={args.shards_per_unit} \\')
+    print(f'      sbatch --array=0-{tasks - 1} run_founder_probe_array.slurm')
+    print(f'\n  wrote {os.path.join(args.out_root, "manifest.json")}')
+
+
+if __name__ == '__main__':
+    main()

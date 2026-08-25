@@ -2,7 +2,7 @@
 analyse_buffer_sweep.py
 ======================================================================
 Effect of the collapse-respawn BUFFER SIZE on fitness, population, the learning
-diagnostics (MAD + genomic variance) AND behaviour, from the pure-RL buffer
+diagnostics (mean absolute weight difference + genomic variance) AND behaviour, from the pure-RL buffer
 sweep produced by run_pure_rl_collapse_buffer_array.slurm.
 
 That job sweeps PureRLManager's rolling dead-weight buffer — the pool of
@@ -28,13 +28,13 @@ and raise the level it recovers to; if it is a RECENCY problem, 100 should be
 WORSE, because it reseeds from weights that have already been superseded. The
 two diagnostics separate those readings —
 
-    avg_learned_weight_diff (MAD)  mean |active - genome| over the ranked
+    avg_learned_weight_diff (mean absolute weight difference)  mean |active - genome| over the ranked
                                    population: how far within-life RL has moved
                                    each brain from the weights it was born with.
                                    In pure RL the genome is resynced at each
-                                   window, so MAD reads as "learning done since
+                                   window, so mean absolute weight difference reads as "learning done since
                                    the last respawn" — a recency problem shows up
-                                   as a LOWER MAD (fresh spawns re-learning from
+                                   as a LOWER mean absolute weight difference (fresh spawns re-learning from
                                    staler starting points).
     genome_variance                spread of the population in weight space, i.e.
                                    exactly the diversity the bigger buffer is
@@ -69,9 +69,9 @@ Outputs (into --out / output/buffer_sweep_<env>):
     buf_fitness_population.png  -- avg/top-20%/best fitness, peak population,
                                    total agents, avg lifetime over generations;
                                    one line per buffer size.
-    buf_learning_diagnostics.png-- MAD, genomic variance, network weight
+    buf_learning_diagnostics.png-- mean absolute weight difference, genomic variance, network weight
                                    magnitude and inter-generation weight change.
-                                   THE requested diagnostics view; MAD and
+                                   THE requested diagnostics view; mean absolute weight difference and
                                    genome_variance are drawn on a log y-axis
                                    because they span decades over a run.
     buf_collapse.png            -- the buffer mechanism from events.csv:
@@ -175,11 +175,11 @@ GEN_METRICS = {
 }
 
 # ── Learning diagnostics (also generations.csv) ───────────────────────────────
-# MAD and genome_variance are the two the buffer is expected to move; the weight
+# Mean absolute weight difference and genome_variance are the two the buffer is expected to move; the weight
 # magnitude and inter-generation change are supporting context (a buffer that
 # reseeds from stale vectors shows up as a smaller inter-gen change).
 DIAG_METRICS = {
-    'avg_learned_weight_diff': 'Learned weight diff (MAD)',
+    'avg_learned_weight_diff': 'Mean absolute weight difference',
     'genome_variance':         'Genomic variance',
     'avg_network_weight_mag':  'Network weight magnitude (RMS)',
     'inter_gen_weight_change': 'Inter-generation weight change',
@@ -210,7 +210,7 @@ VS_BUFFER = [
     ('top20percent_fitness',    'Top-20% fitness'),
     ('peak_population',         'Peak population'),
     ('avg_lifetime',            'Mean lifetime (ticks)'),
-    ('avg_learned_weight_diff', 'Learned weight diff (MAD)'),
+    ('avg_learned_weight_diff', 'Mean absolute weight difference'),
     ('genome_variance',         'Genomic variance'),
     ('collapse',                'Collapse rate'),
     ('respawned',               'Respawned from buffer / window'),
@@ -578,17 +578,17 @@ def plot_gen_metrics(buf_stats, smooth, out_dir):
 
 
 def plot_diagnostics(buf_stats, smooth, out_dir):
-    """MAD + genomic variance (+ weight magnitude / inter-gen change) over
-    generations; one line per arm. MAD is the within-life learning signal, so a
+    """Mean absolute weight difference + genomic variance (+ weight magnitude / inter-gen change) over
+    generations; one line per arm. Mean absolute weight difference is the within-life learning signal, so a
     buffer that reseeds from stale weights shows up here before it shows up in
     fitness; genome_variance is the population diversity the bigger buffer is
     meant to buy. Both use a log y-axis — over 1000 generations they cross
     decades, and a linear axis would show only the early transient."""
-    print("  Plotting learning diagnostics (MAD, genomic variance) ...")
+    print("  Plotting learning diagnostics (mean absolute weight difference, genomic variance) ...")
     _grid_plot(buf_stats, list(DIAG_METRICS), DIAG_METRICS, smooth, out_dir,
                'buf_learning_diagnostics',
                'Learning diagnostics over generations — collapse-buffer sweep\n'
-               f'(MAD = within-life weight change; genomic variance = population '
+               f'(mean absolute weight difference = within-life weight change; genomic variance = population '
                f'diversity in weight space; {_ENV_DESC}; mean ± std {_BAND_DESC})',
                log_cols=LOG_METRICS)
 
@@ -994,7 +994,7 @@ def run_env(env_key, args):
 def main():
     ap = argparse.ArgumentParser(
         description='Effect of the pure-RL collapse-respawn buffer size on '
-                    'fitness, population, the learning diagnostics (MAD and '
+                    'fitness, population, the learning diagnostics (mean absolute weight difference and '
                     'genomic variance) and behaviour, baseline + hard '
                     'environments.')
     ap.add_argument('--env', choices=['baseline', 'hard', 'both'], default='both',

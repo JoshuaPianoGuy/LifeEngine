@@ -150,12 +150,18 @@ The buffer‑and‑mutate design means learned structure is never thrown away on
 
 ### 3.4 Mutation consistency across conditions
 
-All three conditions use the **same two mutation kernels** (verified identical so the comparison is controlled):
+All three conditions use the **same two mutation kernels**, so the comparison is controlled:
 
 | Kernel | When | Probability / σ | Source |
 |--------|------|-----------------|--------|
 | **Intra‑generation** | asexual reproduction (all conditions) | 0.05 / 0.1 | `AdvancedOrganism._mutateGenome` (shared) |
 | **Inter‑generation** | GA between‑gen mutation; pure‑RL between‑episode + top‑up | 0.03 / 0.1 | `ExperimentParams.mut_prob/mut_sigma` (honours `--mut-prob/--mut-sigma`) |
+
+**How "identical" is verified.** The inter‑generation kernel is written out *twice* — `GAManager._mutate` for the two GA conditions and `PureRLManager._mutateWeights` for pure RL — so identity is a property that has to be measured, not read off the call graph. `node src/eval/validate.js --only mut` measures it three ways:
+
+1. **Bit equality under a pinned PRNG.** `Math.random` is replaced by one deterministic stream and each kernel is run over the same starting genome from the same stream position. All three produce a **byte‑identical** genome (sha256 `85f3e5bf…` at 0.03 / 0.1). Identical bytes is the stronger claim than "same distribution": two kernels that sampled the same distribution but consumed a different number of variates would fail this, and should.
+2. **The two kernels are one algorithm.** Re‑run with the inter‑generation rate dialled to the intra‑generation one (0.05 / 0.1), `GAManager._mutate` and `AdvancedOrganism._mutateGenome` also agree bit for bit — same Box‑Muller ordering, same clip to [−1, 1], same PRNG consumption. They differ in production only by their rate constant.
+3. **No condition dispatch.** `GAManager.prototype._mutate` is the same function object for `rl_enabled` true and false, and none of the six genetic operators (`_mutate`, `_uniformCrossover`, `_tournamentSelect`, `_gaussianSample`, `_mutateWeights`, `_mutateGenome`) mentions `rl_enabled`, `condition_label`, `learning_enabled` or `experiment_mode` anywhere in its source.
 
 ---
 
@@ -321,7 +327,7 @@ Check one of them before comparing a browser run against cluster results. `World
 Each run directory contains:
 
 * **`params.json` / `params.txt`** — the authoritative resolved parameters (seed, condition, mode, grid, generations, LR, epsilon, mutation, predators, …). **Analysis scripts key off `params.json`, not folder names.**
-* **`generations.csv`** — one row **per generation** (population‑level): `avg_fitness`, `top20percent_fitness`, `best_fitness`, `peak_population`, `total_agents`, `avg_lifetime`, `avg_learned_weight_diff` (MAD — mean |active − genome|, the learning signal, ~0 in evolution), `avg_network_weight_mag` (RMS), `disaster_cull_frac`, etc.
+* **`generations.csv`** — one row **per generation** (population‑level): `avg_fitness`, `top20percent_fitness`, `best_fitness`, `peak_population`, `total_agents`, `avg_lifetime`, `avg_learned_weight_diff` (the mean absolute weight difference — mean |active − genome|, the learning signal, ~0 in evolution), `avg_network_weight_mag` (RMS), `disaster_cull_frac`, etc.
 * **`organisms.csv`** — one row **per organism per generation** (it logs **every** organism that lived that generation — its row count per generation equals `total_agents`, up to a 20 000 cap; the `top20pct_log` variable name is a misnomer). Columns: `rank`, `fitness`, `lifetime`, `energy_at_death`, `death_cause`, `cumulative_food_score`, `food_{low,medium,prestige,default}`, `cells_visited`, `predator_touches`, `drained_ticks`, `cave_entries{,_day,_night}`, `learned_weight_diff`, `network_weight_magnitude`.
 * **`events.csv`** — timestamped lifecycle events (generation close, disasters, pure‑RL collapse/top‑up, …).
 
@@ -329,12 +335,70 @@ Each run directory contains:
 
 | Concept | Column | Source |
 |---------|--------|--------|
-| MAD (within‑life learning) | `avg_learned_weight_diff` | `generations.csv` |
+| Mean absolute weight difference (within‑life learning) | `avg_learned_weight_diff` | `generations.csv` |
 | RMS weight magnitude | `avg_network_weight_mag` | `generations.csv` |
 | Population | `peak_population`, `total_agents` | `generations.csv` |
 | Population‑avg lifetime | `avg_lifetime` | `generations.csv` |
 | Per‑organism behaviours | `predator_touches`, `drained_ticks`, `cave_entries`, `cells_visited`, `food_*` | `organisms.csv` |
+
+> **Reading `drained_ticks`.** It counts *ticks on which at least one drain landed*, de‑duplicating simultaneous drains by several predators, so it is a measure of **exposure time**, not of energy lost. Energy lost to predation is `contacts × drainAmount`, and contacts exceed `drained_ticks` whenever prey are cornered by more than one predator at once (measured: 3449 vs 2736 in one generation at 60 roaming / drain 5). Multiplying `drained_ticks × drain` gives a **lower bound**. See §8b `drain`.
 | How they died | `death_cause` ∈ {starved, drained, survived} | `organisms.csv` |
+
+---
+
+## 8b. Verification and validation
+
+Two questions that the figures cannot answer for themselves: **does the code implement the spec** (verification), and **does the world behave as specified** (face validity). Both are answered by one runnable suite rather than by prose:
+
+```bash
+node src/eval/validate.js                        # all checks, laptop scale
+node src/eval/validate.js --width 500 --height 500 --hidden-size 128 --seed 2001
+node src/eval/validate.js --only grad,mut        # a subset
+```
+
+Every check prints the measured quantity beside its expected value and the whole run is written to `output/validation/verification_report.json`, so any number quoted in the write‑up traces back to the run that produced it. Exit status is non‑zero if anything fails. Checks that need a different condition run in forked child processes, because `ExperimentParams` / `WorldConfig` are baked into the sim modules at `require()` time.
+
+| Check | The claim it makes reportable |
+|-------|-------------------------------|
+| `mad` | **mean absolute weight difference is identically zero in the evolution condition.** Three ways: `active_weights === genome_weights` is the *same Float32Array object* (so drift is impossible, not merely small) and `traces` is `null`; the live per‑generation metric is exactly `0` at full float precision; and a scan of every evolution run on disk found **0 of 100 000 generation rows across 100 runs** with a nonzero `avg_learned_weight_diff`. This is the evidence the non‑Lamarckian claim rests on. |
+| `maps` | **Conditions differ only in the adaptation mechanism.** Hashes `map_pool_seed<N>.json`, then — the part that matters — hashes the *runtime cell grid* each condition actually simulates on, after `generateWorld()` has scaled the pool onto the grid, for the first 10 maps of the sequence. All three arms produce one sha256. |
+| `grad` | **`reinforce()` really computes ∇log π(a).** The policy gradient is written into the eligibility trace by hand with no autodiff library, so it is checked against a central finite difference of log π(a) taken through an *independently written* forward pass. Max relative error ~2×10⁻⁷, cosine similarity 1.000000000 over a stride sweep of the full genome. Coordinates whose ReLU pre‑activation sits within the FD step of its kink are skipped and counted, not quietly dropped. |
+| `mut` | Mutation‑kernel identity — see §3.4. |
+| `cave` | **A decay event inside a cave at night costs exactly 0 energy.** Directly (an organism parked in a cave at night over 40 decay events, Δenergy `0`) and in a live run via per‑branch counters, plus a scan of production `organisms.csv` confirming the mechanic is genuinely exercised (3.2 M night cave entries by 813 k organisms in a 3‑run sample). The live half *fails* rather than passes if the branch was never taken — a check that never observed the thing it tests has verified nothing. |
+| `drain` | **Energy lost to predation equals contacts × `drainAmount`, exactly** (0 discrepancy per organism). Note the trap: it is **not** `drained_ticks × drain`. `drained_ticks` de‑duplicates several predators draining on one global tick, so it *undercounts* — in a measured generation, 3449 contacts against 2736 drained ticks. `drained_ticks × drainAmount` is a **lower bound** on energy lost, not an equality. |
+| `ledger` | **Energy conservation.** `start + food − decay − predation == energy`, sampled every 100 ticks over a live generation (worst relative error ~4×10⁻¹⁴, i.e. float re‑association only). There are exactly four sites in the codebase that move `organism.energy` and all four are booked, so an unaccounted energy path cannot hide. |
+| `floor` | The random‑policy floor carries nothing across a generation boundary — see §8c. |
+
+### 8c. The random‑policy floor (the chance anchor)
+
+`--random-floor` runs **the evolution condition minus between‑generation selection**: the GA runs its whole loop — 100 founders, same anatomy, same maps, same predators, same within‑generation reproduction, same fitness sort, same tournament/crossover/mutation, same logging — and then discards the gene pool at the boundary, so every generation's founders are freshly Xavier‑initialised. RL is off. Nothing adapts.
+
+It exists because **without it every fitness number in the write‑up is unanchored**: a converged fitness of 3.5 cannot be called *bad* rather than *unlucky*, and the trapped/escaped bimodality in the evolution arm is not an interpretable claim until trapped runs can be said to be above or below chance.
+
+* Job script: `run_random_floor_condition_hard_w500_h128_array.slurm` (same 10 seeds, same environment, same 100‑run grid as the trio).
+* **The trap:** floor runs record `condition: "evolution"`, `mode: "standard"` in `params.json`, because that is what they are. `analyse_learning_hard_runs.discover()` filters on the `random_floor` flag and **excludes them by default**; pass `want['random_floor'] = True` to select them. Without that filter they would pool into the evolution arm and drag its mean to chance.
+* `generations.csv`'s `condition` column reads `random_floor`.
+* The floor is stationary by construction, so it needs far fewer generations than the adaptive arms — but verify that rather than assuming it: `node src/eval/validate.js --only floor` compares consecutive generations' founder centroids (|r| < 0.05 observed) and confirms the gene pool is `null` at every spawn.
+
+**Measured floor** (30 runs — 10 seeds × 3 replicates, 40 generations, 500×500, h128, 60 roaming predators @ drain 5):
+
+| | |
+|---|---|
+| floor `avg_fitness` | **1.537 ± 0.139** (range of run means 1.303 – 1.797) |
+| best single generation any random policy achieved | 3.217 |
+| floor runs reaching the 4.375 replacement threshold | **0 / 30** |
+| stationarity | slope **−0.0017** fitness per generation, *p* = 0.75 — flat, as it must be |
+| between-seed spread | 1.318 (seed 2008) to 1.779 (seed 2007) — terrain moves the floor, which is itself a reason to cluster on seed |
+
+40 generations rather than 1000 is justified *by* the measured stationarity, not assumed: with no mechanism that could carry anything across a boundary and a slope indistinguishable from zero, longer runs add no information. The full-length array is there if the figure needs the floor drawn across the same x-axis.
+
+**What it buys — the trapped/escaped bimodality becomes a claim.** The evolution arm is bimodal: 10 of 100 runs converge below 5.0, in a tight band from 3.60 to 3.97, against 6.97 for the 90 that escape. Against the floor:
+
+* every trapped run sits at **2.3–2.6×** the floor mean, **≈15–18 sd** above it, and **above all 30 floor runs** (Cliff's δ = +1.00, Mann–Whitney *p* = 1.5×10⁻⁶);
+* so trapped runs are **not chance** — they are genuine adaptation that stalls *below replacement*, which is a substantively different claim from "these runs learned nothing";
+* the replacement threshold itself is **2.85× the floor**, so the gap a lineage must cross to be viable is now expressible in units of what an untrained policy scores rather than in raw fitness alone.
+
+None of that was sayable before the anchor existed: 3.60 was a number with no scale.
 
 ---
 
@@ -342,11 +406,44 @@ Each run directory contains:
 
 All are standalone `python analyse_*.py` scripts (matplotlib, Agg backend) that discover runs via `params.json`, aggregate across seeds (mean ± std), and write PNGs + a summary CSV under `output/`.
 
-* **`analyse_lr_sweep_noeps.py` / `analyse_lr_sweep_epsilon.py`** — the LR tuning (§5.2). Fitness, top‑20%, population, and MAD over generations and as final‑window endpoints per seed; epsilon version panels by decay shape with a line per LR.
+* **`analyse_lr_sweep_noeps.py` / `analyse_lr_sweep_epsilon.py`** — the LR tuning (§5.2). Fitness, top‑20%, population, and mean absolute weight difference over generations and as final‑window endpoints per seed; epsilon version panels by decay shape with a line per LR.
 * **`analyse_condition_behaviour.py`** — **learning vs evolution** behaviour over generations at 60/5: behaviour curves (cells explored, predator encounters, ticks drained, cave entries, food eaten, lifetime), fitness/population outcomes, population‑average lifetime, death‑cause composition, food‑tier line panels, and per‑seed detail sheets. All population‑averaged then averaged across seeds.
 * **`analyse_hidden_size_sweep.py`** — the **network‑capacity** sweep (hidden width 32 / 64 / 128) from the matched `run_hidden_size_sweep_{evolution,learning,pure_rl}_array.slurm` trio, compared **across all three conditions**. Every figure has the same structure: one column per condition, one row per metric, one line per width (mean ± std over the arm's 15 runs = 3 seeds × 5 replicates, pooled). Writes fitness/population, lifetime + death‑cause, behaviour, food‑tier, cave day/night and learning‑diagnostic figures, plus a final‑window `hid_vs_width.png` (value vs width, one line per condition) and a run‑level Mann‑Whitney/Cliff's‑δ table of each width against the 64 control. `hid_consistency.png` + `hid_band_counts.csv` answer the **consistency** question separately from the performance one: how many of each arm's 15 runs ended in each fitness region, with the regions cut from the environment's pooled runs — a clear two‑group gap becomes a *plateaued low / took off* split (the hard environment: 11/15, 8/15, 5/15 evolution runs plateau at h32/h64/h128), otherwise pooled quartiles. Each run is also flagged *still climbing* vs *plateaued* from its last two windows. `--env baseline|hard|both`; baseline and hard are never mixed (they ran at different LRs). Caches each run's `organisms.csv` summary under `output/.cache_hidden_curves`.
 * **`analyse_lr_sweep.py` / `analyse_lr_sweep_learning.py` / `analyse_lr_sweep_behaviour.py`** — earlier LR‑sweep views (fitness / learning diagnostics / behaviour).
 * **`analyse_epsilon_sweep.py`, `analyse_predator_sweep.py`, `analyse_predator_metrics.py`, `analyse_disaster_sweep_evolution.py`, `analyse_weights*.py`, `compare_weights.py`** — the other sweeps / diagnostics.
+
+### 9.1 Statistics: `analyse_hard_stats.py` — the seed is the unit of replication
+
+**10 seeds × 10 runs is not n = 100.** Runs sharing a seed share their terrain — the same 50‑map pool, the same food layout, the same cave placement — so their outcomes are correlated. Treating them as independent inflates the effective sample size and produces p‑values that will not survive review. Every test in this script therefore makes the seed an explicit stratum or cluster, and reports the **naive** version beside it so the size of the problem is visible rather than asserted.
+
+```bash
+python analyse_hard_stats.py                       # logs_hard, hard env, vs evolution
+python analyse_hard_stats.py --threshold 5.39      # Stage-9 sensitivity
+python analyse_hard_stats.py --reference random_floor
+```
+
+| Outcome | Test | Why this one |
+|---------|------|--------------|
+| `P(viable)` | **Cochran–Mantel–Haenszel** stratified by seed | Exact, distribution‑free, easy to defend. Conditions terrain out rather than averaging over it. Reports OR_MH with its Robins–Breslow–Greenland CI and a Breslow–Day test of whether one pooled OR is even a fair summary. |
+| `P(viable)` | **Exact conditional CMH** | Automatic fallback when an arm has no failures anywhere. The learning arm is 100/100 viable, so OR_MH is infinite and the RBG interval is `nan`; the exact conditional version still returns a finite **lower** bound (OR ≥ 2.42, exact p = 0.0015). The CMH *test* is unaffected either way — quote χ² = 8.55, p = 0.0035. |
+| `P(viable)` | **Binomial mixed model** (GEE clustered on seed + a variance component) | Gives the population‑averaged effect with cluster‑robust SEs and the terrain variance component. Latent‑scale ICC ≈ 6%. |
+| `converged_fitness` | **LMM with a random intercept for seed** | The outcome worth leading with. Thresholding a whole fitness trajectory into one viable/not bit discards nearly everything the run measured, and at these viability rates it is what *causes* the separation above. No separation, far more power, and the ICC comes out as a plain proportion of variance. |
+| time‑to‑threshold | **Cox PH with cluster‑robust (Lin–Wei) SEs on seed**, plus a seed‑stratified fit | The survival analogue of the CMH. Runs that never reach the threshold are **right‑censored at their last generation** — not dropped, and not coded as the maximum. |
+
+**The design effect is printed for every comparison** — the variance ratio clustered/naive, and the effective *n* it implies. On the current 300‑run dataset it is **not uniform**, which is itself worth reporting:
+
+| Outcome | Design effect | Effective n |
+|---------|---------------|-------------|
+| converged fitness (LMM) | ≈ 1.0 | ~300 of 300 |
+| P(viable), pure RL vs evolution (CMH) | 1.12 | ~178 of 200 |
+| time‑to‑threshold, learning vs evolution (Cox) | **2.08** | ~144 of 300 |
+| time‑to‑threshold, pure RL vs evolution (Cox) | **3.61** | ~83 of 300 |
+
+A design effect near 1 does *not* mean the design is free of pseudo‑replication — it means that for that particular outcome the between‑seed variance is small, so the correction costs little. The correction still has to be applied and stated. **Terrain accounts for ≈ 0.6% of the variance in converged fitness** (ICC from the LMM) but the time‑to‑threshold models lose over half their effective sample to clustering, so the two outcomes need the correction to very different degrees.
+
+Methods sentence to carry: *"n = 100 runs per condition, 10 replicates on each of 10 map seeds; all tests treat the map seed as the unit of independent replication."*
+
+Writes `output/stats/{run_outcomes,viability_tests,survival_tests,fitness_mixed_model}.csv` and `stats_report.txt` (the printed report verbatim). Requires `statsmodels` and `lifelines`.
 
 ---
 
@@ -384,3 +481,5 @@ All are standalone `python analyse_*.py` scripts (matplotlib, Agg backend) that 
 * **Seeded:** only map terrain (`--map-seed`) and, optionally, the disaster PRNG (`--disaster-seed`). A seed fixes the 50‑map pool identically for every condition.
 * **Unseeded (deliberate):** GA mutation, RL exploration, reproduction chance, predator wandering. Multiple seeds × the across‑seed aggregation in the analysis scripts capture this stochasticity.
 * **Fully recorded:** every run's resolved parameters are in its `params.json`, and overrides bake in at module load, so a run is reproducible up to the unseeded `Math.random()` draws (and statistically reproducible across seeds).
+* **Statistically:** because only terrain is seeded, the 10 replicates of a map seed differ purely by algorithmic chance while sharing everything about the world. That is exactly what makes the seed — not the run — the unit of independent replication; see §9.1.
+* **Verified, not asserted:** the invariants the design rests on (non‑Lamarckian inheritance, identical terrain across conditions, identical mutation kernels, the policy‑gradient computation, energy conservation) are checked by `node src/eval/validate.js` rather than argued for in prose. See §8b.

@@ -54,7 +54,7 @@ const PredatorHyperparameters = require('./Organism/PredatorHyperparameters');
  * learning vs pure_rl isolates the GA's contribution; learning vs evolution
  * isolates within-life learning.
  */
-const CONDITION = 'evolution';
+const CONDITION = 'learning';
 
 /**
  * Which environment to run the condition in.

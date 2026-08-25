@@ -3,15 +3,10 @@ dist/js/bundle.js
 ./package-lock.json
 dist/js/bundle.js.LICENSE.txt
 /logs
+/logs_hard
 /logs_landscapes
 /logs_decay_sweep
 /logs_buffer
-# ...and their ARCHIVES. The directory rules above do not match a sibling
-# logs_buffer.zip, and an 833 MB archive of an already-ignored log tree is both
-# redundant and over GitHub's 100 MB per-file hard limit — it blocks the whole
-# push, not just itself. Ship logs to the cluster/backup out of band.
-logs*.zip
-/output.zip
 /output_logs
 /output
 /figures
@@ -23,10 +18,16 @@ logs*.zip
 # base64 genomes (~52 MB each) plus probe results — all regenerable from a
 # run's genome.csv via landscape/stage{2,3,4,6}_*.py ... jobs, so they are
 # scratch/HPC data, not repo data.
-/landscape/out/
+/landscape/out/ 
 landscape/__pycache__/
+*.zip.
 
 # Per-seed map caches are regenerable from the seed (node generate_map_pool.js
 # --seed N); the seed is the reproducible artifact, so don't bloat the repo with
 # them. The active map_pool.json stays tracked.
 src/maps/map_pool_seed*.json 
+
+# Founder-genome probe units (jobs.json carries every genome as base64; ~330 MB
+# per environment). Regenerate with assimilation/make_founder_jobs.py.
+assimilation/out/
+

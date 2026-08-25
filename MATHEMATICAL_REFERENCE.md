@@ -14,10 +14,20 @@ Used in the **learning** and **pure‑RL** conditions to update network weights 
 
 $$r_t = r_{\text{food}} + r_{\text{explore}} + r_{\text{decay}} + r_{\text{predator}}$$
 
-- **Food reward** — when food is eaten: $r_{\text{food}} = v_{\text{food}} \in \{0.5, 1.0, 2.0\}$ (low / medium / prestige; base food = 0.01).
-- **Exploration bonus** — first visit to a grid cell: $r_{\text{explore}} = +\text{EXPLORE\_BONUS} = +0.15$ (once per unique cell).
+- **Food reward** — when food is eaten: $r_{\text{food}} = v_{\text{food}} \in \{0.5, 1.0, 2.0\}$ (low / medium / prestige; base food = 0.01). The **full** food value is booked even when the energy gain is clipped at `max_energy`, so reward and energy diverge for a full organism.
+- **Exploration bonus** — first visit to a grid cell: $r_{\text{explore}} = +\text{EXPLORE\_BONUS}$, once per unique cell. **Default 0 — the bonus is OFF in every production run** (the explore‑bonus sweep found no fitness or cave‑usage effect); only the sweep scripts pass a non‑zero `--explore-bonus`. Credited to the *next* tick's reward, not the current one (`AdvancedOrganism._nnMove()`).
 - **Decay penalty** — per unit of energy lost to decay this tick: $r_{\text{decay}} = -\text{DECAY\_PENALTY}\cdot(\text{energy lost}) = -0.05 \cdot \Delta e_{\text{decay}}$.
-- **Predator penalty** — while being drained by a predator: $r_{\text{predator}} = -\text{PREDATOR\_DRAIN\_PENALTY} = -0.5$.
+- **Predator penalty** — per drain contact: $r_{\text{predator}} = -\text{PREDATOR\_DRAIN\_PENALTY}\cdot d = -0.5\,d$, where $d = \text{PredatorHyperparameters.drainAmount}$. So the penalty **scales with the environment**: $-0.5$ at the default $d=1$, but $-2.5$ in the hard/roaming condition ($d=5$). `PredatorDrainCell` subtracts the full $d$ from `energy` (which may go negative before `die()` fires), so the penalty is exactly $0.5\times$ the energy decrement — on a fatal contact part of that decrement is notional.
+
+### 1.1 Energy loss is two terms, not one
+
+`this.energy` moves on exactly three code paths — decay (`AdvancedOrganism.js:299`), food (`:362`), and predator drain (`PredatorDrainCell.js:37`). Movement, rotation and reproduction are all **energy‑free** (a child is constructed with a fresh `START_ENERGY = 300` at no cost to the parent). So total energy lost is exhaustively $\Delta e^- = \Delta e_{\text{decay}} + \Delta e_{\text{drain}}$, and the reward can be written as one weighted energy‑loss term:
+
+$$r_t = v_{\text{food}} - \sum_{s\in\{\text{decay},\,\text{drain}\}} \kappa_s\,\Delta e_s, \qquad \kappa_{\text{decay}} = 0.05,\ \ \kappa_{\text{drain}} = 0.5$$
+
+**The two coefficients differ by 10×, so they must not be collapsed into a single $-\kappa\,\Delta e^-$.** One unit of energy lost to a predator is penalised ten times as hard as the same unit lost to decay: $\kappa_{\text{drain}}$ was calibrated against *food* (one drain unit $= -0.5 =$ one low‑food tile), $\kappa_{\text{decay}}$ was not.
+
+The separation is also load‑bearing for learning, not just for bookkeeping. Decay is **dense, periodic and near‑constant** (one event every $\text{ENERGY\_DECAY\_INTERVAL}=10$ ticks), so the EMA baseline (§2.1) absorbs most of it — what survives $r_t - \bar b_{t-1}$ is only the *differential* between the $\times 1$ / $\times 2$ / $\times 0$ branches, which is precisely the day‑night/cave signal. Predator drain is **sparse and spiky** ($-2.5$ per contact at $d=5$, against a baseline of order $10^{-2}$), so it survives baseline subtraction almost intact and dominates the gradient on the ticks it fires. Same physical quantity, opposite statistical roles in the update.
 
 ---
 
@@ -31,9 +41,21 @@ $$\bar b_t = \beta\,\bar b_{t-1} + (1-\beta)\,r_t,\qquad \beta = \text{BASELINE\
 
 $$\tilde r_t = r_t - \bar b_t \quad\text{(baseline‑adjusted reward)}$$
 
+**The baseline is updated *before* it is subtracted** (`NNBrain.reinforce()` advances `running_baseline` with $r_t$ on the same call that uses it), so substituting the first line into the second gives, exactly,
+
+$$\tilde r_t = \beta\,\big(r_t - \bar b_{t-1}\big)$$
+
+i.e. the textbook "subtract the *previous* baseline" form, scaled by $\beta$. Because that is an exact scalar multiple, it introduces **no directional bias** — it rescales the step. The practical consequence is that the **effective learning rate is $\alpha_{\text{eff}} = \beta\alpha = 0.9\,\alpha$**: 0.009 in the predator‑free baseline environment and 0.018 in the roaming‑predator environment, not the nominal 0.01 / 0.02 (§2.4). The action‑independence a REINFORCE baseline needs is not compromised by the collapse itself: $\bar b_{t-1}$ is a function of rewards up to $t-1$ only, so it is independent of $a_t$ and $\mathbb{E}[\bar b_{t-1}\nabla\log\pi(a_t)] = 0$. The residual caveat is the one every EMA baseline carries in an online trace method — $\bar b_{t-1}$ is correlated with the *older* actions still held in $e_t$ — which is bounded, standard, and identical across all conditions being compared.
+
+$\bar b_0 = 0$ and the traces are zeroed at birth (`resetTraces()`), so each organism's baseline warms up over roughly the first $1/(1-\beta) = 10$ ticks of its life; nothing about the baseline or the traces is inherited.
+
+---
+
 ### 2.2 Eligibility traces (forward‑time credit assignment, no backprop)
 
 Traces accumulate the (importance‑weighted) score function $\rho\,\nabla\log\pi(a)$ and decay each tick with $\gamma = \text{TRACE\_DECAY} = 0.90$.
+
+$\gamma$ is **not** a return discount — no return $G_t$ is ever formed. It is the credit‑assignment horizon: the trace is a geometrically weighted memory of the last $\approx 1/(1-\gamma) = 10$ ticks of score functions, which is the mechanism that pays a delayed food reward back to the movements that reached the food. This is the eligibility of Baxter & Bartlett's OLPOMDP — their trace parameter, which that paper also happens to write $\beta$ (no relation to `BASELINE_DECAY` above) — not the $\gamma$ of a discounted return.
 
 **Output layer** ($k = 0,\dots,5$, i.e. $\text{OUTPUT\_SIZE}=6$):
 
@@ -60,15 +82,26 @@ With `epsilon_enabled = false` (the `--no-epsilon` runs), $\epsilon=0 \Rightarro
 
 $$w_{idx} \leftarrow \operatorname{clip}\!\Big(w_{idx} + \alpha\,\tilde r_t\, e^{(t)}_{idx},\ [-1,1]\Big)$$
 
-- $\alpha = \text{RL\_LR}$ = **0.01** (predator‑free baseline env) / **0.02** (roaming‑predator env). Tunable via `--learning-rate`.
+- $\alpha = \text{RL\_LR}$ = **0.01** (predator‑free baseline env) / **0.02** (roaming‑predator env). Tunable via `--learning-rate`. Because $\tilde r_t = \beta(r_t-\bar b_{t-1})$ (§2.1), the **realised** step size is $\alpha_{\text{eff}} = 0.9\alpha$ = 0.009 / 0.018.
+- Weights are clipped to $[-1,1]$ after every update; the same clip bounds crossover and mutation (§6), so the whole search space is the cube $[-1,1]^{|\theta|}$.
+
+**Update ordering (an intentional off‑by‑one).** `_nnMove()` reads `pending_reward` — the consequences of $a_{t-1}$ — then calls `decide()`, which runs the forward pass (sampling $a_t$) *before* `reinforce(r_t)`. The trace therefore already contains $\nabla\log\pi(a_t)$ when it is multiplied by a reward $a_t$ cannot have caused. Since $\mathbb{E}_{a\sim\pi}[\nabla\log\pi(a)] = 0$ and $a_t$ is conditionally independent of $r_t$ given the state, that term contributes **variance but not bias**; the credit for $r_t$ still lands on $a_{t-1}$ and earlier, discounted by $\gamma$.
 
 **REINFORCE, not backprop:** weights move directly from the reward‑weighted eligibility traces; there is no error backpropagation. Traces are the forward‑time memory of which weights were responsible for recent actions.
+
+**Verified against a finite difference.** Because the score function $\nabla\log\pi(a)$ is written into the trace by hand rather than obtained from an autodiff library, the implementation is checked numerically rather than trusted. With the trace zeroed beforehand, one call to `reinforce()` leaves exactly $\nabla\log\pi(a)$ in it ($e = \gamma\cdot 0 + \nabla\log\pi(a)$), and weight updates are frozen so the comparison is taken at the same point in weight space. That trace is compared against a **central finite difference** of $\log\pi(a)$ evaluated through an independently written forward pass, so a bug shared between the forward pass and the gradient cannot hide. Agreement is to **max relative error $\approx 2\times10^{-7}$** with **cosine similarity $1.000000000$** over a stride sweep of the full genome — i.e. limited by float32 rounding, not by the implementation. Coordinates whose ReLU pre‑activation falls within the finite‑difference step of the kink are a genuine non‑differentiability; they are skipped and counted rather than silently included. Run it with `node src/eval/validate.js --only grad`; the numbers land in `output/validation/verification_report.json`.
 
 ### 2.5 The `--no-epsilon` case (all production runs)
 
 With `epsilon_enabled = false`, $\epsilon\equiv 0$: actions are sampled straight from $\pi$, $b=\pi$, and the importance ratio is identically $\rho = 1$. The importance‑sampling term is therefore a **no‑op** — it only ever mattered for the earlier epsilon LR‑sweep runs. The update stays fully **on‑policy** but **retains** the two standard on‑policy components — the running‑mean baseline and the eligibility traces — so it is REINFORCE‑*with‑baseline‑and‑traces*, not baseline‑free vanilla REINFORCE. The trace factor collapses from $\phi_k = \rho(\mathbb 1[k=a]-\pi_k)$ to $(\mathbb 1[k=a]-\pi_k)$, giving:
 
 $$e^{(t)}_{idx} = \gamma\,e^{(t-1)}_{idx} + \big[\nabla\log\pi(a)\big]_{idx},\qquad w_{idx}\leftarrow \operatorname{clip}\!\big(w_{idx}+\alpha\,(r_t-\bar b_t)\,e^{(t)}_{idx},\ [-1,1]\big)$$
+
+### 2.6 What to call this algorithm
+
+The update above is **online, per‑tick and non‑episodic**: there is no episode boundary short of death, no return $G_t$, and no learned value function. That is precisely the **OLPOMDP** estimator of Baxter & Bartlett (2001) — $z_t = \beta z_{t-1} + \nabla\log\mu(a_t)$, $\theta \leftarrow \theta + \alpha r_t z_t$ — built on the REINFORCE score‑function estimator of Williams (1992), with Williams' *reinforcement baseline* supplied here as an EMA of past reward rather than a critic.
+
+Describe it as: **an online, non‑episodic REINFORCE (Williams, 1992) in the OLPOMDP form (Baxter & Bartlett, 2001), with an eligibility trace over the score function and a running‑mean reward baseline.** Calling it "episodic REINFORCE" would be wrong — it invites the question of where $G_t$ is — and calling it actor–critic would also be wrong, since the baseline is a scalar reward average, not $\hat v(s)$.
 
 ---
 
@@ -111,6 +144,21 @@ $$\text{Input}(54) \to \text{ReLU}(W_1,b_1)\,(64) \to \text{softmax}(W_2,b_2)\,(
 $W_1: 54\times 64 = 3456$, $b_1: 64$, $W_2: 64\times 6 = 384$, $b_2: 6$.
 
 Each organism holds `genome_weights` (heritable) and `active_weights` (acted on; RL updates these). In GA‑only mode they are the **same reference** (no drift).
+
+### Weight initialisation (Glorot/Xavier **uniform**)
+
+Founder genomes with no parent are drawn by `NNBrain._initGenome()`:
+
+$$w \sim \mathcal U(-L,\,+L),\qquad L = \sqrt{\frac{6}{n_{\text{in}}+n_{\text{out}}}},\qquad b_1 = b_2 = 0$$
+
+so $\operatorname{Var}(w) = \dfrac{2}{n_{\text{in}}+n_{\text{out}}}$ — the same second moment as the Gaussian Xavier variant, with bounded support and no tails. The limit is **per layer**:
+
+| Block | fan‑in → fan‑out | $L$ at $n_h=64$ | $L$ at $n_h=128$ |
+|-------|------------------|-----------------|------------------|
+| $W_1$ | $54 \to n_h$ | 0.2255 | 0.1816 |
+| $W_2$ | $n_h \to 6$ | 0.2928 | 0.2116 |
+
+Both bias blocks start at exactly zero. Every limit is well inside the $[-1,1]$ clip, so a fresh brain is never clipped at birth. The draw uses JavaScript's `Math.random()` (V8 xorshift128+), which is **not** seeded by the run seed — founder genomes are not bit‑reproducible from `params.json`, only distributionally reproducible. The landscape probes' fresh‑brain anchor (`ll_common.xavier_genome()`) reproduces this exactly, including the zero biases and the per‑layer limits.
 
 ### Activations
 
@@ -185,6 +233,25 @@ $$w_i' = \operatorname{clip}\Big(w_i + \mathbb{1}[u<p]\,\mathcal N(0,\sigma),\ [
 - **Inter‑generation** (GA between‑gen; pure‑RL between‑episode & top‑up): $p=\text{MUT\_PROB}=0.03$, $\sigma=\text{MUT\_SIGMA}=0.1$ (from `ExperimentParams`, honours `--mut-prob/--mut-sigma`).
 - **Intra‑generation** (asexual reproduction, all conditions): $p=\text{ASEXUAL\_MUT\_PROB}=0.05$, $\sigma=0.1$.
 
+Both draws are **per weight and independent** — a Bernoulli trial for every one of the $61 n_h + 6$ entries, not one draw per genome — and the $[-1,1]$ clip is applied only to the weights that actually mutated.
+
+### Expected number of mutated weights
+
+The rate alone understates the within‑generation channel, because the 5% fires on **every birth** while the 3% fires once per genome per generation boundary:
+
+| Event | Rate | h64 (3910 weights) | h128 (7814 weights) |
+|---|---|---|---|
+| Asexual birth (intra‑generation) | 0.05 | ~196 | **~391** |
+| Generation boundary (inter‑generation) | 0.03 | ~117 | **~234** |
+
+An organism reproduces every time it banks 3.5 energy (§9), so one lineage can pass through many mutation rounds inside a single 10 000‑tick generation, each stacking ~391 perturbations at $n_h=128$. Intra‑generational asexual mutation is therefore the **larger source of genetic variation**, not the smaller one. Reproduction also only succeeds with probability $\text{REPRODUCTION\_SUCCESS\_RATE}=0.8$, and the energy counter resets either way, so ~20% of reproduction events discard an already‑mutated genome.
+
+Note the two channels differ in kind as well as rate: within a generation reproduction is **asexual** — a clone of the parent's `genome_weights` (never `active_weights`, so RL drift is not passed on) plus noise, with no crossover. Crossover happens only at the generation boundary.
+
+### Tunability asymmetry (matters when reading a mutation sweep)
+
+`MUT_PROB` / `MUT_SIGMA` are read from `ExperimentParams` and honour `--mut-prob` / `--mut-sigma`; **`ASEXUAL_MUT_PROB` / `ASEXUAL_MUT_SIGMA` are module constants** in `AdvancedOrganism.js:117-118` with no CLI override. A sweep over `--mut-prob` therefore moves only the inter‑generation 3% term while the intra‑generation 5% term — the larger contributor above — stays pinned. Such a sweep measures the sensitivity of *between‑generation disruption*, not of total genetic variation, and should be reported as such. (`PureRLManager`'s between‑episode mutation reads the same `mut_prob`/`mut_sigma`, so it moves with the GA term.)
+
 (Both were disabled in the earlier design; they are now enabled and consistent across conditions.)
 
 ---
@@ -204,6 +271,14 @@ Percept classes (`PERCEPT_INDEX` in `NNBrain.js`):
 | 4 | wall / obstacle | 11 | roaming predator body |
 | 5 | low‑food landmark | 12 | patrol predator body |
 | 6 | medium‑food landmark | | |
+
+### Perception range
+
+Each of the 4 eye cells casts a ray and returns the **first non‑empty cell** within $\text{lookRange}$ (`Hyperparameters.js:27`):
+
+$$\text{lookRange} = \mathbf{200}\ \text{cells}$$
+
+This is a large sensory horizon relative to the world — **40% of a 500‑wide grid**, and it exceeds every predator radius (detection 31, give‑up 44 after the ×1.25 rescale at width 500). Prey therefore see a roaming predator long before that predator can detect *them*, which is what makes avoidance learnable rather than purely reactive. It also means the one‑hot percept saturates easily: on a populated map the nearest non‑empty cell along a ray is usually close, so the effective range only matters in sparse regions.
 
 Distinguishing prey (10) from roaming (11) and patrol (12) predators lets avoidance be learned/evolved from **direct perception**, not just from the indirect energy‑loss of contact.
 
@@ -237,7 +312,19 @@ GA: tournament selection → uniform crossover → mutation → 100 founders (§
 
 Fixed environmental hazard (`PredatorHyperparameters.js`), not part of the evolving population.
 
-- **Roaming:** fixed count (`--roaming-predators`, 60 in the experiments); detect prey within a radius (25 cells at the 400‑col reference, rescaled to grid), chase, and on contact drain `--predator-drain` energy/tick (5 in experiments) + apply the $-0.5$ RL penalty. Never die/reproduce.
+- **Roaming:** fixed count (`--roaming-predators`, 60 in the experiments); detect prey within a radius, chase, and on contact drain `--predator-drain` energy/tick (5 in experiments) + apply the $-0.5d = -2.5$ RL penalty (§1). Never die/reproduce, and the count is held constant by respawn.
+
+  Spatial radii are calibrated for $\text{referenceCols}=400$ and rescaled by $s = \text{cols}/400$ in `resolveForGrid()` — $s = 1.25$ at the production width of 500:
+
+  | Parameter | Reference (400 cols) | **At width 500** | Scaled? |
+  |---|---|---|---|
+  | `detectionRadius` | 25 | **31** | yes |
+  | `giveUpRadius` | 35 | **44** | yes |
+  | `wanderRange` | 6 | 6 | no — a duration |
+  | `moveInterval` | 1 | 1 | no |
+  | `respawnDelay` | 50 ticks | 50 | no |
+
+  Note the asymmetry with perception: prey see 200 cells (§7), a predator detects at 31.
 - **Patrol:** guard prestige patches, leashed; disabled (`--predators-per-patch 0`) in the core experiments.
 - **Caves are predator‑safe.**
 
@@ -245,11 +332,17 @@ Fixed environmental hazard (`PredatorHyperparameters.js`), not part of the evolv
 
 ## 11. Metrics and Analysis Calculations
 
-### Genetic drift / MAD (`avg_learned_weight_diff`)
+### Mean absolute weight difference (`avg_learned_weight_diff`)
 
-Mean absolute deviation of learned weights from the frozen genome, per organism, averaged over the population:
+The **mean absolute difference between an organism's active and genome weight vectors** — equivalently, the $L_1$ distance between them normalised by the number of weights:
 
-$$\text{MAD}_i = \frac{1}{M}\sum_{j=0}^{M-1}\big|w^{\text{active}}_{i,j}-w^{\text{genome}}_{i,j}\big|,\qquad M=\text{GENOME\_SIZE}$$
+$$\overline{|\Delta w|}_i = \frac{1}{M}\sum_{j=0}^{M-1}\big|w^{\text{active}}_{i,j}-w^{\text{genome}}_{i,j}\big| = \frac{1}{M}\big\|\mathbf w^{\text{active}}_i - \mathbf w^{\text{genome}}_i\big\|_1,\qquad M=\text{GENOME\_SIZE}$$
+
+The population figure `avg_learned_weight_diff` is the unweighted mean of $\overline{|\Delta w|}_i$ over every agent in the generation (`Logger.js:173-176`) — a mean of means, so a newborn that has barely drifted counts as much as one that lived the full window.
+
+> **Naming.** This metric was previously abbreviated **"MAD"** throughout the code and figures. That abbreviation is abandoned: in statistics MAD denotes the **median absolute deviation** $\operatorname{med}(|x_i - \operatorname{med}(x)|)$, and sometimes the mean absolute deviation *from a central value*. This quantity is neither — there is no median, and it is not a deviation from a centre but a distance between two specific paired vectors. Call it the **mean absolute weight difference**. The CSV columns (`avg_learned_weight_diff`, `learned_weight_diff`) and the `mad` verification-check id keep their names, since those are data/interface identifiers.
+
+Normalising per weight makes the value comparable across hidden sizes: a raw $L_1$ norm would grow with $M$, so h64 and h128 runs could not be compared. Typical values span $10^{-5}$ to $10^{-3}$.
 
 - Learning condition: $>0$ (RL adapts active weights; not inherited — genome frozen).
 - Evolution: $=0$ (`active === genome`).
@@ -280,16 +373,19 @@ $\bar f_{\text{top20\%}}$ (top‑20% mean fitness), $\bar f$ (population mean fi
 | `ENERGY_CAPACITY` / `START_ENERGY` | 500 / 300 | energy cap / start |
 | `ENERGY_DECAY_RATE` / `_INTERVAL` | 1 / 10 | base decay per 10 ticks |
 | day / night length | 300 / 300 | 600‑tick cycle |
+| decay multipliers | ×2 day‑cave, ×2 night‑outside, ×0 night‑cave | applied to `ENERGY_DECAY_RATE` |
+| `lookRange` | **200** cells | eye raycast horizon (§7) |
 | food values | 0.5 / 1.0 / 2.0 | low / medium / prestige |
-| `EXPLORE_BONUS` | 0.15 | reward per new cell |
+| `EXPLORE_BONUS` | **0** (off in all production runs) | reward per new cell; swept only |
 | `DECAY_PENALTY` | 0.05 | reward per unit energy decayed |
-| `PREDATOR_DRAIN_PENALTY` | 0.5 | reward while drained |
-| `RL_LR` (α) | 0.01 baseline / 0.02 roaming | REINFORCE step |
+| `PREDATOR_DRAIN_PENALTY` | 0.5 | multiplier on drain: reward $=-0.5d$ per contact ($d=1$ default, $d=5$ hard) |
+| `RL_LR` (α) | 0.01 baseline / 0.02 roaming | nominal REINFORCE step ($\alpha_{\text{eff}} = 0.9\alpha$, §2.1) |
 | `TRACE_DECAY` (γ) | 0.90 | eligibility‑trace decay |
-| `BASELINE_DECAY` (β) | 0.9 | reward‑baseline EMA |
+| `BASELINE_DECAY` (β) | 0.9 | reward‑baseline EMA; also scales the step (§2.1) |
 | `EPSILON_START`/`END` | 0.3 / 0.05 | exploration (0 with `--no-epsilon`) |
 | epsilon decay exponent | 0.5 / 1 / 2 | sublinear / linear / quadratic |
 | importance ratio cap | 10 | $\rho=\min(\pi/b,10)$ |
+| Xavier limit $L$ | $\sqrt{6/(n_{in}+n_{out})}$ | founder weight init, uniform; biases 0 |
 | `POPULATION_SIZE` | 100 | founders per generation |
 | `SELECTION_PERCENT` | 0.20 | top‑20% **reporting** cohort only — not a selection cutoff |
 | `TOURNAMENT_K` | 2 | GA tournament size |
@@ -297,9 +393,12 @@ $\bar f_{\text{top20\%}}$ (top‑20% mean fitness), $\bar f$ (population mean fi
 | `ASEXUAL_MUT_PROB` / `_SIGMA` | 0.05 / 0.1 | intra‑generation mutation |
 | reproduction trigger | 3.5 energy | asexual reproduction |
 | `REPRODUCTION_SUCCESS_RATE` | 0.8 | child spawn success |
-| `GENOME_SIZE` | 3910 (=61·H+6) | NN weights, H=64 |
-| `STATE_SIZE` / `HIDDEN_SIZE` / `OUTPUT_SIZE` | 54 / 64 / 6 | NN dims |
-| roaming predators / drain | 60 / 5 | experiments |
+| `GENOME_SIZE` | 3910 at H=64, **7814 at H=128** (=61·H+6) | NN weights |
+| `STATE_SIZE` / `HIDDEN_SIZE` / `OUTPUT_SIZE` | 54 / 64 default (**128 in production**) / 6 | NN dims |
+| roaming predators / drain | 60 / 5 | experiments (patrol disabled: `--predators-per-patch 0`) |
+| predator `detectionRadius` / `giveUpRadius` | 25 / 35 ref → **31 / 44** at width 500 | rescaled by cols/400 (§10) |
+| predator `referenceCols` | 400 | radius calibration width |
+| `wanderRange` / `moveInterval` / `respawnDelay` | 6 / 1 / 50 | not spatial — unscaled |
 | `COLLAPSE_BUFFER_SIZE` | 25 | pure‑RL weight buffer |
 
 ---
@@ -318,6 +417,9 @@ $\bar f_{\text{top20\%}}$ (top‑20% mean fitness), $\bar f$ (population mean fi
 
 ## References
 
-- **REINFORCE**: Williams, R. J. (1992). "Simple statistical gradient‑following algorithms for connectionist reinforcement learning."
-- **Eligibility Traces / baselines**: Sutton & Barto (2018). "Reinforcement Learning: An Introduction."
+- **REINFORCE / score function / reinforcement baseline**: Williams, R. J. (1992). "Simple statistical gradient‑following algorithms for connectionist reinforcement learning." *Machine Learning*, 8(3–4), 229–256.
+- **The online, non‑episodic form actually implemented (OLPOMDP)**: Baxter, J. & Bartlett, P. L. (2001). "Infinite‑horizon policy‑gradient estimation." *JAIR*, 15, 319–350. — the per‑step update with a discounted eligibility of $\nabla\log\pi$; their $\beta$ is this code's `TRACE_DECAY` (§2.2, §2.6).
+- **Eligibility traces / REINFORCE‑with‑baseline (textbook)**: Sutton, R. S. & Barto, A. G. (2018). *Reinforcement Learning: An Introduction* (2nd ed.) — Ch. 12 (traces), §13.4 (REINFORCE with baseline).
+- *(optional, same estimator arrived at independently)* Kimura, H. & Kobayashi, S. (1998). "An analysis of actor/critic algorithms using eligibility traces." *ICML*.
+- **Weight initialisation**: Glorot, X. & Bengio, Y. (2010). "Understanding the difficulty of training deep feedforward neural networks." *AISTATS* — the uniform variant, §4.
 - **Genetic Algorithms / tournament selection**: Mitchell, M. (1998). "An Introduction to Genetic Algorithms."

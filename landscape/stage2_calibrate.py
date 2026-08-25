@@ -70,10 +70,12 @@ def _pick_representative_genomes(genome_csv, gens=REP_GENS, seed=12345):
         genomes[key] = row['genome']
         meta.append({'key': key, 'kind': 'centroid', 'generation': int(g),
                      'logged_fitness': float(row['fitness'])})
-    # Random low-fitness genome (small Xavier-ish weights, clipped like the sim).
-    rng = np.random.default_rng(seed)
-    rnd = np.clip(rng.uniform(-0.1, 0.1, ll.GENOME_SIZE), -1, 1)
-    genomes['random'] = rnd
+    # Random low-fitness genome: a freshly initialised brain, drawn exactly as
+    # NNBrain._initGenome() does (Glorot/Xavier uniform per layer, zero biases).
+    # Hidden size comes from the centroids themselves so h128 runs anchor
+    # against an h128 fresh brain rather than a 3910-long h64 one.
+    hidden_size = ll.infer_hidden_size(len(genomes[meta[0]['key']]))
+    genomes['random'] = ll.xavier_genome(seed=seed, hidden_size=hidden_size)
     meta.append({'key': 'random', 'kind': 'random', 'generation': -1, 'logged_fitness': float('nan')})
     return genomes, meta
 

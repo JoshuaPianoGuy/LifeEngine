@@ -25,7 +25,7 @@ Metrics (all read from generations.csv, exactly as the other sweep scripts):
     top20percent_fitness     -- average fitness of the top 20%
     peak_population          -- peak organism count in a generation
     total_agents             -- total organisms alive in a generation
-    avg_learned_weight_diff  -- MAD: mean |active - genome| (see calculateDrift)
+    avg_learned_weight_diff  -- mean absolute weight difference: mean |active - genome| (see calculateDrift)
 
 Outputs (into --out), per metric:
     noeps_curves_<metric>.png   -- metric over generations, one line per LR
@@ -34,7 +34,7 @@ Outputs (into --out), per metric:
                                    LR: each SEED's own last-N-gen mean as a
                                    point, PLUS the overall mean +/- std across
                                    the 3 seeds as a bold line. NOT written for
-                                   MAD (a diagnostic best read over time, not as
+                                   Mean absolute weight difference (a diagnostic best read over time, not as
                                    a single endpoint).
 Plus noeps_summary.csv: tidy (lr, metric, mean, std, sem, count) aggregated
 across the 3 seeds so learning rate is the only factor.
@@ -74,17 +74,17 @@ SEED_COLOURS = ['#2563EB', '#DC2626', '#059669', '#D97706', '#7C3AED', '#0891B2'
 
 # Metric column -> (axis/title label, accent colour, per-cell value format).
 # Colours reuse the palette shared across the sweep scripts: fitness blue/green,
-# population cyan/brown, MAD purple.
+# population cyan/brown, mean absolute weight difference purple.
 METRICS = {
     'avg_fitness':             ('Average fitness',           '#2563EB', '{:.3f}'),
     'top20percent_fitness':    ('Top-20% fitness',           '#059669', '{:.3f}'),
     'peak_population':          ('Peak population',           '#0891B2', '{:.0f}'),
     'total_agents':            ('Total agents',              '#92400E', '{:.0f}'),
-    'avg_learned_weight_diff': ('Learned weight diff (MAD)', '#7C3AED', '{:.4g}'),
+    'avg_learned_weight_diff': ('Mean absolute weight difference', '#7C3AED', '{:.4g}'),
 }
 DEFAULT_METRICS = list(METRICS)
 
-# MAD gets NO endpoint plot: it is a learning DIAGNOSTIC whose value is in how it
+# Mean absolute weight difference gets NO endpoint plot: it is a learning DIAGNOSTIC whose value is in how it
 # changes over generations, not in a single last-N-gen number (higher/lower isn't
 # "better"). It still gets the over-generation curve.
 NO_FINAL_METRICS = {'avg_learned_weight_diff'}

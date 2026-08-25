@@ -47,7 +47,7 @@ Two findings from building this that **correct the original plan's premises**:
 | `config.js` | `applyConfig({paramsPath,overrides})` (must run before requiring the sim); genome base64 codec |
 | `run_probe.js` | batch driver: jobs.json → results CSV, `--shard i/N`, resumable |
 | `anchor.js` | Stage-2 anchor: monomorphic centroid, **reproduction ON**, full 5-map generation |
-| `selftest.js` | `node src/eval/selftest.js` — RL-off MAD assert + reproduction-energy diagnostic + smoke |
+| `selftest.js` | `node src/eval/selftest.js` — RL-off mean absolute weight difference assert + reproduction-energy diagnostic + smoke |
 
 ## `landscape/` (Python)
 

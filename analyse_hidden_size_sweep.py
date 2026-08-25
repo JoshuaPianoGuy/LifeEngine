@@ -65,7 +65,7 @@ Outputs (into --out / output/hidden_size_sweep_<env>):
                                   drained, food eaten).
     hid_behaviour_food.png     -- diet composition, one row per food tier.
     hid_cave_day_night.png     -- cave entries day vs night + the night share.
-    hid_diagnostics.png        -- MAD, genomic variance, weight magnitude and
+    hid_diagnostics.png        -- mean absolute weight difference, genomic variance, weight magnitude and
                                   inter-generation weight change. Capacity moves
                                   these mechanically (more weights = more to
                                   move), so read them as mechanism, not outcome.
@@ -213,12 +213,12 @@ BEHAV_METRICS = {
 }
 
 # ── Learning diagnostics (generations.csv) ────────────────────────────────────
-# Width moves these mechanically — MAD and the weight magnitude are computed over
+# Width moves these mechanically — mean absolute weight difference and the weight magnitude are computed over
 # 61H+6 weights — so they are mechanism, not outcome. Included because they are
-# the only view of WHERE the capacity went: a 128 arm whose MAD stays flat never
+# the only view of WHERE the capacity went: a 128 arm whose mean absolute weight difference stays flat never
 # used the extra weights.
 DIAG_METRICS = {
-    'avg_learned_weight_diff': 'Learned weight diff (MAD)',
+    'avg_learned_weight_diff': 'Mean absolute weight difference',
     'genome_variance':         'Genomic variance',
     'avg_network_weight_mag':  'Network weight magnitude (RMS)',
     'inter_gen_weight_change': 'Inter-generation weight change',
@@ -258,7 +258,7 @@ VS_WIDTH = [
     ('avg_lifetime',            'Mean lifetime (ticks)'),
     ('lifetime_p90',            'p90 lifetime (ticks)'),
     ('survived_frac',           'Survived to window close'),
-    ('avg_learned_weight_diff', 'Learned weight diff (MAD)'),
+    ('avg_learned_weight_diff', 'Mean absolute weight difference'),
     ('genome_variance',         'Genomic variance'),
     ('cells_visited',           'Cells explored / organism'),
     ('cave_entries',            'Cave entries / organism'),
@@ -781,14 +781,14 @@ def plot_cave_day_night(all_stats, conditions, smooth, out_dir, share_y):
 
 
 def plot_diagnostics(all_stats, conditions, smooth, out_dir, share_y):
-    """MAD / genomic variance / weight magnitude / inter-gen change, same layout.
+    """Mean absolute weight difference / genomic variance / weight magnitude / inter-gen change, same layout.
     These move mechanically with the number of weights, so they say where the
     capacity went, not whether it helped."""
     print("  Plotting learning diagnostics ...")
     _grid_plot(all_stats, conditions, list(DIAG_METRICS), DIAG_METRICS, smooth,
                out_dir, 'hid_diagnostics',
                _title('Learning diagnostics over generations',
-                      'MAD = within-life weight change; genomic variance = '
+                      'mean absolute weight difference = within-life weight change; genomic variance = '
                       'population diversity in weight space'),
                share_y=share_y, log_cols=LOG_METRICS)
 

@@ -6,7 +6,7 @@
  *   node src/eval/selftest.js
  *
  * Runs the two load-bearing asserts from the plan plus a smoke probe:
- *   ASSERT A — RL-off ⇒ MAD (|active − genome|) is exactly 0 for every founder.
+ *   ASSERT A — RL-off ⇒ mean absolute weight difference (|active − genome|) is exactly 0 for every founder.
  *   DIAG   B — measure the actual energy cost of reproduction (the plan claims
  *              3.5 is deducted even when no child spawns; this reports the truth).
  *   SMOKE    — evaluate the real seed-999 baseline evolution final centroid,
@@ -103,7 +103,7 @@ const probeOff = new Probe(false);
 const t0 = Date.now();
 const rOff = probeOff.evaluate(theta, { mapIndex: 0 });
 const invariant = probeOff.assertRlOffInvariant();
-console.log(`  RL-off invariant: max MAD=${invariant.mad}, aliased_ok=${invariant.aliased_ok}  ✅`);
+console.log(`  RL-off invariant: max mean absolute weight difference=${invariant.mad}, aliased_ok=${invariant.aliased_ok}  ✅`);
 console.log(`  mean_fitness=${rOff.mean_fitness.toFixed(4)}  std_clones=${rOff.std_clones.toFixed(4)} ` +
     `n=${rOff.n_clones}  mean_lifetime=${rOff.mean_lifetime.toFixed(0)}  ` +
     `deaths=${JSON.stringify(rOff.deaths)}  (${((Date.now()-t0)/1000).toFixed(1)}s)`);

@@ -95,6 +95,16 @@ class GAManager {
         // Genomes for the next founding generation (null = random init for gen 0)
         this.gene_pool = null;
 
+        // Random-policy floor: the chance anchor. When true, evolve() still runs
+        // selection/crossover/mutation and still records the generation's
+        // metrics, but throws the resulting pool away so spawnGeneration() falls
+        // back to Xavier-random founders every generation. See
+        // ExperimentParams.random_floor for why this is the right control.
+        this.random_floor = ExperimentParams.random_floor === true;
+        if (this.random_floor) {
+            this.condition_label = 'random_floor';
+        }
+
         this.metrics = [];
 
         // Expose hyper-parameters so Logger and other consumers can read them
@@ -384,6 +394,15 @@ class GAManager {
         }
 
         this.gene_pool = next_pool;
+
+        // Random-policy floor: discard the pool selection just built. Everything
+        // upstream (fitness sort, disaster, metrics, tournament, crossover,
+        // mutation) still ran, so the only difference from the evolution
+        // condition is that no genome survives the generation boundary and the
+        // next founders are freshly Xavier-initialised. Dropping the pool here
+        // rather than skipping the selection block keeps the RNG consumption and
+        // the logged metrics on the same code path as a real run.
+        if (this.random_floor) this.gene_pool = null;
     }
 
     // ── Genetic operators ─────────────────────────────────────────────────────

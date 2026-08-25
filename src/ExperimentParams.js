@@ -194,6 +194,23 @@ const ExperimentParams = {
     // Seed it for reproducibility — a seeded schedule is common-mode across
     // fitness-landscape grid points (like terrain), so it cancels between points.
     food_shuffle_seed:   0,
+
+    // ── Random-policy floor (GAManager) ───────────────────────────────────
+    // The CHANCE ANCHOR for every fitness number in the experiment. With this
+    // true the GA still runs its whole generation loop — same 100 founders,
+    // same anatomy, same maps, same predators, same within-generation
+    // reproduction — but the selected gene pool is DISCARDED at each generation
+    // boundary, so every generation's founders are freshly Xavier-initialised
+    // instead of inherited. It is therefore the evolution condition with
+    // exactly one thing removed: between-generation selection.
+    //
+    // Runs with this on report the fitness an untrained policy achieves on the
+    // same terrain, which is what makes a converged fitness of e.g. 3.5
+    // interpretable ("below chance", "at chance", "above chance") rather than
+    // an unanchored number. Pair it with --condition evolution so no RL runs
+    // either: the floor must have no adaptation mechanism at all.
+    // Off by default; --random-floor on src/headless.js turns it on.
+    random_floor: false,
 };
 
 // Keys that may be overridden (everything above; methods are excluded).

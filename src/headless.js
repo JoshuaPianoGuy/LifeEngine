@@ -137,6 +137,13 @@ function usageAndExit() {
         '    --population-size <N>     founders per generation       (100)\n' +
         '    --mut-prob      <f>       between-gen mutation rate      (0.03)\n' +
         '    --mut-sigma     <f>       between-gen mutation std-dev   (0.1)\n' +
+        '    --random-floor            CHANCE ANCHOR. Discard the gene pool at every\n' +
+        '                              generation boundary so founders are always\n' +
+        '                              freshly Xavier-random: the evolution condition\n' +
+        '                              minus between-generation selection. Use with\n' +
+        '                              --condition evolution (no RL either) to measure\n' +
+        '                              the fitness an untrained policy reaches on the\n' +
+        '                              same maps.                            (off)\n' +
         '    --disaster                enable natural-disaster culls  (off)\n' +
         '    --disaster-prob <f>       per-gen chance a disaster hits (0.1)\n' +
         '    --disaster-fraction <f>   fixed fraction culled per event (0.2)\n' +
@@ -166,6 +173,22 @@ const CONDITION = (opts.condition || 'learning');
 const MODE      = (opts.mode || 'standard');
 if (!['learning', 'evolution'].includes(CONDITION)) { console.error(`ERROR: --condition must be learning|evolution.`); process.exit(1); }
 if (!['standard', 'frozen_pg', 'pure_rl'].includes(MODE)) { console.error(`ERROR: --mode must be standard|frozen_pg|pure_rl.`); process.exit(1); }
+// The random-policy floor is only meaningful with NO adaptation mechanism at
+// all, and it is implemented in GAManager, which the other two modes replace.
+// Refuse rather than silently producing a floor that is still learning.
+if (opts['random-floor']) {
+    if (CONDITION !== 'evolution') {
+        console.error('ERROR: --random-floor requires --condition evolution. The floor is the ' +
+            'no-adaptation control; with --condition learning the agents still run RL ' +
+            'within life, which is not a chance baseline.');
+        process.exit(1);
+    }
+    if (MODE !== 'standard') {
+        console.error(`ERROR: --random-floor requires --mode standard (got ${MODE}). ` +
+            'frozen_pg and pure_rl replace GAManager, which is where the floor lives.');
+        process.exit(1);
+    }
+}
 
 const WIDTH     = intOpt('width', 400);
 const HEIGHT    = intOpt('height', 300);
@@ -192,6 +215,7 @@ const changed = ExperimentParams.applyOverrides({
     population_size:        intOpt('population-size'),
     mut_prob:               floatOpt('mut-prob'),
     mut_sigma:              floatOpt('mut-sigma'),
+    random_floor:           opts['random-floor'] ? true : null,
     disaster_enabled:       opts.disaster ? true : null,
     disaster_prob:          floatOpt('disaster-prob'),
     disaster_fraction:      floatOpt('disaster-fraction'),

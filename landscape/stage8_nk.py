@@ -279,8 +279,11 @@ def block_touch_prob():
 def _background_genome(genome_csv, which):
     """theta0 for the hypercube. 'random' matches Stage 6's random start exactly."""
     if which == 'random':
-        rng = np.random.default_rng(20260718)
-        return np.clip(rng.uniform(-0.1, 0.1, ll.GENOME_SIZE), -1, 1), 'random'
+        # Same fresh-brain draw as Stage 6 (same seed, same helper), so the two
+        # stages keep sharing a background genome.
+        return (ll.xavier_genome(seed=20260718,
+                                 hidden_size=ll.hidden_size_from_genome_csv(genome_csv)),
+                'random')
     if which in ('centroid', 'evolved'):
         gens, mat = ll.centroid_trajectory(genome_csv)
         return mat[-1].copy(), f'centroid_g{int(gens[-1])}'

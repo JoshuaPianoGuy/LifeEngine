@@ -165,9 +165,31 @@ class Probe {
         const fitness = new Array(n);
         let sum = 0, sum2 = 0;
         let lifeSum = 0, caveSum = 0, drainSum = 0, touchSum = 0;
+        let driftSum = 0, driftN = 0;
         const deaths = { drained: 0, starved: 0, lifespan: 0, survived: 0 };
         for (let i = 0; i < n; i++) {
             const a = founders[i];
+            // How far in-lifetime learning moved this organism's weights away
+            // from the genome it inherited: mean |active - genome| over the
+            // whole weight vector, at end of life.
+            //
+            // This is the same quantity assertRlOffInvariant() checks, promoted
+            // from an assertion to a measurement. With RL OFF it is exactly 0
+            // (active_weights IS genome_weights, same array reference), so the
+            // column doubles as a per-row proof that the RL-off pass really had
+            // learning disabled. With RL ON it is the size of the lifetime
+            // adjustment — which is what makes it worth collecting for
+            // assimilation: a genome that already encodes the behaviour needs
+            // LESS adjustment, so this should fall over evolutionary time even
+            // as fitness rises.
+            const br = a.brain;
+            if (br && br.genome_weights && br.active_weights) {
+                const g = br.genome_weights, w = br.active_weights;
+                let d = 0;
+                for (let k = 0; k < g.length; k++) d += Math.abs(w[k] - g[k]);
+                driftSum += d / g.length;
+                driftN++;
+            }
             const f = a.getFitness();
             fitness[i] = f;
             sum += f; sum2 += f * f;
@@ -195,6 +217,8 @@ class Probe {
             mean_cave_entries: n > 0 ? caveSum / n : 0,
             mean_drained_ticks: n > 0 ? drainSum / n : 0,
             mean_predator_touches: n > 0 ? touchSum / n : 0,
+            // Exactly 0 on an RL-off probe, by the aliasing invariant above.
+            mean_weight_drift: driftN > 0 ? driftSum / driftN : 0,
             deaths,
             fitness,       // per-clone, for callers that want the full vector
         };
@@ -203,7 +227,7 @@ class Probe {
     /**
      * ASSERT A (must hold whenever rlEnabled === false):
      *   With RL off, active_weights and genome_weights are the SAME array
-     *   reference, so MAD = mean(|active − genome|) is exactly 0 for every
+     *   reference, so mean absolute weight difference = mean(|active − genome|) is exactly 0 for every
      *   organism at all times. A non-zero value means the two are aliased apart
      *   somewhere and the "RL-off" pass is silently running RL.
      *
@@ -229,7 +253,7 @@ class Probe {
         }
         if (maxMad !== 0 || !aliasOk) {
             throw new Error(
-                `RL-off invariant VIOLATED: max MAD=${maxMad}, ` +
+                `RL-off invariant VIOLATED: max mean absolute weight difference=${maxMad}, ` +
                 `active===genome for all founders: ${aliasOk}. ` +
                 `active_weights is not aliased to genome_weights — RL is leaking into the RL-off pass.`);
         }

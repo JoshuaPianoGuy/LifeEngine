@@ -316,7 +316,7 @@ def _ols_r2(X, y):
     # numerical problem — so silence them here rather than globally.
     with np.errstate(divide='ignore', over='ignore', invalid='ignore'):
         resid = y - X @ beta
-    ss_res = float(resid @ resid)
+        ss_res = float(resid @ resid)   # same Accelerate flags; same guard
     ss_tot = float(((y - y.mean()) ** 2).sum())
     if ss_tot <= 0:
         return float('nan'), float('nan')
@@ -500,6 +500,122 @@ def peak_margin_report(f, sem, margin=2.0):
         'best_ratio': float(max(ratios)) if ratios else float('nan'),
         'n_on_boundary': int(sum(r['on_boundary'] for r in rows)),
     }
+
+
+# ── A10. neutrality ───────────────────────────────────────────────────────────
+def neutral_fraction(f, eps):
+    """Share of 4-neighbour cell pairs whose fitness differs by less than eps.
+
+    The classic neutrality statistic (Reidys & Stadler 2001), read on the grid
+    rather than on a mutational graph: a neutral pair is a step a searcher could
+    take for free, and a landscape made mostly of such steps offers selection
+    nothing to act on locally, however much global structure it has.
+
+    eps HAS NO NATURAL VALUE, so callers must set it deliberately and report it.
+    Two defensible choices, both provided by neutrality_summary():
+      - a fixed FRACTION OF THE GRID RANGE, which asks "is this step big
+        relative to the whole surface" and is comparable between environments
+        whose fitness scales differ (hard tops out near 10, baseline near 24);
+      - the EVALUATION NOISE (see neutral_fraction_noise), which asks the
+        searcher's question instead: could this step even be detected.
+    They answer different questions and will not agree.
+    """
+    g = np.asarray(f, dtype=float)
+    d = np.concatenate([np.abs(g[:-1, :] - g[1:, :]).ravel(),
+                        np.abs(g[:, :-1] - g[:, 1:]).ravel()])
+    d = d[np.isfinite(d)]
+    if d.size == 0:
+        return float('nan'), 0
+    return float(np.mean(d < eps)), int(d.size)
+
+
+def neutral_fraction_noise(f, sem, z=2.0):
+    """Share of 4-neighbour pairs whose difference is inside the evaluation noise.
+
+    "Neutral" here means STATISTICALLY UNRESOLVED, not truly flat: the pair is
+    counted when |f_a - f_b| < z * sqrt(sem_a^2 + sem_b^2). This is the same
+    logic count_peaks_noise_aware() applies to maxima, and it shares the same
+    caveat in reverse — it conflates a flat landscape with an under-sampled one.
+    On a coarse grid with R = 10 it saturates near 1.0 and stops discriminating,
+    which is itself the finding (no local step on the coarse mesh is resolved),
+    but it means the eps-based figure is the one to quote for comparisons.
+    """
+    g = np.asarray(f, dtype=float)
+    s = np.asarray(sem, dtype=float)
+    d = np.concatenate([np.abs(g[:-1, :] - g[1:, :]).ravel(),
+                        np.abs(g[:, :-1] - g[:, 1:]).ravel()])
+    p = np.concatenate([np.hypot(s[:-1, :], s[1:, :]).ravel(),
+                        np.hypot(s[:, :-1], s[:, 1:]).ravel()])
+    m = np.isfinite(d) & np.isfinite(p) & (p > 0)
+    if not m.any():
+        return float('nan'), 0
+    return float(np.mean(d[m] < z * p[m])), int(m.sum())
+
+
+def neutral_plateaus(f, eps):
+    """Connected components of the neutral graph — the plateaus themselves.
+
+    neutral_fraction() counts neutral EDGES, which cannot distinguish many small
+    flat patches from one large one. Flood-filling those edges gives the plateau
+    a drifting population would actually be confined to. Reported as a share of
+    the grid so it compares across resolutions: largest_frac near 1 means the
+    surface is effectively one connected neutral network.
+    """
+    g = np.asarray(f, dtype=float)
+    N, M = g.shape
+    lab = np.full(g.shape, -1, dtype=int)
+    sizes = []
+    for i in range(N):
+        for j in range(M):
+            if lab[i, j] >= 0 or not np.isfinite(g[i, j]):
+                continue
+            stack = [(i, j)]
+            lab[i, j] = len(sizes)
+            n = 0
+            while stack:
+                x, y = stack.pop()
+                n += 1
+                for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    u, v = x + dx, y + dy
+                    if (0 <= u < N and 0 <= v < M and lab[u, v] < 0
+                            and np.isfinite(g[u, v]) and abs(g[u, v] - g[x, y]) < eps):
+                        lab[u, v] = lab[i, j]
+                        stack.append((u, v))
+            sizes.append(n)
+    if not sizes:
+        return {'n_plateaus': 0, 'largest': 0, 'largest_frac': float('nan'),
+                'mean_size': float('nan'), 'labels': lab}
+    s = np.asarray(sizes, dtype=float)
+    total = float(np.isfinite(g).sum())
+    return {'n_plateaus': int(s.size), 'largest': int(s.max()),
+            'largest_frac': float(s.max() / total), 'mean_size': float(s.mean()),
+            'labels': lab}
+
+
+def neutrality_summary(f, sem=None, eps_fracs=(0.01, 0.02, 0.05), z=2.0):
+    """Neutrality at several eps, plus the noise-based reading and the plateaus.
+
+    eps is set as a fraction of the grid's own fitness range, so the number is
+    dimensionless and survives the scale difference between environments. The
+    plateau statistics are reported at the middle eps.
+    """
+    g = np.asarray(f, dtype=float)
+    finite = g[np.isfinite(g)]
+    rng = float(finite.max() - finite.min()) if finite.size else float('nan')
+    out = {'range': rng, 'eps_fracs': list(eps_fracs), 'neutral_frac': {}}
+    for p in eps_fracs:
+        frac, n = neutral_fraction(g, p * rng)
+        out['neutral_frac'][f'{p}'] = frac
+        out['n_pairs'] = n
+    mid = eps_fracs[len(eps_fracs) // 2]
+    pl = neutral_plateaus(g, mid * rng)
+    pl.pop('labels', None)
+    out['plateaus'] = pl
+    out['plateau_eps_frac'] = mid
+    if sem is not None:
+        out['neutral_frac_noise'], _ = neutral_fraction_noise(g, sem, z=z)
+        out['noise_z'] = z
+    return out
 
 
 # ── A8. lambda reanalysis at extended lags ────────────────────────────────────

@@ -108,6 +108,53 @@ def encode_b64(arr):
     return base64.b64encode(np.asarray(arr, dtype='<f4').tobytes()).decode('ascii')
 
 
+# ── Fresh-brain (Xavier) genomes ──────────────────────────────────────────────
+def infer_hidden_size(genome_size):
+    """Recover H from a flat genome length: 54H + H + 6H + 6 = 61H + 6.
+
+    Lets the probes work with h128 runs without hard-coding a second set of
+    constants: the centroid genomes carry their own width.
+    """
+    per_unit = STATE_SIZE + 1 + OUTPUT_SIZE          # W1 row + b1 + one W2 column
+    h, rem = divmod(int(genome_size) - B2_SIZE, per_unit)
+    if rem != 0 or h <= 0:
+        raise ValueError(f'genome length {genome_size} is not 61*H + 6 for any positive H')
+    return h
+
+
+def hidden_size_from_genome_csv(path):
+    """Hidden width of the network a genome.csv was logged from (first row only).
+
+    Cheap enough to call on the 'random' branches, which otherwise never touch
+    the CSV: pandas reads a single row, and the base64 blob's byte length gives
+    the genome length without decoding the whole file.
+    """
+    row = pd.read_csv(path, dtype={'genome_b64': str}, nrows=1)
+    return infer_hidden_size(len(decode_b64(row['genome_b64'].iloc[0])))
+
+
+def xavier_genome(seed=None, hidden_size=HIDDEN_SIZE, rng=None):
+    """A freshly initialised brain, matching NNBrain._initGenome() exactly.
+
+    The sim uses Glorot/Xavier *uniform*: each weight is drawn i.i.d. from
+    U(-L, +L) with L = sqrt(6 / (fan_in + fan_out)) — so the limit differs per
+    layer (W1: fan 54->H, W2: fan H->6) — and both bias blocks start at zero.
+    An earlier version of this helper used a flat U(-0.1, 0.1) for the whole
+    genome, which is ~2-3x too narrow and gives biases the sim never has.
+    """
+    if rng is None:
+        rng = np.random.default_rng(seed)
+    h = int(hidden_size)
+    w1_lim = np.sqrt(6.0 / (STATE_SIZE + h))
+    w2_lim = np.sqrt(6.0 / (h + OUTPUT_SIZE))
+    return np.concatenate([
+        rng.uniform(-w1_lim, w1_lim, STATE_SIZE * h),   # W1
+        np.zeros(h),                                    # b1
+        rng.uniform(-w2_lim, w2_lim, h * OUTPUT_SIZE),  # W2
+        np.zeros(OUTPUT_SIZE),                          # b2
+    ])
+
+
 # ── genome.csv loading ────────────────────────────────────────────────────────
 def load_genome_csv(path, record_type=None, decode=True):
     """Load a run's genome.csv. Columns:
@@ -170,10 +217,18 @@ def joint_pca_plane(centroid_stacks, anchor=None):
 
 def project_onto_plane(points, plane):
     """Project genome vectors onto (u,v) plane coords relative to the anchor.
-    Returns (n,2) array of (alpha, beta)."""
+    Returns (n,2) array of (alpha, beta).
+
+    errstate: on macOS/Accelerate (numpy 2.0) a large float64 matmul raises
+    spurious divide/overflow/invalid flags even when every input is finite and
+    every output is correct — verified against einsum and an explicit dot to
+    3e-14 on a (400, 3910) projection. Silencing them here keeps the real
+    warnings visible instead of drowning them in per-run noise.
+    """
     P = np.atleast_2d(points).astype(np.float64) - plane['anchor']
-    a = P @ plane['u']
-    b = P @ plane['v']
+    with np.errstate(divide='ignore', over='ignore', invalid='ignore'):
+        a = P @ plane['u']
+        b = P @ plane['v']
     return np.column_stack([a, b])
 
 

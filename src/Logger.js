@@ -55,7 +55,7 @@ const WEIGHT_SNAPSHOT_PRECISION = 6;
 // and per-row size is negligible. Lower if disk/memory becomes a concern.
 const MAX_ORGANISM_LOG_PER_GEN = 20000;
 // Weight snapshots disabled — full vectors are expensive and not needed
-// while the primary per-organism weight metric is learned_weight_diff (MAD).
+// while the primary per-organism weight metric is learned_weight_diff (mean absolute weight difference).
 // Re-enable if PCA/t-SNE on raw weight vectors is needed for a specific run.
 const LOG_W1_SNAPSHOT        = false;  // was true
 const LOG_ACTIVE_SNAPSHOT    = false;  // was true
@@ -166,7 +166,7 @@ class Logger {
         // Average lifetime
         const avg_lifetime = sorted.reduce((s, a) => s + (a.lifetime || 0), 0) / n;
 
-        // Learned weight difference: mean absolute deviation between active_weights and
+        // Learned weight difference: mean absolute difference between active_weights and
         // genome_weights across ALL agents (not just top 20%) — population-wide average
         // is more informative for tracking assimilation than the selected cohort alone.
         // Only meaningful in Condition A (RL enabled).
@@ -300,7 +300,7 @@ class Logger {
             cave_entries:             agent.cave_entry_count || 0,
             cave_entries_day:         agent.cave_entries_day || 0,
             cave_entries_night:       agent.cave_entries_night || 0,
-            // learned_weight_diff: MAD between active_weights and genome_weights.
+            // learned_weight_diff: mean absolute weight difference between active_weights and genome_weights.
             // This is the primary per-organism weight metric — measures how much
             // within-lifetime RL has shifted the policy away from the inherited genome.
             // Non-zero only in the learning condition; ~0 in GA-only and Pure RL

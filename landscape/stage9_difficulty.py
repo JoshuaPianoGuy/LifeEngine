@@ -153,6 +153,15 @@ def load_grid(grid_dir):
         'sigma_evo': s_evo, 'sigma_learn': s_learn,
         'life_evo': life_evo, 'life_learn': life_learn,
         'paired_sem': paired_sem,
+        # The per-repeat cubes, so a caller can tell a cell averaged over all R
+        # maps from one averaged over a subset. reconstruct_grid() collapses the
+        # repeats silently, and on a partly-finished array that matters: repeats
+        # are different MAPS and terrain variance (sigma_vary ~ 6-8) dwarfs most
+        # spatial structure, so a 3-map mean is not on the same scale as a 5-map
+        # mean. n_off / n_on count the repeats actually present per cell.
+        'cube_off': cube_off, 'cube_on': cube_on,
+        'n_off': np.isfinite(cube_off).sum(axis=2),
+        'n_on': np.isfinite(cube_on).sum(axis=2),
         'plane_name': plane_name or 'plane',
         'extent': [float(alphas[0]), float(alphas[-1]), float(betas[0]), float(betas[-1])],
         'grid_dir': grid_dir,

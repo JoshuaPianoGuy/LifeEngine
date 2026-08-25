@@ -195,5 +195,54 @@ c2 = ld.compare_metric(1.0, 0.5, None, None)
 check_true('no SE -> nan Z, diff still reported',
            np.isnan(c2['z']) and c2['diff'] == 0.5)
 
+# ── A10 neutrality ────────────────────────────────────────────────────────────
+print('\nA10 neutrality')
+# A perfectly flat grid: every adjacent pair is neutral at any eps > 0, and the
+# whole grid is one plateau.
+flat = np.zeros((10, 10))
+check('flat grid: neutral fraction = 1', ld.neutral_fraction(flat, 0.1)[0], 1.0)
+pl = ld.neutral_plateaus(flat, 0.1)
+check('flat grid: one plateau', pl['n_plateaus'], 1)
+check('flat grid: plateau covers everything', pl['largest_frac'], 1.0)
+
+# A plane f = i has every 4-neighbour step equal to exactly 0 (along beta) or 1
+# (along alpha). On a 10x10 grid that is 90 steps of each, so eps just under 1
+# leaves exactly the 90 beta steps neutral -> 0.5, and eps just over 1 catches
+# all 180 -> 1.0. This pins the boundary behaviour of the < comparison.
+ramp = np.repeat(np.arange(10.0)[:, None], 10, axis=1)
+check('plane: neutral fraction at eps=0.99', ld.neutral_fraction(ramp, 0.99)[0], 0.5)
+check('plane: neutral fraction at eps=1.01', ld.neutral_fraction(ramp, 1.01)[0], 1.0)
+check('plane: pair count = 2*N*(N-1)', ld.neutral_fraction(ramp, 1.0)[1], 180)
+# At eps < 1 each alpha row is its own plateau: 10 stripes of 10 cells.
+pl = ld.neutral_plateaus(ramp, 0.99)
+check('plane: 10 stripe plateaus', pl['n_plateaus'], 10)
+check('plane: each stripe is 10 cells', pl['mean_size'], 10.0)
+
+# Two flat terraces separated by one big jump: the neutral graph must NOT bridge
+# them, i.e. plateaus follow the terraces, not the eps-blind bounding box.
+terr = np.zeros((10, 10))
+terr[5:, :] = 100.0
+pl = ld.neutral_plateaus(terr, 1.0)
+check('two terraces -> two plateaus', pl['n_plateaus'], 2)
+check('two terraces -> each is half the grid', pl['largest_frac'], 0.5)
+
+# Noise-based neutrality: identical fitness with real error bars is unresolved
+# everywhere; a huge separation with tiny error bars is resolved nowhere-neutral.
+sem = np.full((8, 8), 1.0)
+check('noise neutrality: flat grid unresolved', ld.neutral_fraction_noise(np.zeros((8, 8)), sem)[0], 1.0)
+steep = np.repeat(np.arange(8.0)[:, None], 8, axis=1) * 100.0
+check_true('noise neutrality: steep grid resolves the alpha steps',
+           abs(ld.neutral_fraction_noise(steep, sem)[0] - 0.5) < 1e-9,
+           f'got {ld.neutral_fraction_noise(steep, sem)[0]:.3f}')
+
+# The summary must scale eps by the grid's own range, so a landscape and the
+# same landscape times 1000 report identical neutrality.
+s1 = ld.neutrality_summary(ramp)
+s2 = ld.neutrality_summary(ramp * 1000.0)
+check_true('neutrality summary is scale-invariant',
+           s1['neutral_frac'] == s2['neutral_frac'],
+           f"{s1['neutral_frac']} vs {s2['neutral_frac']}")
+check('summary reports the range', s1['range'], 9.0)
+
 print('\n' + ('ALL PASS' if not FAILS else f'{len(FAILS)} FAILURES: {FAILS}'))
 sys.exit(1 if FAILS else 0)

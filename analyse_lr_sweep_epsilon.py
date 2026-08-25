@@ -38,7 +38,7 @@ Metrics (all read from generations.csv, exactly as the other sweep scripts):
     top20percent_fitness     -- average fitness of the top 20%
     peak_population          -- peak organism count in a generation
     total_agents             -- total organisms alive in a generation
-    avg_learned_weight_diff  -- MAD: mean |active - genome| (see calculateDrift)
+    avg_learned_weight_diff  -- mean absolute weight difference: mean |active - genome| (see calculateDrift)
 
 Outputs (into --out), per metric:
     eps_curves_<metric>.png   -- metric over generations, panel per decay, one
@@ -48,7 +48,7 @@ Outputs (into --out), per metric:
                                  panel per decay. Each SEED's own last-N-gen mean
                                  (averaged over its 4 epsilon_start runs) as a
                                  point, PLUS the overall mean +/- std across the
-                                 3 seeds as a bold line. NOT written for MAD (a
+                                 3 seeds as a bold line. NOT written for mean absolute weight difference (a
                                  diagnostic best read over time, not as an
                                  endpoint).
 Plus eps_summary.csv: tidy (decay, lr, metric, mean, std, sem, count).
@@ -93,11 +93,11 @@ METRICS = {
     'top20percent_fitness':    ('Top-20% fitness',           '#059669', '{:.3f}'),
     'peak_population':          ('Peak population',           '#0891B2', '{:.0f}'),
     'total_agents':            ('Total agents',              '#92400E', '{:.0f}'),
-    'avg_learned_weight_diff': ('Learned weight diff (MAD)', '#7C3AED', '{:.4g}'),
+    'avg_learned_weight_diff': ('Mean absolute weight difference', '#7C3AED', '{:.4g}'),
 }
 DEFAULT_METRICS = list(METRICS)
 
-# MAD gets NO endpoint plot: it is a learning DIAGNOSTIC whose value is in how it
+# Mean absolute weight difference gets NO endpoint plot: it is a learning DIAGNOSTIC whose value is in how it
 # changes over generations, not in a single last-N-gen number (higher/lower isn't
 # "better"). It still gets the over-generation curve.
 NO_FINAL_METRICS = {'avg_learned_weight_diff'}

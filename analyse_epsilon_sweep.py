@@ -44,9 +44,9 @@ count — different measurements, so labelled separately:
     top20percent_fitness     -- average fitness of the top 20%          (curves + endpoint)
     peak_population          -- peak organism count in a generation     (curves + endpoint)
     total_agents             -- total organisms alive in a generation   (curves + endpoint)
-    avg_learned_weight_diff  -- MAD: mean |active - genome|             (curves only)
+    avg_learned_weight_diff  -- mean absolute weight difference: mean |active - genome|             (curves only)
     avg_network_weight_mag   -- RMS magnitude of the network weights    (curves only)
-The MAD/RMS learning diagnostics get NO endpoint plot (higher/lower isn't
+The mean absolute weight difference / RMS learning diagnostics get NO endpoint plot (higher/lower isn't
 "better"). Plus a tidy epsilon_sweep_summary.csv behind the endpoint plots.
 
 Usage
@@ -87,7 +87,7 @@ EPS_COLOURS = ['#2563EB', '#059669', '#DC2626', '#D97706', '#7C3AED', '#0891B2']
 
 # Metric column -> (axis/panel label, accent colour, per-cell value format).
 # Colours reuse the LR-script palette: fitness blue/green, population cyan/brown,
-# MAD purple, RMS pink — so the two experiments' figures match. "Fitness" is the
+# Mean absolute weight difference purple, RMS pink — so the two experiments' figures match. "Fitness" is the
 # species' fitness metric; "population"/"agents" is the organism count — kept
 # separate in the labels because they measure different things.
 METRICS = {
@@ -95,12 +95,12 @@ METRICS = {
     'top20percent_fitness':    ('Top-20% fitness',           '#059669', '{:.3f}'),
     'peak_population':          ('Peak population',           '#0891B2', '{:.0f}'),
     'total_agents':            ('Total agents',              '#92400E', '{:.0f}'),
-    'avg_learned_weight_diff': ('Learned weight diff (MAD)', '#7C3AED', '{:.4g}'),
+    'avg_learned_weight_diff': ('Mean absolute weight difference', '#7C3AED', '{:.4g}'),
     'avg_network_weight_mag':  ('RMS weight magnitude',      '#DB2777', '{:.4g}'),
 }
 DEFAULT_METRICS = list(METRICS)
 
-# The endpoint (mean-of-last-N-gens) plots cover fitness + population only. MAD /
+# The endpoint (mean-of-last-N-gens) plots cover fitness + population only. Mean absolute weight difference /
 # RMS are learning diagnostics we only show as over-generation curves, so they
 # get no endpoint plot (higher/lower isn't "better" for them anyway).
 NO_FINAL_METRICS = {'avg_learned_weight_diff', 'avg_network_weight_mag'}

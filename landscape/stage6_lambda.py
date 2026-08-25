@@ -86,8 +86,12 @@ def mutate(genome, rng):
 
 def _start_genome(genome_csv, start):
     if start == 'random':
-        rng = np.random.default_rng(20260718)
-        return np.clip(rng.uniform(-0.1, 0.1, ll.GENOME_SIZE), -1, 1), 'random'
+        # A freshly initialised brain, drawn exactly as NNBrain._initGenome()
+        # does (Glorot/Xavier uniform per layer, zero biases). Width comes from
+        # the run's own genomes so h128 runs get an h128 random start.
+        return (ll.xavier_genome(seed=20260718,
+                                 hidden_size=ll.hidden_size_from_genome_csv(genome_csv)),
+                'random')
     if start in ('centroid', 'evolved'):
         gens, mat = ll.centroid_trajectory(genome_csv)
         return mat[-1].copy(), f'centroid_g{int(gens[-1])}'

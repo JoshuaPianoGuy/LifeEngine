@@ -327,7 +327,7 @@ def plot_weight_drift(df, gen_df, label, out_dir='.'):
     if not has_active:
         print("  Skipping: no active_weights data"); return
 
-    # ── Per-organism MAD: genome W1 vs corresponding active slice ───────────
+    # ── Per-organism mean absolute weight difference: genome W1 vs corresponding active slice ───────────
     # Use the full active_weights length aligned to w1 for comparability with
     # avg_learned_weight_diff (which covers all 1702 weights, not just W1).
     # We align to the W1 size because w1_weights logs only the first layer.
@@ -345,7 +345,7 @@ def plot_weight_drift(df, gen_df, label, out_dir='.'):
     df = df.copy()
     df['mad'] = df.apply(mad, axis=1)
 
-    # Check if RL is actually doing anything (GA-only: active == genome => MAD=0)
+    # Check if RL is actually doing anything (GA-only: active == genome => mean absolute weight difference=0)
     overall_mad = df['mad'].mean()
     if overall_mad < 1e-5:
         print("  Skipping weight drift: active_weights identical to genome "
@@ -362,7 +362,7 @@ def plot_weight_drift(df, gen_df, label, out_dir='.'):
 
     fig, axes = plt.subplots(1, 2, figsize=(14, 4))
 
-    # Left: raw MAD per generation
+    # Left: raw mean absolute weight difference per generation
     ax = axes[0]
     ax.plot(gens, diffs, color=PALETTE['drift'], lw=0.8, alpha=0.5,
             label='per gen mean')
@@ -378,13 +378,13 @@ def plot_weight_drift(df, gen_df, label, out_dir='.'):
             ha='right', va='bottom', color='#374151',
             bbox=dict(boxstyle='round,pad=0.3', fc='#F3F4F6', ec='none'))
 
-    # Right: overlay MAD with avg_learned_weight_diff from generations.csv
+    # Right: overlay mean absolute weight difference with avg_learned_weight_diff from generations.csv
     # (the scalar already logged) for cross-validation
     ax2 = axes[1]
     ax2.plot(gens, diffs, color=PALETTE['drift'], lw=0.8, alpha=0.4,
-             label='MAD (from organisms.csv)')
+             label='Mean abs. weight difference (organisms.csv)')
     ax2.plot(gens[s_idx], smoothed, color=PALETTE['drift'], lw=2,
-             label=f'MAD {w}-gen mean')
+             label=f'Mean abs. weight difference, {w}-gen mean')
 
     if 'avg_learned_weight_diff' in gen_df.columns:
         gd = gen_df.sort_values('generation')
@@ -396,7 +396,7 @@ def plot_weight_drift(df, gen_df, label, out_dir='.'):
 
     ax2.set_xlabel('Generation', fontsize=11)
     ax2.set_ylabel('Weight Difference', fontsize=10)
-    ax2.set_title('Cross-validation: organisms.csv MAD vs generations.csv scalar',
+    ax2.set_title('Cross-validation: organisms.csv mean abs. weight difference vs generations.csv scalar',
                   fontsize=11)
     ax2.legend(fontsize=8)
     note2 = ('Both lines measuring the same thing from different sources.\n'

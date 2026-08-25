@@ -57,7 +57,7 @@ Outputs (into --out):
                                             fitness, peak_population, total_agents),
                                             one line per condition. Less
                                             behavioural, useful head-to-head context.
-    condition_learning_diagnostics.png   -- MAD (avg_learned_weight_diff, the
+    condition_learning_diagnostics.png   -- mean absolute weight difference (avg_learned_weight_diff, the
                                             within-life learning signal; ~0 for
                                             evolution) and genome_variance (GA
                                             diversity) over generations, one line
@@ -262,12 +262,12 @@ GEN_METRICS = {
     'peak_population':      'Peak population',
     'total_agents':         'Total agents',
 }
-# Learning diagnostics (generations.csv). MAD = mean |active - genome| weight,
+# Learning diagnostics (generations.csv). Mean absolute weight difference = mean |active - genome| weight,
 # i.e. how much is learned WITHIN a life — non-zero only where RL runs (the
 # learning condition; ~0 for evolution). genome_variance = GA population
 # diversity (mean per-weight variance across genomes).
 DIAG_METRICS = {
-    'avg_learned_weight_diff': 'Learned weight diff (MAD)',
+    'avg_learned_weight_diff': 'Mean absolute weight difference',
     'genome_variance':         'Genome variance',
 }
 # avg_lifetime + the diagnostics get their own plots but are read here too.
@@ -415,16 +415,16 @@ def plot_gen_metrics(cond_gen, smooth, out_dir):
 
 
 def plot_learning_diagnostics(cond_gen, smooth, out_dir):
-    """MAD + genome variance over generations (from generations.csv), one panel
-    each, one line per condition (mean ± std across seeds). MAD (avg_learned_
+    """Mean absolute weight difference + genome variance over generations (from generations.csv), one panel
+    each, one line per condition (mean ± std across seeds). Mean absolute weight difference (avg_learned_
     weight_diff) is the within-life learning signal — non-zero for the learning
     condition, ~0 for evolution (active === genome); genome_variance is the GA's
-    population diversity. y-axes auto-scaled per panel (MAD is tiny vs variance)."""
-    print("  Plotting learning diagnostics (MAD, genome variance) ...")
+    population diversity. y-axes auto-scaled per panel (mean absolute weight difference is tiny vs variance)."""
+    print("  Plotting learning diagnostics (mean absolute weight difference, genome variance) ...")
     metrics = [m for m in DIAG_METRICS
                if any(m in md.columns for md, _sd in cond_gen.values())]
     if not cond_gen or not metrics:
-        print("  (no generations.csv MAD / genome_variance columns — skipping)")
+        print("  (no generations.csv mean absolute weight difference / genome_variance columns — skipping)")
         return
     n = len(metrics)
     fig, axs = plt.subplots(1, n, figsize=(7 * n, 5))
@@ -440,7 +440,7 @@ def plot_learning_diagnostics(cond_gen, smooth, out_dir):
     if handles:
         axs[0].legend(handles, labels, fontsize=10, title='condition')
     plt.suptitle('Learning diagnostics over generations — learning vs evolution\n'
-                 '(MAD = within-life weight change; genome variance = GA diversity; '
+                 '(mean absolute weight difference = within-life weight change; genome variance = GA diversity; '
                  'mean ± std across seeds)', fontsize=13, fontweight='bold', y=1.02)
     plt.tight_layout()
     path = os.path.join(out_dir, f'condition_learning_diagnostics{_SUFFIX}.png')

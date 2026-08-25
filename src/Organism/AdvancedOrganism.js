@@ -181,6 +181,32 @@ class AdvancedOrganism extends Organism {
         this.cave_entries_day     = 0;    // of those, entered during day
         this.cave_entries_night   = 0;    // of those, entered during night
         this._was_in_cave         = false;
+
+        // ── Energy ledger (face-validity audit; see src/eval/validate.js) ─────
+        // Every path that moves this.energy also books the amount here, so the
+        // identity
+        //     start + food - decay - predation == energy   (while living)
+        // can be checked exactly rather than assumed. These are plain
+        // accumulators — nothing reads them during the simulation, so they
+        // cannot change behaviour, and the cost is one add per energy event.
+        this.audit_start_energy        = START_ENERGY;
+        this.audit_energy_from_food    = 0;   // sum of the `gained` term in _processFoodEaten
+        this.audit_energy_lost_decay   = 0;   // sum of the per-event `decay` term
+        this.audit_energy_lost_predation = 0; // sum of drainAmount over drain CONTACTS
+        // Drain contacts, NOT drain ticks: two predators latched on the same
+        // global tick drain twice but increment drained_ticks once (it is
+        // de-duplicated for the behaviour metrics). The ledger needs the
+        // un-deduplicated count, so it is tracked separately.
+        this.audit_drain_contacts      = 0;
+        // Decay events broken out by the day/night x cave branch, so the
+        // "cave at night is free" rule is checkable from the counters alone:
+        // audit_decay_energy_night_cave must be 0 with
+        // audit_decay_events_night_cave > 0 for the check to be informative.
+        this.audit_decay_events_night_cave = 0;
+        this.audit_decay_energy_night_cave = 0;
+        this.audit_decay_events_day_cave   = 0;
+        this.audit_decay_events_night_open = 0;
+        this.audit_decay_events_day_open   = 0;
         // Why it died: 'drained' (predator drain delivered the killing blow),
         // 'starved' (energy ran out from decay), 'lifespan' (hit MAX_LIFETIME).
         // Stays null for organisms still alive at generation end → 'survived'.
@@ -271,6 +297,21 @@ class AdvancedOrganism extends Organism {
             }
 
             this.energy -= decay;
+            // Ledger: book the decay against the branch that produced it. The
+            // night-in-cave branch must contribute exactly 0 energy however
+            // many events it sees — that is the invariant validate.js checks.
+            this.audit_energy_lost_decay += decay;
+            if (is_night) {
+                if (in_cave) {
+                    this.audit_decay_events_night_cave++;
+                    this.audit_decay_energy_night_cave += decay;
+                } else {
+                    this.audit_decay_events_night_open++;
+                }
+            } else {
+                if (in_cave) this.audit_decay_events_day_cave++;
+                else         this.audit_decay_events_day_open++;
+            }
             // Scale penalty by actual decay so 2x decay situations produce
             // 2x the negative signal. Night-cave case (decay=0) fires no
             // penalty, which is correct since no energy is lost there.
@@ -319,6 +360,7 @@ class AdvancedOrganism extends Organism {
             const value  = this._foodValue();
             const gained = Math.min(value, this.max_energy - this.energy);
             this.energy                     += gained;
+            this.audit_energy_from_food     += gained;
             this.cumulative_food_score      += value;
             this.pending_reward             += value;
             this.energyGainedSinceReproduction += gained;  // track for reproduction trigger
@@ -334,6 +376,13 @@ class AdvancedOrganism extends Organism {
     // REINFORCE sees the predator contact signal on the same tick it occurs.
     notifyPredatorDrain(amount) {
         this.pending_reward -= PREDATOR_DRAIN_PENALTY * amount;
+
+        // Ledger: one booking per CONTACT. PredatorDrainCell has already
+        // subtracted `amount` from this.energy, so this mirrors it exactly —
+        // including the case of several drain cells landing on one tick, which
+        // the drained_ticks counter below deliberately collapses to one.
+        this.audit_energy_lost_predation += amount;
+        this.audit_drain_contacts++;
 
         // Count drain ticks and distinct attachment episodes. De-duplicate
         // multiple drain cells/predators hitting the same global tick, and treat
