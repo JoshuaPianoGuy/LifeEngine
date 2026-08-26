@@ -191,17 +191,24 @@ GROUP_ORDER = [
 ]
 
 
-def group_label(condition, group, threshold, replacement):
-    """The row label, given the split the slice set was actually built with."""
+def group_label(condition, group, threshold, replacement, norm=None):
+    """The row label, given the split the slice set was actually built with.
+
+    `norm` maps the split threshold onto the figure's own axis, so the label
+    quotes the same units as every other number on the page. Left raw only when
+    the figure itself is raw.
+    """
     cond = condition.capitalize()
     if group != 'underperform':
         return f'{cond} — succeeded'
     if threshold is None or not np.isfinite(threshold):
         return f'{cond} — underperformed'
+    t = norm(threshold) if norm else threshold
+    fmt = '{:.3f}'.format(t) if norm else '{:g}'.format(t)
     if abs(threshold - replacement) < 1e-6:
-        return f'{cond} — failed (f < {threshold:g}, below replacement)'
-    return (f'{cond} — weakest runs (f < {threshold:g}, a median split — '
-            f'still above replacement)')
+        return f'{cond} — failed (f < {fmt}, below viability)'
+    return (f'{cond} — weakest runs (f < {fmt}, a median split — '
+            f'still above viability)')
 
 # How each condition's TRAJECTORY is drawn. These are not the row-label colours
 # above: a row label says which group of runs the panel is about, while these say
@@ -295,7 +302,7 @@ def discover(slices_root, env=''):
     return slices
 
 
-def ordered(slices, replacement):
+def ordered(slices, replacement, norm=None):
     """Rows of (label, colour, [slice, ...]) in GROUP_ORDER, best-first inside."""
     rows = []
     for cond, group, colour in GROUP_ORDER:
@@ -303,7 +310,7 @@ def ordered(slices, replacement):
         sel.sort(key=lambda s: -s['final_fitness'])
         if sel:
             label = group_label(cond, group, sel[0].get('split_threshold'),
-                                replacement)
+                                replacement, norm)
             rows.append((label, colour, sel))
     return rows
 
@@ -479,13 +486,32 @@ def resolve_replacement(explicit, calib_json):
             f'lower bound, so viable % is an UPPER bound')
 
 
-def _panel(ax, grid, G, cmap, norm):
+def _panel(ax, grid, G, cmap, norm, threshold=None):
     """One slice as a heatmap with the anchor run's trajectory — and nothing else.
 
     grid is indexed [i=alpha, j=beta]; imshow wants [row=y=beta], hence the .T.
+
+    THE VIABILITY CONTOUR IS OFF BY DEFAULT (--viability-contour turns it on).
+    A bare threshold line does not say WHICH SIDE is viable, and on a marginal
+    slice that is actively misleading: hard seed 2004 ends at f = 0.150 against a
+    0.136 threshold, so its endpoint reads as sitting on the boundary when the
+    run it came from finished at 3.60, below replacement. The contour is not
+    wrong there — probe viability is an UPPER bound, because 4.375 prices one of
+    the three gates in reproduce() — but a reader cannot see that from a dashed
+    line, and will read "inside the line" as "this run was fine".
+
+    The viable PERCENTAGE stays in every panel title, which carries the same
+    information without inviting a per-pixel reading of a bound that is only
+    one-sided.
     """
     im = ax.imshow(grid.T, origin='lower', extent=G['extent'], cmap=cmap,
                    norm=norm, interpolation='nearest', aspect='auto')
+    if threshold is not None:
+        g = np.asarray(grid, dtype=float)
+        if np.nanmin(g) < threshold < np.nanmax(g):
+            ax.contour(G['alphas'], G['betas'], g.T, levels=[threshold],
+                       colors='white', linestyles='--', linewidths=1.3,
+                       zorder=3.5)
     for t in G['traj']:
         xy = t['xy']
         if xy.size == 0:
@@ -510,7 +536,7 @@ def _panel(ax, grid, G, cmap, norm):
 
 
 def _surface_figure(rows, field, cmap, title, sub, out_png, annotate,
-                    norm_kind='linear'):
+                    norm_kind='linear', viab=None, run_f=None):
     """One row per outcome group, one column per slice in that group.
 
     annotate(G) -> the short string appended to each panel title (the viable
@@ -543,7 +569,7 @@ def _surface_figure(rows, field, cmap, title, sub, out_png, annotate,
                 ax.set_visible(False)
                 continue
             G = sel[c]
-            im = _panel(ax, G[field], G, cmap, norm)
+            im = _panel(ax, G[field], G, cmap, norm, threshold=viab)
             # The plane score belongs on the panel: it is how much of the runs'
             # motion this 2D cut actually shows, and it is NOT equal across
             # panels — failed runs share a plane better than successful ones, so
@@ -551,7 +577,13 @@ def _surface_figure(rows, field, cmap, title, sub, out_png, annotate,
             # unless the reader can see both numbers.
             plane = (f"  ·  plane {G['plane_frac']:.0%}"
                      if np.isfinite(G.get('plane_frac', np.nan)) else '')
-            ax.set_title(f"seed {G['seed']}  ·  run f = {G['final_fitness']:.2f}"
+            # run f in the SAME units as everything else on the figure. It is
+            # the run's own logged avg_fitness, a population measurement rather
+            # than a probe, so the shared min-max map is a convenience for
+            # comparability and not a claim that the two are the same estimator.
+            # The raw value stays in slice_summary.csv.
+            rf = run_f(G) if run_f else G['final_fitness']
+            ax.set_title(f"seed {G['seed']}  ·  run f = {rf:.3f}"
                          f'{plane}\n{annotate(G)}',
                          fontsize=9, color=INK, pad=4)
             if c == 0:
@@ -600,6 +632,102 @@ def _surface_figure(rows, field, cmap, title, sub, out_png, annotate,
     fig.savefig(out_png, dpi=160, bbox_inches='tight', facecolor='white')
     plt.close(fig)
     print(f'  wrote {out_png}')
+
+
+def fig_paired(rows, out_path, threshold, unit, title, sub, viab, run_f):
+    """Each slice twice, RL OFF beside RL ON, on one shared colour scale.
+
+    The separate f_evo / f_learn figures answer "what does this surface look
+    like" but make the comparison that matters an act of memory: the reader has
+    to hold one page in mind while looking at the other. Here the two passes for
+    a given slice are ADJACENT, so what learning adds at a genome is a saccade
+    rather than a page turn.
+
+    ONE NORM ACROSS BOTH PASSES, and it has to be: the pair is only readable as
+    a comparison if a colour means the same fitness on the left as on the right.
+    Normalising each pass separately would make the RL-on panel look better (or
+    worse) purely by rescaling.
+
+    Columns are ordered off, on, off, on, ... rather than all-off then all-on,
+    so the pairing is positional and needs no legend to decode.
+    """
+    fields = ('f_evo', 'f_learn')
+    vals = np.concatenate([s[f][np.isfinite(s[f])].ravel()
+                           for _l, _c, sel in rows for s in sel for f in fields])
+    norm = plt.Normalize(float(np.nanpercentile(vals, 1)),
+                         float(np.nanpercentile(vals, 99)))
+
+    n_slices = max(len(sel) for _l, _c, sel in rows)
+    ncol, nrow = n_slices * 2, len(rows)
+    fig, axs = plt.subplots(nrow, ncol, figsize=(2.9 * ncol + 1.6, 3.5 * nrow),
+                            squeeze=False)
+
+    im = None
+    for r, (label, colour, sel) in enumerate(rows):
+        for c in range(n_slices):
+            for k, field in enumerate(fields):
+                ax = axs[r][2 * c + k]
+                if c >= len(sel):
+                    ax.set_visible(False)
+                    continue
+                G = sel[c]
+                im = _panel(ax, G[field], G, 'viridis', norm, threshold=viab)
+                pct = viable_pct(G[field], threshold)
+                ax.set_title(('RL OFF' if k == 0 else 'RL ON')
+                             + f'\n{pct:.1f}% viable', fontsize=8.5,
+                             color=INK, pad=3)
+                if k == 0:
+                    # The slice's identity sits over the PAIR, not over one half.
+                    ax.text(1.03, 1.20, f"seed {G['seed']}  ·  run f = "
+                            f"{run_f(G):.3f}  ·  plane "
+                            f"{G['plane_frac']:.0%}",
+                            transform=ax.transAxes, ha='center', va='bottom',
+                            fontsize=9.5, color=INK)
+                if k == 0 and c == 0:
+                    ax.set_ylabel('β', fontsize=9, color=INK)
+                    ax.text(-0.34, 0.5, textwrap.fill(label, 26),
+                            transform=ax.transAxes, rotation=90, va='center',
+                            ha='center', fontsize=9.5, color=colour,
+                            fontweight='bold', linespacing=1.35)
+                else:
+                    ax.set_yticklabels([])
+                if r == nrow - 1:
+                    ax.set_xlabel('α', fontsize=9, color=INK)
+
+    # Each PAIR carries a header line above its two panel titles, so this needs
+    # more headroom than the single-surface figures: wrap the suptitle first,
+    # then give the axes only what is left under it.
+    title = '\n'.join(l for part in title.split('\n')
+                      for l in (textwrap.wrap(part, 104) or ['']))
+    n_title = title.count('\n') + 1
+    fig.subplots_adjust(left=.075, right=.9, top=.86 - .045 * n_title,
+                        hspace=.46, wspace=.12)
+    cax = fig.add_axes([.915, .12, .012, .62])
+    cb = fig.colorbar(im, cax=cax)
+    cb.set_label(sub, fontsize=9, color=INK)
+    cb.ax.tick_params(colors=INK, labelsize=8)
+    cb.outline.set_edgecolor(GRID_C)
+
+    handles = [Line2D([], [], color=TRAJ_STYLE[c]['colour'], lw=1.8,
+                      ls=TRAJ_STYLE[c]['ls'], label=TRAJ_STYLE[c]['label'])
+               for c in ('evolution', 'learning')
+               if c in {t['condition'] for _l, _c, sel in rows
+                        for G in sel for t in G['traj']}]
+    if viab is not None:
+        handles += [Line2D([], [], color='#9CA3AF', lw=1.4, ls='--',
+                           label=f'viability boundary ({viab:.3f})')]
+    handles += [Line2D([], [], color='none', marker='o', mfc=INK, mec='white',
+                       ms=6, label='gen 0'),
+                Line2D([], [], color='none', marker='*', mfc=INK, mec='white',
+                       ms=11, label='final generation')]
+    fig.legend(handles=handles, loc='lower center', ncol=len(handles),
+               frameon=False, fontsize=8.5, labelcolor=INK,
+               bbox_to_anchor=(.49, -.02))
+
+    fig.suptitle(title, fontsize=12.5, color=INK, y=.985)
+    fig.savefig(out_path, dpi=160, bbox_inches='tight', facecolor='white')
+    plt.close(fig)
+    print(f'  wrote {out_path}')
 
 
 def fig_rl_effect(rows, out_png, threshold, unit=''):
@@ -1013,6 +1141,18 @@ def write_summary(rows, path, threshold, normalised):
              if normalised else '   [raw food-score units]'))
 
 
+# How an environment key is NAMED on a figure. The key stays as it is — it is
+# the directory name, the CSV column and the --slices-root argument, and every
+# path already written depends on it — while the label is free to be the words a
+# reader should see. 'hard' is the internal shorthand for the roaming-predator
+# environment; 'predator' is what it actually is.
+ENV_TITLE = {'hard': 'predator', 'baseline': 'baseline'}
+
+
+def env_label_for(env, overrides):
+    return overrides.get(env, ENV_TITLE.get(env, env))
+
+
 def parse_root(spec):
     """ENV:PATH, or a bare PATH for a single unnamed environment."""
     if ':' in spec and not os.path.exists(spec):
@@ -1037,6 +1177,25 @@ def main():
                          'whose measured crossing (empirical_replacement_f, 5.39 '
                          'for the hard environment) replaces the theoretical '
                          'threshold. Off by default — see resolve_replacement().')
+    ap.add_argument('--format', default='png', choices=('png', 'pdf', 'both'),
+                    help='Figure format. pdf keeps the panels as vectors, which '
+                         'is what a thesis wants — the heatmap itself is raster '
+                         'either way, but the trajectories, contours and every '
+                         'label stay sharp at any zoom.')
+    ap.add_argument('--suffix-env', action='store_true',
+                    help='Name every figure <stem>_<env>.<ext> using the DISPLAY '
+                         'name, e.g. slices_off_vs_on_predator.pdf. Useful when '
+                         'figures from both environments end up in one folder — '
+                         'a thesis figures/ directory — where bare stems collide.')
+    ap.add_argument('--env-title', action='append', default=[], metavar='KEY=NAME',
+                    help='Repeatable. Rename an environment ON THE FIGURES only '
+                         '— the directory, the CSV column and --slices-root keep '
+                         "the key. Defaults: hard=predator. e.g. --env-title "
+                         'hard=roaming-predator')
+    ap.add_argument('--viability-contour', action='store_true',
+                    help='Draw a white dashed line at the viability threshold on '
+                         'each surface. OFF by default — see _panel() for why a '
+                         'bare threshold line misleads on marginal slices.')
     ap.add_argument('--raw', action='store_true',
                     help='Plot f(θ) in raw food-score units instead of min-max '
                          'normalising it to [0, 1]. See NORMALISATION.')
@@ -1092,32 +1251,52 @@ def main():
     threshold = (threshold_raw if rng is None
                  else float(rescale(np.array([threshold_raw]), rng)[0]))
     unit = '' if rng is None else '  — normalised'
-    print(f'viable = f(θ) > {threshold_raw:.3f}   [{thr_note}]')
+    print(f'viability threshold = {threshold:.4f} normalised '
+          f'(raw f(θ) > {threshold_raw:.3f})   [{thr_note}]')
     if rng is not None:
         print(f'normalised range [{rng[0]:.4f}, {rng[1]:.4f}] '
               f'({args.norm_scope} scope) -> threshold {threshold:.4f}')
 
-    # Spelled out on the figure: "viable" is a measured level, and a reader
-    # should not have to open the CSV to find out which one.
-    viab_note = (f'viable = f(θ) > {threshold_raw:g} (3.5 food ÷ 0.8 success rate) — '
-                 f'a lower bound, so these are upper bounds'
-                 if abs(threshold_raw - ld.VIABILITY_BASE) < 1e-9 else
-                 f'viable = f(θ) > {threshold_raw:.2f}, the measured self-replacement '
-                 f'level on this probe scale')
-    if rng is not None:
-        viab_note += (f'  ·  fitness min-max normalised on '
-                      f'[{rng[0]:.2f}, {rng[1]:.2f}] ({args.norm_scope} scope), '
-                      f'so the threshold sits at {threshold:.3f}')
+    # ONE SHORT LINE, in normalised units. The provenance of the threshold and
+    # the normalisation constants belong in the prose and in normalisation.csv,
+    # not baked into an image where they cannot be edited — the earlier
+    # three-line subtitle crowded the panels and had to be re-wrapped for every
+    # figure size. What a reader needs on the page is the number the viable
+    # percentages were computed against.
+    viab_note = (f'viability threshold {threshold:.3f}'
+                 if rng is not None else
+                 f'viability threshold f(θ) > {threshold_raw:g}')
+
+    exts = ('png', 'pdf') if args.format == 'both' else (args.format,)
+    contour = threshold if args.viability_contour else None
+    titles = {}
+    for spec in args.env_title:
+        if '=' not in spec:
+            raise SystemExit(f'--env-title wants KEY=NAME, got {spec!r}')
+        k, v = spec.split('=', 1)
+        titles[k] = v
+
+    def run_f(G):
+        """The run's logged final fitness, on the figure's own scale."""
+        v = G['final_fitness']
+        return v if rng is None else (v - rng[0]) / (rng[1] - rng[0])
+
+    def paths(out_dir, stem, env_name=''):
+        tail = f'_{env_name}' if (args.suffix_env and env_name) else ''
+        return [os.path.join(out_dir, f'{stem}{tail}.{e}') for e in exts]
 
     for env, root, slices in loaded:
         out_dir = os.path.join(args.out_dir, env) if env else args.out_dir
         os.makedirs(out_dir, exist_ok=True)
-        env_note = f'  —  {env} environment' if env else ''
-        print(f'\n{env or "slices"}: {len(slices)} slice(s) -> {out_dir}')
-        rows = ordered(slices, threshold_raw)
+        shown = env_label_for(env, titles)
+        env_note = f'  —  {shown} environment' if env else ''
+        print(f'\n{shown or "slices"}: {len(slices)} slice(s) -> {out_dir}')
+        to_norm = (None if rng is None
+                   else (lambda v: (v - rng[0]) / (rng[1] - rng[0])))
+        rows = ordered(slices, threshold_raw, to_norm)
         for label, _c, sel in rows:
             print(f'  {label:<62} {len(sel)} slice(s): '
-                  + ', '.join('seed %s (f=%.2f)' % (s['seed'], s['final_fitness'])
+                  + ', '.join('seed %s (f=%.3f)' % (s['seed'], run_f(s))
                               for s in sel))
 
         def pct_off(G):
@@ -1131,33 +1310,46 @@ def main():
         def med_lift(G):
             return f"median lift {np.nanmedian(G['lift']):+.3f}"
 
-        _surface_figure(
-            rows, 'f_evo', 'viridis',
-            'Fitness landscape slices, RL OFF — one plane per run, anchored on '
-            f'that run’s own trajectory{env_note}\n{viab_note}',
-            f'f(θ){unit}  (mean cumulative food score, 100 clones, GA off)',
-            os.path.join(out_dir, 'slices_f_evo.png'), annotate=pct_off)
+        for out in paths(out_dir, 'slices_off_vs_on', shown):
+            fig_paired(
+                rows, out, threshold, unit,
+                'Fitness landscape slices, RL OFF beside RL ON — identical '
+                f'cells, identical maps{env_note}\n{viab_note}',
+                f'f(θ){unit}  (mean cumulative food score, 100 clones, GA off)',
+                viab=contour, run_f=run_f)
 
-        _surface_figure(
-            rows, 'f_learn', 'viridis',
-            'Fitness landscape slices, RL ON — identical cells and identical '
-            f'maps, in-lifetime learning enabled{env_note}\n{viab_note}',
-            f'f(θ) with RL on{unit}',
-            os.path.join(out_dir, 'slices_f_learn.png'), annotate=pct_on)
+        for out in paths(out_dir, 'slices_f_evo', shown):
+            _surface_figure(
+                rows, 'f_evo', 'viridis',
+                'Fitness landscape slices, RL OFF — one plane per run, anchored '
+                f'on that run’s own trajectory{env_note}\n{viab_note}',
+                f'f(θ){unit}  (mean cumulative food score, 100 clones, GA off)',
+                out, annotate=pct_off, viab=contour, run_f=run_f)
 
-        _surface_figure(
-            rows, 'lift', 'RdBu_r',
-            'What learning adds:  lift = f(θ)|RL on − f(θ)|RL off, same θ, same '
-            f'5 maps{env_note}',
-            f'lift  (food score added by in-lifetime learning){unit}',
-            os.path.join(out_dir, 'slices_lift.png'), annotate=med_lift,
-            norm_kind='diverging')
+        for out in paths(out_dir, 'slices_f_learn', shown):
+            _surface_figure(
+                rows, 'f_learn', 'viridis',
+                'Fitness landscape slices, RL ON — identical cells and identical '
+                f'maps, in-lifetime learning enabled{env_note}\n{viab_note}',
+                f'f(θ) with RL on{unit}',
+                out, annotate=pct_on, viab=contour, run_f=run_f)
 
-        fig_rl_effect(rows, os.path.join(out_dir, 'rl_effect.png'), threshold,
-                      unit)
-        recs = fig_outcome_endpoints(
-            rows, os.path.join(out_dir, 'outcome_endpoints.png'), threshold,
-            unit, env_note)
+        for out in paths(out_dir, 'slices_lift', shown):
+            # No viability contour here: the threshold is a level on f(θ), and
+            # this panel shows a DIFFERENCE of two f(θ) values. A contour at
+            # 0.136 on a lift surface would mean nothing.
+            _surface_figure(
+                rows, 'lift', 'RdBu_r',
+                'What learning adds:  lift = f(θ)|RL on − f(θ)|RL off, same θ, '
+                f'same 5 maps{env_note}',
+                f'lift  (food score added by in-lifetime learning){unit}',
+                out, annotate=med_lift, norm_kind='diverging', run_f=run_f)
+
+        for out in paths(out_dir, 'rl_effect', shown):
+            fig_rl_effect(rows, out, threshold, unit)
+        recs = None
+        for out in paths(out_dir, 'outcome_endpoints', shown):
+            recs = fig_outcome_endpoints(rows, out, threshold, unit, env_note)
         if recs:
             write_endpoint_csv(recs, os.path.join(out_dir, 'endpoints.csv'))
         write_summary(rows, os.path.join(out_dir, 'slice_summary.csv'),

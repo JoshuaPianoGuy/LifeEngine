@@ -317,6 +317,11 @@ def main():
                          'B1 measured crossing.')
     ap.add_argument('--k-json', default=None,
                     help='calibration.json from the Stage-9 B1 step.')
+    ap.add_argument('--out-per-env', default=None, metavar='DIR',
+                    help='Also write landscape_metrics.csv into DIR/<env>/ for '
+                         'each environment, beside the figures those slices '
+                         'produced. The ENV field is split on "/" so an '
+                         'env/group label lands in the environment directory.')
     ap.add_argument('--norm-csv', default=None,
                     help='normalisation.csv from plot_slices.py. Fixes the '
                          'neutrality eps at 2%% of that SHARED fitness range so '
@@ -361,6 +366,29 @@ def main():
             fh.write(','.join(f'"{r.get(k, "")}"' if k in ('anchor', 'grid_dir')
                               else str(r.get(k, '')) for k in keys) + '\n')
     print(f'\n  wrote {csv_path}')
+
+    # Per-environment copies, so each figure directory carries the numbers for
+    # the slices it drew. The ENV field may be 'hard/failed'; the part before
+    # the slash is the environment and the part after is the outcome group, and
+    # both are kept as columns so the file stands on its own.
+    if args.out_per_env:
+        by_env = {}
+        for r in rows:
+            env = r['env'].split('/')[0]
+            by_env.setdefault(env, []).append(r)
+        for env, sub in sorted(by_env.items()):
+            d = os.path.join(args.out_per_env, env)
+            os.makedirs(d, exist_ok=True)
+            path = os.path.join(d, 'landscape_metrics.csv')
+            with open(path, 'w') as fh:
+                fh.write('environment,group,' + ','.join(keys[1:]) + '\n')
+                for r in sub:
+                    grp = r['env'].split('/', 1)[1] if '/' in r['env'] else ''
+                    fh.write(f'{env},{grp},' + ','.join(
+                        f'"{r.get(k, "")}"' if k in ('anchor', 'grid_dir')
+                        else str(r.get(k, '')) for k in keys[1:]) + '\n')
+            print(f'  wrote {path}   ({len(sub)} slices)')
+
     fig_slices(rows, os.path.join(args.out_dir, 'slice_metrics.png'))
 
 

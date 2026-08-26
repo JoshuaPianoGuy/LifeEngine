@@ -3,6 +3,16 @@
 # run_founder_probe_array.slurm — re-evaluate every LOGGED FOUNDER GENOME with
 # in-lifetime learning OFF and ON, to test genetic assimilation.
 #
+# TRANSFER THIS LIST, NOT JUST THE UNITS:
+#   assimilation/out/<units root>/     the jobs
+#   run_founder_probe_array.slurm      this file
+#   src/eval/run_probe.js              writes the "metrics" columns
+#   src/eval/probe.js                  computes mean_weight_drift
+# The first run of this experiment shipped only the first two, the cluster ran a
+# run_probe.js that predated the "metrics" key, and the whole array came back
+# missing mean_weight_drift with no error anywhere. The preflight now refuses to
+# start in that state.
+#
 # Build the units locally first (needs Python + the genome.csv files), then
 # transfer only the out-root:
 #
@@ -228,6 +238,28 @@ if ! grep -q '"metrics"[[:space:]]*:[[:space:]]*"founder"' "$JOBS"; then
     echo "ERROR: $JOBS does not request \"metrics\": \"founder\", so"
     echo "       mean_weight_drift would not be recorded. Rebuild with"
     echo "       assimilation/make_founder_jobs.py."
+    exit 1
+fi
+
+# STALE-BINARY GUARD. This is the failure that actually happened on the first
+# run: jobs.json asked for "metrics": "founder", the cluster's copy of
+# run_probe.js predated that feature, and it IGNORED the key — the array finished
+# clean and simply had no mean_weight_drift column. An older run_probe.js has no
+# way to complain, so the check has to live here.
+#
+# If this fires: transfer src/eval/run_probe.js AND src/eval/probe.js, not just
+# the slurm script and the units.
+if ! grep -q 'EXTRA_COLUMNS' src/eval/run_probe.js; then
+    echo "ERROR: src/eval/run_probe.js on this machine predates the \"metrics\""
+    echo "       jobs-file key, so it would IGNORE it and write the 15 base"
+    echo "       columns — no mean_weight_drift, and no error. Transfer the"
+    echo "       current src/eval/run_probe.js and src/eval/probe.js."
+    exit 1
+fi
+if ! grep -q 'mean_weight_drift' src/eval/probe.js; then
+    echo "ERROR: src/eval/probe.js on this machine does not compute"
+    echo "       mean_weight_drift, so the column would be written empty."
+    echo "       Transfer the current src/eval/probe.js."
     exit 1
 fi
 

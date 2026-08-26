@@ -101,11 +101,58 @@ A shuffle would balance the load equally well but spread the damage of a
 truncation across both passes, leaving the primary measurement with holes in it.
 That is the trade this ordering exists to avoid.
 
+MATCHING THE RL SETTINGS OF THE CONTROL — --rl-match
+-----------------------------------------------------
+The probe reads its RL hyperparameters from each run's own params.json. For a
+LEARNING run that is right: the RL-on pass reproduces the learning that lineage
+actually experienced. For an EVOLUTION run it is NOT, because those runs never
+ran RL and their params.json carries whatever the RL fields were left at:
+
+    evolution   lr=0.02   epsilon_enabled=TRUE
+    learning    lr=0.02   epsilon_enabled=false   (hard)
+    learning    lr=0.01   epsilon_enabled=false   (baseline)
+
+epsilon_enabled=true is not cosmetic. NNBrain pins epsilon to 0 only when the
+flag is FALSE; otherwise it decays epsilon_start -> epsilon_end (0.3 -> 0.05)
+over each organism's lifetime, injecting that share of RANDOM ACTIONS. So the
+control's RL-on pass is "learning plus 30%-decaying-to-5% random actions", at
+double the learning rate in the baseline. Its lift is then not comparable with
+the learning arm's, and its negative sign is largely that injection.
+
+--rl-match copies the RL hyperparameters of the SAME-SEED learning run into each
+evolution unit's config_overrides, so both arms' RL-on pass is the identical
+intervention and the lift contrast means what it claims to. It changes nothing
+about the learning units, and nothing about either arm's RL-OFF pass — that pass
+runs no RL, so these settings are inert in it.
+
+Only the keys src/eval/config.js actually applies are emitted: learning_rate,
+epsilon_start, epsilon_end, epsilon_decay_shape, epsilon_enabled, explore_bonus.
+trace_decay is NOT among them, so a difference there cannot be corrected this
+way — the builder checks and refuses rather than emitting an override that would
+be silently dropped. (All runs on disk are trace_decay=0.9, so it does not bite.)
+
+REBUILDING WITHOUT THE LOGS TREE — --from-units
+------------------------------------------------
+Every unit already carries its genomes as base64 in jobs.json plus the
+generation/founder index in meta.json, so a corrected unit can be rebuilt from
+an existing one without touching genome.csv at all. That is what --from-units
+does, and it is the only option once the run logs have been cleaned up. It is
+also much faster — no 100 MB CSV parse per run.
+
+--rl-passes then keeps the re-run small: the RL-OFF results are unaffected by any
+of this, so a correction only needs the RL-on half.
+
 Usage
 -----
   python assimilation/make_founder_jobs.py \\
       --logs-root logs_hard --env-label hard \\
       --out-root assimilation/out/founders_hard
+
+  # correct the control's RL-on pass, reusing the genomes already built:
+  python assimilation/make_founder_jobs.py \\
+      --from-units assimilation/out/founders_hard --env-label hard \\
+      --conditions evolution --rl-match --rl-passes on \\
+      --out-root assimilation/out/founders_hard_evomatch
 
   python assimilation/make_founder_jobs.py \\
       --logs-root logs --env-label baseline \\
@@ -139,6 +186,33 @@ CONDITIONS = {
     'learning':  ('learning',  'standard'),
 }
 
+# The RL keys src/eval/config.js actually applies. Anything outside this list
+# would be accepted into config_overrides and then silently ignored, which is
+# worse than refusing — see check_unmatchable().
+RL_OVERRIDE_KEYS = ('learning_rate', 'epsilon_start', 'epsilon_end',
+                    'epsilon_decay_shape', 'epsilon_enabled', 'explore_bonus')
+
+# RL settings that differ between runs but CANNOT be overridden through
+# config.js. If two runs disagree on one of these, --rl-match cannot make their
+# RL-on passes equivalent and says so instead of pretending.
+RL_UNMATCHABLE_KEYS = ('trace_decay',)
+
+
+def rl_settings(params):
+    return {k: params[k] for k in RL_OVERRIDE_KEYS if k in params}
+
+
+def check_unmatchable(evo_params, learn_params, label):
+    bad = [k for k in RL_UNMATCHABLE_KEYS
+           if evo_params.get(k) != learn_params.get(k)]
+    if bad:
+        raise SystemExit(
+            f'{label}: {", ".join(bad)} differs between the arms '
+            f'({[evo_params.get(k) for k in bad]} vs {[learn_params.get(k) for k in bad]}) '
+            f'and src/eval/config.js does not apply it, so --rl-match cannot '
+            f'equalise the two RL-on passes. Add the key to config.js first.')
+
+
 def run_final_fitness(run_dir):
     """Mean avg_fitness over the last 50 generations of generations.csv."""
     path = os.path.join(run_dir, 'generations.csv')
@@ -170,6 +244,84 @@ def discover(logs_root, condition):
             'params': p,
             'f': run_final_fitness(d),
         })
+    return out
+
+
+def gen0_founders(n, hidden_size, seed):
+    """n freshly Xavier-initialised genomes — a RESAMPLE of true generation 0.
+
+    Not a proxy. GAManager.spawnGeneration() spawns the founding cohort
+    "Xavier-random if gene_pool is null, i.e. generation 0", and
+    ll_common.xavier_genome() reproduces NNBrain._initGenome() exactly: Glorot
+    UNIFORM per layer (limits sqrt(6/(fan_in+fan_out)), different for W1 and W2)
+    with both bias blocks zero. So these are drawn from precisely the
+    distribution the real generation 0 came from.
+
+    WHAT THIS IS NOT: a replay. xavierRandom() uses unseeded Math.random(), so
+    the original gen-0 genomes are gone for good. Averaging 100 i.i.d. draws
+    gives an unbiased estimate of the same population quantity, but it is an
+    estimate, and its across-seed spread is terrain plus Monte-Carlo only —
+    there is no lineage divergence at generation 0, so that error bar is
+    narrower than the ones at 250+ for an uninteresting reason.
+
+    WHY THE 'DIFFERENT WEIGHT SPACES' WORRY DOES NOT APPLY: independent runs
+    really are near-orthogonal in weight space (permutation symmetry), which is
+    why a shared PCA plane collapses past ~4 trajectories and why averaging
+    genomes ACROSS runs yields a near-dead network. But f(theta) here is a
+    SCALAR measured by running the simulator, and each genome is probed on its
+    own — the 100 fitnesses are averaged, never the 100 genomes. No geometry is
+    involved, so where a genome sits relative to any evolved basin is irrelevant
+    to what it scores.
+
+    The RNG is seeded from the map seed so the draw is reproducible.
+    """
+    rng = np.random.default_rng(20260826 + int(seed))
+    out = []
+    for i in range(n):
+        g = ll.xavier_genome(hidden_size=hidden_size, rng=rng)
+        out.append({'generation': 0, 'founder_index': i,
+                    'logged_fitness': float('nan'),
+                    'b64': ll.encode_b64(g)})
+    return out
+
+
+def discover_units(units_root):
+    """Runs sourced from an ALREADY-BUILT units root instead of the logs tree.
+
+    jobs.json carries every genome as base64 and meta.json the generation /
+    founder index behind each, so a unit is a complete substitute for the
+    genome.csv it came from — and the only source left once the logs are gone.
+    """
+    out = []
+    for d in sorted(glob.glob(os.path.join(units_root, '*/'))):
+        d = d.rstrip('/')
+        mp, jp, pp = (os.path.join(d, 'meta.json'), os.path.join(d, 'jobs.json'),
+                      os.path.join(d, 'params.json'))
+        if not all(os.path.exists(x) for x in (mp, jp, pp)):
+            continue
+        m = json.load(open(mp))
+        out.append({'dir': d, 'name': m['run'], 'seed': int(m['seed']),
+                    'hidden_size': int(m['hidden_size']),
+                    'ticks': int(m['ticks']),
+                    'condition': m['condition'],
+                    'params': json.load(open(pp)),
+                    'f': m.get('run_final_fitness', float('nan')),
+                    'unit_meta': m, 'unit_jobs': jp})
+    return out
+
+
+def founders_from_unit(run):
+    """(meta, b64) pairs recovered from a built unit — no genome.csv needed."""
+    genomes = json.load(open(run['unit_jobs']))['genomes']
+    out = []
+    for g in run['unit_meta']['genome_index']:
+        b64 = genomes.get(g['genome'])
+        if b64 is None:
+            continue
+        out.append({'generation': int(g['generation']),
+                    'founder_index': int(g['founder_index']),
+                    'logged_fitness': float(g['logged_fitness']),
+                    'b64': b64})
     return out
 
 
@@ -235,9 +387,10 @@ def load_founders(run_dir, generations, n_founders):
 
 
 def build_unit(run, condition, env_label, generations, n_founders, repeats,
-               out_root):
+               out_root, founders=None, rl_overrides=None, rl_passes='both'):
     """One run -> one self-contained probe unit directory."""
-    founders = load_founders(run['dir'], generations, n_founders)
+    if founders is None:
+        founders = load_founders(run['dir'], generations, n_founders)
     if not founders:
         return None
 
@@ -266,9 +419,20 @@ def build_unit(run, condition, env_label, generations, n_founders, repeats,
     # See JOB ORDER in the module docstring. Two blocks, RL-off first: balances
     # every shard for any N, AND makes a walltime kill cost RL-on probes rather
     # than the primary RL-off measurement.
-    jobs = off_jobs + on_jobs
+    if rl_passes == 'off':
+        jobs = off_jobs
+    elif rl_passes == 'on':
+        jobs = on_jobs
+    else:
+        jobs = off_jobs + on_jobs
+    if not jobs:
+        return None
 
     cfg = {'hidden_size': run['hidden_size'], 'map_seed': run['seed']}
+    # --rl-match: the paired learning run's RL settings, so both arms' RL-on
+    # pass is the same intervention. Inert in the RL-off pass by construction.
+    if rl_overrides:
+        cfg.update(rl_overrides)
     unit = f"{condition}_{env_label}_seed{run['seed']}_{run['name']}"
     out_dir = os.path.join(out_root, unit)
     os.makedirs(out_dir, exist_ok=True)
@@ -285,6 +449,9 @@ def build_unit(run, condition, env_label, generations, n_founders, repeats,
             'environment': env_label, 'run': run['name'], 'seed': run['seed'],
             'run_final_fitness': run['f'], 'hidden_size': run['hidden_size'],
             'ticks': run['ticks'], 'repeats': repeats,
+            'rl_passes': rl_passes,
+            'rl_matched': bool(rl_overrides),
+            'rl_overrides': rl_overrides or {},
             'generations': sorted(set(g['generation'] for g in index)),
             'n_genomes': len(genomes), 'n_jobs': len(jobs),
             'config_overrides': cfg, 'genome_index': index}
@@ -296,8 +463,32 @@ def build_unit(run, condition, env_label, generations, n_founders, repeats,
 def main():
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--logs-root', required=True,
-                    help='logs (baseline) or logs_hard (predator environment)')
+    ap.add_argument('--logs-root', default=None,
+                    help='logs (baseline) or logs_hard (predator environment). '
+                         'Not needed when --from-units is given.')
+    ap.add_argument('--from-units', default=None, metavar='PATH',
+                    help='Source the genomes from an ALREADY-BUILT units root '
+                         'instead of the logs tree. The only option once the run '
+                         'logs are gone, and far faster either way.')
+    ap.add_argument('--rl-match', action='store_true',
+                    help="Copy the SAME-SEED learning run's RL hyperparameters "
+                         'into each evolution unit, so both arms\' RL-on pass is '
+                         'the identical intervention. See --rl-match in the '
+                         'module docstring for why the control needs it.')
+    ap.add_argument('--gen0', type=int, default=0, metavar='N',
+                    help='Emit an extra generation-0 unit per seed holding N '
+                         'freshly Xavier-initialised genomes — the anchor the '
+                         'founder dumps lack, because Logger.js only dumps from '
+                         'generation 250. Use the SAME N as the dumps (100). '
+                         'See gen0_founders() for why this is a resample of true '
+                         'generation 0 rather than a proxy.')
+    ap.add_argument('--gen0-only', action='store_true',
+                    help='Build ONLY the generation-0 units, skipping the founder '
+                         'dumps — for adding the anchor to results you already have.')
+    ap.add_argument('--rl-passes', choices=('both', 'off', 'on'), default='both',
+                    help="Which passes to emit. 'on' is what a --rl-match "
+                         'correction needs: the RL-off results are unaffected by '
+                         'RL settings, so re-running them would be waste.')
     ap.add_argument('--env-label', required=True, help='baseline | hard')
     ap.add_argument('--out-root', required=True)
     ap.add_argument('--conditions', default='evolution,learning',
@@ -331,25 +522,131 @@ def main():
         print('  [warn] no evolution arm: without the control, a shrinking lift '
               'cannot be told from a ceiling effect.')
 
+    if not args.logs_root and not args.from_units:
+        raise SystemExit('give either --logs-root or --from-units')
+
+    # Source the runs. From an existing units root they arrive already grouped
+    # by condition and already one-per-seed, so no replicate picking is needed —
+    # doing it again could silently choose a DIFFERENT run than the results
+    # being corrected came from.
+    from_units = bool(args.from_units)
+    if from_units:
+        all_units = discover_units(args.from_units)
+        by_cond = {}
+        for u in all_units:
+            by_cond.setdefault(u['condition'], []).append(u)
+        print(f'sourcing genomes from {args.from_units} '
+              f'({len(all_units)} units: ' +
+              ', '.join(f'{c} x{len(v)}' for c, v in sorted(by_cond.items())) + ')')
+    else:
+        by_cond = None
+
+    # --rl-match needs the learning arm's settings, keyed by seed. Read them from
+    # whichever source is in play; both carry the run's params.json verbatim.
+    learn_params = {}
+    if args.rl_match:
+        if from_units:
+            for u in by_cond.get('learning', []):
+                learn_params[u['seed']] = u['params']
+        else:
+            for r in discover(args.logs_root, 'learning'):
+                learn_params.setdefault(r['seed'], r['params'])
+        if not learn_params:
+            raise SystemExit('--rl-match: no learning runs found to match against')
+        seen = sorted({tuple(sorted(rl_settings(p).items()))
+                       for p in learn_params.values()})
+        print(f'--rl-match: learning-arm RL settings from {len(learn_params)} seeds')
+        for combo in seen:
+            print('    ' + '  '.join(f'{k}={v}' for k, v in combo))
+
     os.makedirs(args.out_root, exist_ok=True)
     manifest, total_jobs = [], 0
-    for cond in conditions:
-        runs = discover(args.logs_root, cond)
+
+    # ── generation-0 anchor ──────────────────────────────────────────────────
+    # ONE unit per seed, not one per condition. At generation 0 the two arms are
+    # the same population: the genome distribution is Xavier for both, and the
+    # terrain is the seed's. Emitting a separate gen-0 point per arm would draw a
+    # difference that cannot exist, and would cost twice as much to say it.
+    #
+    # Its RL settings are the LEARNING arm's, which is what both arms use once
+    # --rl-match is applied — so the anchor is shared by both f_off AND f_on
+    # curves. Without --rl-match the arms' RL-on settings differ and this unit
+    # is only a valid anchor for f_off; the builder says so.
+    if args.gen0:
+        if not args.rl_match:
+            print('  [warn] --gen0 without --rl-match: the arms use different RL '
+                  'settings, so this anchor is valid for f_off only, not f_on.')
+        anchor_src = {}
+        source_runs = (by_cond.get('learning', []) if from_units
+                       else discover(args.logs_root, 'learning'))
+        for r in source_runs:
+            anchor_src.setdefault(r['seed'], r)
         if want_seeds:
-            runs = [r for r in runs if r['seed'] in want_seeds]
-        chosen = pick_replicate(runs, args.rep_pick)
-        print(f'\n{cond}: {len(runs)} runs with genomes -> {len(chosen)} units '
-              f'({args.rep_pick} replicate per seed)')
-        for r in chosen:
-            meta = build_unit(r, cond, args.env_label, generations,
-                              args.n_founders, args.repeats, args.out_root)
+            anchor_src = {k: v for k, v in anchor_src.items() if k in want_seeds}
+        print(f'\ngen0: {len(anchor_src)} units ({args.gen0} Xavier genomes each, '
+              f'one per seed, shared by both arms)')
+        for seed in sorted(anchor_src):
+            r = dict(anchor_src[seed])
+            r['name'] = f'gen0_xavier_seed{seed}'
+            r['f'] = float('nan')
+            founders = gen0_founders(args.gen0, r['hidden_size'], seed)
+            rl_over = rl_settings(r['params']) if args.rl_match else None
+            meta = build_unit(r, 'gen0', args.env_label, [0], 0, args.repeats,
+                              args.out_root, founders=founders,
+                              rl_overrides=rl_over, rl_passes=args.rl_passes)
             if meta is None:
-                print(f'  [skip] {r["name"]}: no founder rows at {generations}')
                 continue
             manifest.append(meta)
             total_jobs += meta['n_jobs']
+            print(f'  seed {seed:<5} {meta["n_genomes"]:>4} genomes  '
+                  f'{meta["n_jobs"]:>6} jobs  {r["name"]}')
+        if args.gen0_only:
+            conditions = []
+
+    for cond in conditions:
+        if from_units:
+            chosen = by_cond.get(cond, [])
+            print(f'\n{cond}: {len(chosen)} units from {args.from_units}')
+        else:
+            runs = discover(args.logs_root, cond)
+            if want_seeds:
+                runs = [r for r in runs if r['seed'] in want_seeds]
+            chosen = pick_replicate(runs, args.rep_pick)
+            print(f'\n{cond}: {len(runs)} runs with genomes -> {len(chosen)} units '
+                  f'({args.rep_pick} replicate per seed)')
+        if want_seeds:
+            chosen = [r for r in chosen if r['seed'] in want_seeds]
+
+        for r in chosen:
+            # Only the CONTROL is corrected: a learning run's own params are
+            # already the settings its lineage evolved under.
+            rl_over = None
+            if args.rl_match and cond != 'learning':
+                lp = learn_params.get(r['seed'])
+                if lp is None:
+                    print(f'  [skip] {r["name"]}: no learning run on seed '
+                          f'{r["seed"]} to match against')
+                    continue
+                check_unmatchable(r['params'], lp, r['name'])
+                rl_over = rl_settings(lp)
+
+            founders = founders_from_unit(r) if from_units else None
+            meta = build_unit(r, cond, args.env_label, generations,
+                              args.n_founders, args.repeats, args.out_root,
+                              founders=founders, rl_overrides=rl_over,
+                              rl_passes=args.rl_passes)
+            if meta is None:
+                print(f'  [skip] {r["name"]}: no jobs for {generations} '
+                      f'/ --rl-passes {args.rl_passes}')
+                continue
+            manifest.append(meta)
+            total_jobs += meta['n_jobs']
+            note = ''
+            if rl_over:
+                note = ('  [rl-matched: ' +
+                        ' '.join(f'{k}={v}' for k, v in sorted(rl_over.items())) + ']')
             print(f'  seed {r["seed"]:<5} f={r["f"]:.2f}  {meta["n_genomes"]:>4} '
-                  f'genomes  {meta["n_jobs"]:>6} jobs  {r["name"]}')
+                  f'genomes  {meta["n_jobs"]:>6} jobs  {r["name"]}{note}')
 
     if not manifest:
         raise SystemExit('no units built — check --logs-root and --generations')
@@ -357,19 +654,24 @@ def main():
     n_units = len(manifest)
     tasks = n_units * args.shards_per_unit
     # Measured on the h128 companion slices: ~7 s per RL-off probe and ~17 s per
-    # RL-on one at w500/2000 ticks, i.e. ~12 s averaged over the two passes.
-    core_h = total_jobs * 12.0 / 3600.0
+    # RL-on one at w500/2000 ticks. An --rl-passes on re-run is ALL slow probes,
+    # so the two-pass average would understate it by more than half.
+    sec = {'both': 12.0, 'off': 7.0, 'on': 17.0}[args.rl_passes]
+    core_h = total_jobs * sec / 3600.0
     per_task_h = core_h / tasks if tasks else float('nan')
 
     with open(os.path.join(args.out_root, 'manifest.json'), 'w') as fh:
         json.dump({'environment': args.env_label, 'logs_root': args.logs_root,
                    'conditions': conditions, 'generations': generations,
                    'repeats': args.repeats, 'rep_pick': args.rep_pick,
+                   'rl_passes': args.rl_passes, 'rl_match': args.rl_match,
+                   'from_units': args.from_units,
                    'n_units': n_units, 'n_jobs': total_jobs,
                    'units': manifest}, fh, indent=2)
 
     print(f'\n  {n_units} units, {total_jobs:,} probes total')
-    print(f'  ~{core_h:.0f} core-hours at ~12 s/probe')
+    print(f'  ~{core_h:.0f} core-hours at ~{sec:.0f} s/probe '
+          f'(--rl-passes {args.rl_passes})')
     print(f'  SHARDS_PER_UNIT={args.shards_per_unit} -> {tasks} tasks, '
           f'~{per_task_h:.1f} h each')
     print(f'\n  UNITS_ROOT={args.out_root} SHARDS_PER_UNIT={args.shards_per_unit} \\')
