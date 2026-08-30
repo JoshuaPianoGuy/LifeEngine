@@ -2,7 +2,7 @@
 
 Mathematical definitions of the reward, fitness, learning, and energy functions used in the learning‑vs‑evolution‑vs‑pure‑RL experiments.
 
-> **Status.** Updated to the **current** implementation (tournament GA, importance‑weighted REINFORCE with a baseline, 54→64→6 network, enabled mutation, energy/day‑night as coded). For experiment/run structure and the SLURM jobs, see `EXPERIMENTS.md`. Values here are the in‑code defaults in `ExperimentParams.js`, `NNBrain.js`, `GAManager.js`, `PureRLManager.js`, `AdvancedOrganism.js`; per‑run overrides are recorded in each run's `params.json`.
+> **Status.** Updated to the **current** implementation (tournament GA, importance‑weighted REINFORCE with a baseline, 54→128→6 network, enabled mutation, energy/day‑night as coded). For experiment/run structure and the SLURM jobs, see `EXPERIMENTS.md`. Values here are the in‑code defaults in `ExperimentParams.js`, `NNBrain.js`, `GAManager.js`, `PureRLManager.js`, `AdvancedOrganism.js`; per‑run overrides are recorded in each run's `params.json`. **Where the comparison runs override a default — `hidden_size` 128, `collapse_buffer_size` 100, `learning_rate` 0.01/0.02, `epsilon_enabled` false — both values are given.**
 
 ---
 
@@ -134,14 +134,18 @@ Runs at the end of every generation (a fixed 10 000‑tick / 5‑map window — 
 
 ### Architecture
 
-$$\text{Input}(54) \to \text{ReLU}(W_1,b_1)\,(64) \to \text{softmax}(W_2,b_2)\,(6) \to \text{Action}$$
+$$\text{Input}(54) \to \text{ReLU}(W_1,b_1)\,(n_h) \to \text{softmax}(W_2,b_2)\,(6) \to \text{Action}$$
 
 - Input: $n_i = \text{STATE\_SIZE} = 54$ (4 eye directions × 13 percept classes + 2 scalars)
-- Hidden: $n_h = \text{HIDDEN\_SIZE} = 64$ (ReLU; tunable, resizes the genome)
+- Hidden: $n_h = \texttt{hidden\_size}$ (ReLU; tunable via `--hidden-size`, which resizes the genome, so it is read once at `NNBrain` load). **Every comparison run uses $n_h = 128$**; the `ExperimentParams` default is 64.
 - Output: $n_o = \text{OUTPUT\_SIZE} = 6$ (up, right, down, left, rotate‑left, rotate‑right)
 
-**Total weights** $\text{GENOME\_SIZE} = 61\,n_h + 6 = 3910$ at $n_h=64$:
-$W_1: 54\times 64 = 3456$, $b_1: 64$, $W_2: 64\times 6 = 384$, $b_2: 6$.
+**Total weights** $\text{GENOME\_SIZE} = 61\,n_h + 6$:
+
+| | $W_1 = 54n_h$ | $b_1 = n_h$ | $W_2 = 6n_h$ | $b_2$ | total |
+|---|---|---|---|---|---|
+| $n_h = 128$ (production) | 6912 | 128 | 768 | 6 | **7814** |
+| $n_h = 64$ (code default) | 3456 | 64 | 384 | 6 | 3910 |
 
 Each organism holds `genome_weights` (heritable) and `active_weights` (acted on; RL updates these). In GA‑only mode they are the **same reference** (no drift).
 
@@ -163,7 +167,7 @@ Both bias blocks start at exactly zero. Every limit is well inside the $[-1,1]$ 
 ### Activations
 
 $$h_j = \max\!\Big(0,\ \sum_{i=0}^{53} w^{(1)}_{i,j} x_i + b^{(1)}_j\Big)\qquad(\text{ReLU})$$
-$$\pi_k = \frac{e^{z^{(2)}_k}}{\sum_{k'=0}^{5} e^{z^{(2)}_{k'}}},\qquad z^{(2)}_k = \sum_{j=0}^{63} w^{(2)}_{j,k} h_j + b^{(2)}_k\qquad(\text{softmax})$$
+$$\pi_k = \frac{e^{z^{(2)}_k}}{\sum_{k'=0}^{5} e^{z^{(2)}_{k'}}},\qquad z^{(2)}_k = \sum_{j=0}^{n_h-1} w^{(2)}_{j,k} h_j + b^{(2)}_k\qquad(\text{softmax})$$
 
 ### Action selection (ε‑greedy, importance‑corrected)
 
@@ -399,7 +403,7 @@ $\bar f_{\text{top20\%}}$ (top‑20% mean fitness), $\bar f$ (population mean fi
 | predator `detectionRadius` / `giveUpRadius` | 25 / 35 ref → **31 / 44** at width 500 | rescaled by cols/400 (§10) |
 | predator `referenceCols` | 400 | radius calibration width |
 | `wanderRange` / `moveInterval` / `respawnDelay` | 6 / 1 / 50 | not spatial — unscaled |
-| `COLLAPSE_BUFFER_SIZE` | 25 | pure‑RL weight buffer |
+| `collapse_buffer_size` | **100 in production** (code default 25) | pure‑RL weight buffer |
 
 ---
 

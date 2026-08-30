@@ -558,8 +558,19 @@ def _surface_figure(rows, field, cmap, title, sub, out_png, annotate,
 
     ncol = max(len(sel) for _, _, sel in rows)
     nrow = len(rows)
-    fig, axs = plt.subplots(nrow, ncol, figsize=(3.5 * ncol + 1.4, 3.35 * nrow),
-                            squeeze=False)
+    # SHARED AXES, because every panel is drawn on the same (alpha, beta) extent
+    # and was previously repeating the same two tick scales ncol x nrow times.
+    # Only the left column keeps its beta labels and only the bottom row its
+    # alpha labels, which is what lets wspace/hspace close up below: the
+    # interior gutters no longer have to hold a row of numbers.
+    #
+    # It does NOT make the panels comparable to one another — they are still
+    # each anchored on their own run, as the module docstring says. Sharing here
+    # is a drawing decision about repeated furniture, not a claim about the
+    # coordinates.
+    fig, axs = plt.subplots(nrow, ncol, figsize=(3.05 * ncol + 1.15,
+                                                 2.95 * nrow + 0.55),
+                            squeeze=False, sharex=True, sharey=True)
 
     im = None
     for r, (label, colour, sel) in enumerate(rows):
@@ -590,7 +601,10 @@ def _surface_figure(rows, field, cmap, title, sub, out_png, annotate,
                 ax.set_ylabel('β', fontsize=9, color=INK)
                 # Wrapped: these labels carry the split threshold, and a single
                 # rotated line long enough to hold it runs into the suptitle.
-                ax.text(-0.30, 0.5, textwrap.fill(label, 26),
+                # -0.22 rather than -0.30: with sharey the left column is the
+                # only one carrying tick labels, so the row label can sit closer
+                # and the whole figure's left margin comes in with it.
+                ax.text(-0.22, 0.5, textwrap.fill(label, 26),
                         transform=ax.transAxes, rotation=90, va='center',
                         ha='center', fontsize=9.5, color=colour,
                         fontweight='bold', linespacing=1.35)
@@ -603,11 +617,13 @@ def _surface_figure(rows, field, cmap, title, sub, out_png, annotate,
     title = '\n'.join(l for part in title.split('\n')
                       for l in (textwrap.wrap(part, 98) or ['']))
     n_title = title.count('\n') + 1
-    # hspace leaves room for the two-line panel titles; left for the wrapped
-    # row labels; top for however many lines the suptitle turned into.
-    fig.subplots_adjust(left=.085, right=.9, top=.90 - .035 * n_title,
-                        hspace=.45)
-    cax = fig.add_axes([.915, .12, .014, .74])
+    # hspace still has to clear the two-line panel titles, but no longer a row
+    # of x tick labels underneath them as well, so .45 -> .26. wspace closes to
+    # .05 for the same reason on the other axis. left/right come in with the
+    # tick labels and the colourbar respectively.
+    fig.subplots_adjust(left=.065, right=.915, top=.905 - .035 * n_title,
+                        bottom=.10, hspace=.26, wspace=.05)
+    cax = fig.add_axes([.928, .12, .013, .74])
     cb = fig.colorbar(im, cax=cax,
                       extend='both' if norm_kind == 'diverging' else 'neither')
     cb.set_label(sub, fontsize=9, color=INK)
@@ -659,8 +675,12 @@ def fig_paired(rows, out_path, threshold, unit, title, sub, viab, run_f):
 
     n_slices = max(len(sel) for _l, _c, sel in rows)
     ncol, nrow = n_slices * 2, len(rows)
-    fig, axs = plt.subplots(nrow, ncol, figsize=(2.9 * ncol + 1.6, 3.5 * nrow),
-                            squeeze=False)
+    # Shared axes for the same reason as _surface_figure, and it pays twice as
+    # well here: this figure has twice the columns, so it was repeating the beta
+    # scale 2 x n_slices times per row.
+    fig, axs = plt.subplots(nrow, ncol, figsize=(2.55 * ncol + 1.3,
+                                                 3.0 * nrow + 0.6),
+                            squeeze=False, sharex=True, sharey=True)
 
     im = None
     for r, (label, colour, sel) in enumerate(rows):
@@ -678,19 +698,25 @@ def fig_paired(rows, out_path, threshold, unit, title, sub, viab, run_f):
                              color=INK, pad=3)
                 if k == 0:
                     # The slice's identity sits over the PAIR, not over one half.
-                    ax.text(1.03, 1.20, f"seed {G['seed']}  ·  run f = "
+                    # 1.15, not 1.20: the pair header has to clear its own two
+                    # panel titles and still sit clearly inside the row gutter.
+                    # With hspace tightened it was landing against the bottom of
+                    # the row above, where it read as that row's caption.
+                    ax.text(1.03, 1.15, f"seed {G['seed']}  ·  run f = "
                             f"{run_f(G):.3f}  ·  plane "
                             f"{G['plane_frac']:.0%}",
                             transform=ax.transAxes, ha='center', va='bottom',
                             fontsize=9.5, color=INK)
                 if k == 0 and c == 0:
                     ax.set_ylabel('β', fontsize=9, color=INK)
-                    ax.text(-0.34, 0.5, textwrap.fill(label, 26),
+                    ax.text(-0.26, 0.5, textwrap.fill(label, 26),
                             transform=ax.transAxes, rotation=90, va='center',
                             ha='center', fontsize=9.5, color=colour,
                             fontweight='bold', linespacing=1.35)
-                else:
-                    ax.set_yticklabels([])
+                # No set_yticklabels([]) on the other columns: sharey already
+                # hides them, and calling it on a shared axis clears the labels
+                # on every axis in the group, including the one column that is
+                # supposed to keep them.
                 if r == nrow - 1:
                     ax.set_xlabel('α', fontsize=9, color=INK)
 
@@ -700,9 +726,12 @@ def fig_paired(rows, out_path, threshold, unit, title, sub, viab, run_f):
     title = '\n'.join(l for part in title.split('\n')
                       for l in (textwrap.wrap(part, 104) or ['']))
     n_title = title.count('\n') + 1
-    fig.subplots_adjust(left=.075, right=.9, top=.86 - .045 * n_title,
-                        hspace=.46, wspace=.12)
-    cax = fig.add_axes([.915, .12, .012, .62])
+    # hspace .40 rather than _surface_figure's .26: this figure puts a pair
+    # header ABOVE the two panel titles, so its row gutter has three lines of
+    # text to hold instead of two.
+    fig.subplots_adjust(left=.058, right=.915, top=.875 - .045 * n_title,
+                        bottom=.10, hspace=.40, wspace=.05)
+    cax = fig.add_axes([.928, .12, .012, .68])
     cb = fig.colorbar(im, cax=cax)
     cb.set_label(sub, fontsize=9, color=INK)
     cb.ax.tick_params(colors=INK, labelsize=8)

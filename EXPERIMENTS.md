@@ -2,7 +2,7 @@
 
 This document describes **what the experiments are, what they measure, and exactly how they run** — from the shared simulation substrate up to the individual SLURM job arrays and the analysis scripts that consume their output.
 
-> **Relationship to other docs.** `MATHEMATICAL_REFERENCE.md` derives the RL/GA/energy math in depth and is still the best reference for the *equations*, but several of its **constants are from an earlier design** (single founder, top‑5 crossover, mutation disabled, hidden‑size 8, 33‑input network). This file documents the **current** implementation and the values actually used by the experiments. Where they disagree, this file wins. `HEADLESS.md` covers the headless runner in general; here we focus on the experiment set.
+> **Relationship to other docs.** `MATHEMATICAL_REFERENCE.md` derives the RL/GA/energy math in depth and is the reference for the *equations*; it has been brought up to the same implementation this file documents (tournament GA, on‑policy REINFORCE with baseline and traces, 54→128→6 network, mutation enabled), so the two now agree on every constant. This file remains authoritative for **experiment and run structure** — what was run, on which seeds, with which scripts. `HEADLESS.md` covers the headless runner in general; here we focus on the experiment set.
 
 ---
 
@@ -74,13 +74,13 @@ Food comes in tiers with different energy/score values (`MouthCell.FOOD_ENERGY_V
 Each organism is driven by a small feed‑forward network (`NNBrain`), the same architecture in every condition:
 
 ```
-Input (54) → ReLU hidden (64) → softmax output (6)
+Input (54) → ReLU hidden (128) → softmax output (6)      # 128 = production; the code default is 64
 ```
 
 * **Inputs (54):** 4 eye directions × **13 percept types** + **2 scalar inputs** (e.g. normalised energy). The 13 percepts (see `PERCEPT_INDEX` in `NNBrain.js`) cover the food tiers, terrain/walls, caves, roaming and patrol predators, and food "landmarks". Prey have **no sensory channel for predators beyond the eye percepts** — detection is one‑directional (predator→prey).
-* **Hidden:** `HIDDEN_SIZE = 64` (tunable via `--hidden-size`; changing it resizes the genome).
+* **Hidden:** `--hidden-size`, which resizes the genome, so it is read once at `NNBrain` load. The `ExperimentParams` **default is 64**; **every comparison run uses 128** (the job scripts default `HIDDEN_SIZE=128` and abort if the clone's `src/headless.js` has no `--hidden-size` flag, since an older clone would silently run at 64 wearing h128 folder names).
 * **Output (6):** softmax over `up, right, down, left, rotate‑left, rotate‑right`.
-* **Genome size** = `61·H + 6` weights (`W1 = 54H`, `b1 = H`, `W2 = 6H`, `b2 = 6`); with `H = 64` that is **3910** weights. Every organism carries two copies: `genome_weights` (heritable) and `active_weights` (what it acts on; RL updates these).
+* **Genome size** = `61·H + 6` weights (`W1 = 54H`, `b1 = H`, `W2 = 6H`, `b2 = 6`): **7814** at the production `H = 128`, 3910 at the default `H = 64`. Every organism carries two copies: `genome_weights` (heritable) and `active_weights` (what it acts on; RL updates these).
 
 Action selection is **epsilon‑greedy over the softmax** (see §3.2 for how epsilon and REINFORCE interact).
 
@@ -117,10 +117,16 @@ Identical GA machinery to §3.1, **plus** every organism runs **REINFORCE with e
 
 ```
 r = food_value_eaten                    (0.5 / 1.0 / 2.0 by tier)
-  + EXPLORE_BONUS (0.15)  on first visit to a new cell
+  + EXPLORE_BONUS (0)     on first visit to a new cell — OFF, see below
   − DECAY_PENALTY (0.05)  × energy lost to decay this tick
   − PREDATOR_DRAIN_PENALTY (0.5)  while being drained
 ```
+
+> **The explore bonus is 0 in every production run**, and that is the `ExperimentParams`
+> default, not an override. The explore-bonus sweep found it neither improved fitness nor
+> meaningfully shifted cave usage, so the RL conditions run without it; only the sweep
+> scripts pass a non-zero `--explore-bonus`. The reward is therefore food minus decay
+> minus predation, with no shaping term.
 
 **REINFORCE update** on `active_weights` using eligibility traces (`TRACE_DECAY = 0.90`), a running‑mean **baseline** (EMA decay 0.9) to reduce variance, and **importance weighting** to correct for exploration:
 
@@ -144,7 +150,7 @@ REINFORCE only — **no GA, no fitness‑based selection**. Adaptation comes fro
 * **Cap down** to `POPULATION_SIZE = 100` if reproduction overshot (random removal — no fitness signal).
 * **Between‑episode mutation** of survivors (undirected Gaussian, see table below).
 * **Log the window** (so metrics reflect only the organisms that actually lived it).
-* **Top up to 100** from a rolling **buffer** of the last `COLLAPSE_BUFFER_SIZE = 25` dead organisms' learned weights: each refill organism is a **random** buffer sample, **mutated** around. This keeps every window starting at a full 100 (comparable to the GA conditions' 100 founders); a full extinction is just the "deficit = 100" case.
+* **Top up to 100** from a rolling **buffer** of the last `collapse_buffer_size` dead organisms' learned weights (**100 in every comparison run**; the in-code default is 25): each refill organism is a **random** buffer sample, **mutated** around. This keeps every window starting at a full 100 (comparable to the GA conditions' 100 founders); a full extinction is just the "deficit = 100" case.
 
 The buffer‑and‑mutate design means learned structure is never thrown away on a collapse, but the refilled population is a diverse cloud around past strategies rather than clones.
 
@@ -178,23 +184,57 @@ Each experiment is a SLURM **job array**: one array task per point in the factor
 
 ### 5.1 Three‑condition comparison (the main experiment)
 
-500 × 500 world, **1000 generations**, **60 roaming predators, drain 5**, patrol off, **5 seeds** (`1 42 999` + new `123 456`). One array task per seed (`--array=0-4`).
+**500 × 500 world, 1000 generations, `--hidden-size 128`, `--no-epsilon`, patrol off, 10 seeds
+(`2001`…`2010`) × 10 replicates = 100 runs per cell.** Six cells — three conditions × two
+environments — so **600 runs**. One array task per run (`--array=0-99`).
 
-| Script | Condition flags | Output tree |
-|--------|-----------------|-------------|
-| `run_learning_condition_roaming_array.slurm` | `--condition learning --mode standard --no-epsilon --learning-rate 0.02` | `logs/learning/standard/auto-run/roam60d5_g1k_learning_…` |
-| `run_evolution_condition_roaming_array.slurm` | `--condition evolution --mode standard` (no RL knobs) | `logs/evolution/standard/auto-run/roam60d5_g1k_evolution_…` |
-| `run_pure_rl_condition_roaming_array.slurm` | `--condition learning --mode pure_rl --no-epsilon --learning-rate 0.02` | `logs/learning/pure_rl/auto-run/roam60d5_g1k_purerl_…` |
+The seeds are deliberately disjoint from every earlier experiment, and there are ten
+replicates per seed because **only the terrain is seeded**: founder weights, mutation, RL
+exploration and predator wandering are all unseeded, and the capacity sweep had already
+shown runs on one seed splitting into stalled and taken-off groups. One run per seed would
+sample that split rather than measure it.
 
-The two RL‑using conditions share identical hyperparameters (no epsilon, LR 0.02 in this roaming environment), so **learning vs pure‑RL isolates the GA's contribution**, and **learning vs evolution isolates within‑life learning**. LR 0.02 / no‑epsilon were selected from the LR sweep below.
+| Script | Condition flags | Run-name prefix |
+|--------|-----------------|-----------------|
+| `run_evolution_condition_hard_w500_h128_array.slurm` | `--condition evolution --mode standard --log-genomes` | `roam60d5_w500_evolution_h128_seed<S>_r<R>` |
+| `run_learning_condition_hard_w500_h128_array.slurm` | `--condition learning --mode standard --no-epsilon --learning-rate 0.02 --log-genomes` | `roam60d5_w500_learning_h128_lr0.02_seed<S>_r<R>` |
+| `run_pure_rl_condition_hard_w500_h128_array.slurm` | `--condition learning --mode pure_rl --no-epsilon --learning-rate 0.02` | `roam60d5_w500_purerl_h128_noeps_lr0.02_seed<S>_r<R>` |
+| `run_evolution_condition_baseline_w500_h128_array.slurm` | as above, `--roaming-predators 0 --predators-per-patch 0` | `base_w500_evolution_h128_seed<S>_r<R>` |
+| `run_learning_condition_baseline_w500_h128_array.slurm` | as above but `--learning-rate 0.01` | `base_w500_learning_h128_lr0.01_seed<S>_r<R>` |
+| `run_pure_rl_condition_baseline_w500_h128_array.slurm` | as above but `--learning-rate 0.01` | `base_w500_purerl_h128_noeps_lr0.01_seed<S>_r<R>` |
 
-A predator‑free **baseline** version of the same three‑way comparison uses **LR 0.01** for the RL‑using conditions (its own LR sweep optimum) and disables both predator types (`--roaming-predators 0 --predators-per-patch 0`). Same scripts with `_baseline_` in place of `_roaming_`:
+The two RL‑using conditions share identical hyperparameters within an environment, so
+**learning vs pure‑RL isolates the GA's contribution** and **learning vs evolution isolates
+within‑life learning**. The learning rate differs *between* environments (0.01 baseline,
+0.02 predator) because each was taken from that environment's own LR sweep — which is also
+why baseline and hard runs are never pooled into one curve.
 
-| Script | Condition flags | Output tree |
-|--------|-----------------|-------------|
-| `run_learning_condition_baseline_array.slurm` | `--condition learning --mode standard --no-epsilon --learning-rate 0.01` | `logs/learning/standard/auto-run/baseline_g1k_learning_…` |
-| `run_evolution_condition_baseline_array.slurm` | `--condition evolution --mode standard` (no RL knobs) | `logs/evolution/standard/auto-run/baseline_g1k_evolution_…` |
-| `run_pure_rl_condition_baseline_array.slurm` | `--condition learning --mode pure_rl --no-epsilon --learning-rate 0.01` | `logs/learning/pure_rl/auto-run/baseline_g1k_purerl_…` |
+**`--log-genomes` on two of the three.** The evolution and learning scripts pass it; the
+pure‑RL ones deliberately do not, because `PureRLManager` has no founder generation for
+`Logger.logFounderGenomes()` to write. The resulting `genome.csv` — per-generation centroid
+and fittest, plus **every** founder at generations 250/500/750/1000 — is the input to the
+landscape (§9.2) and assimilation pipelines.
+
+**The predator environment also has a chance anchor**,
+`run_random_floor_condition_hard_w500_h128_array.slurm`: the same 10 seeds, 3 replicates,
+40 generations. See §8c for why it exists and the filtering trap it creates.
+
+**Environment variables override the grid** without editing the script:
+
+```bash
+sbatch run_learning_condition_hard_w500_h128_array.slurm
+GENERATIONS=500 sbatch run_evolution_condition_hard_w500_h128_array.slurm
+SEEDS="2001 2002 2003" N_REPS=10 sbatch --array=0-29 run_pure_rl_condition_hard_w500_h128_array.slurm
+```
+
+Each script also **aborts** if the clone's `src/headless.js` lacks `--hidden-size` or
+`--log-genomes`, since an older clone would ignore the flags and silently produce width-64
+runs wearing h128 folder names, or no genomes at all.
+
+> **Superseded.** An earlier version of this comparison ran on 5 seeds (`1 42 999 123 456`)
+> at width 64 via `run_{learning,evolution,pure_rl}_condition_{roaming,baseline}_array.slurm`.
+> Those scripts are still in the tree and their logs still parse, but no current figure or
+> statistic is built from them — everything in §9 and §9.1 is the 600-run set above.
 
 ### 5.2 Learning‑rate sweeps (tuning)
 
@@ -203,9 +243,16 @@ Both sweep `learning_rate ∈ {0.005, 0.01, 0.02, 0.03}` × 3 seeds in the same 
 * `run_lr_no_epsilon_sweep_roaming_array.slurm` — **no‑epsilon** family (pure on‑policy REINFORCE). 4 LR × 3 seeds = 12 tasks. Analysed by `analyse_lr_sweep_noeps.py`.
 * `run_lr_epsilon_sweep_roaming_array.slurm` — **epsilon** family, additionally sweeping `epsilon_start ∈ {0.2,0.3,0.5,0.7}` × `decay_shape ∈ {sublinear,linear,quadratic}` (4×4×3×3 seeds = 144 runs, packed into 48 array tasks that each loop the 3 seeds to respect the queue's submit limit). Analysed by `analyse_lr_sweep_epsilon.py` (panel per decay, line per LR).
 
-### 5.2b The 1000×1000 world (current standing setup)
+### 5.2b The 1000×1000 world (an exploration, not the final setup)
 
-From here on the standing defaults are **`hidden_size 128`** and **`collapse_buffer 100`** (the buffer is inert outside `--mode pure_rl`; it is passed anyway so `params.json` records it consistently), on a **1000×1000 grid for 500 generations**.
+Two things came out of this line of work and stayed: **`hidden_size 128`** and
+**`collapse_buffer 100`** are the standing defaults for everything after it (the buffer is
+inert outside `--mode pure_rl`; it is passed anyway so `params.json` records it
+consistently). The **1000×1000 grid did not** — the comparison in §5.1 ran at 500×500 for
+1000 generations, and every current figure and statistic comes from those runs. The scaling
+machinery below (`--food-density-scale`, the density-not-count predator rule) is still in
+the code and still correct; it is documented here because it is what a 1000×1000 run needs,
+not because the headline results use it.
 
 * `run_lr_sweep_learning_w1k_array.slurm` — learning condition (GA + RL, no epsilon), `learning_rate ∈ {0.01, 0.02, 0.03}` × {baseline, hard} × 3 seeds (`1 42 999`) × 5 replicates = **90 runs**, one per array task (~58 h baseline / ~44 h hard; 90 h wall clock, 24 G).
 * `run_evolution_condition_hard_w1k_array.slurm` — evolution condition (GA only) in the hard environment, 5 seeds (`1 42 999 123 456`) × 5 replicates = **25 runs** (~10 h median, ~21 h worst; 60 h wall clock, 16 G). Sized for the bimodal stall/take‑off split the capacity sweep found in this cell.
@@ -235,7 +282,13 @@ Even so, do **not** compare absolute fitness against the 500×500 runs: matched 
 
 ### 5.4 Seeds and new worlds
 
-The comparison uses **5 seeds**: the 3 established maps (`1 42 999`) plus **2 new** (`123 456`). New seeds need **no manual pre‑generation** — the first task to use one generates and atomically caches `src/maps/map_pool_seed<N>.json`, and every later run reuses it, so all conditions and seeds run on identical terrain.
+The comparison uses **10 seeds, `2001`…`2010`**, chosen to be disjoint from the earlier
+maps (`1 42 999 123 456`) that the sweeps and the superseded comparison used. New seeds need
+**no manual pre‑generation** — the first task to use one generates and atomically caches
+`src/maps/map_pool_seed<N>.json`, and every later run reuses it, so all conditions and seeds
+run on identical terrain. That caching is what makes the seed a *stratum*: the ten
+replicates of a seed differ purely by algorithmic chance while sharing everything about the
+world (§9.1).
 
 ---
 
@@ -449,6 +502,11 @@ Writes `output/stats/{run_outcomes,viability_tests,survival_tests,fitness_mixed_
 
 ## 10. Key constants (current)
 
+> Values in **bold** are what the comparison runs actually used, read back from their
+> own `params.json`, where that differs from the `ExperimentParams` default. The
+> defaults still apply to any run that does not override them — including a bare
+> `node src/headless.js` — so both are given.
+
 | Constant | Value | Meaning |
 |----------|-------|---------|
 | `TICKS_PER_MAP` / `MAPS_PER_GEN` / `TICKS_PER_GEN` | 2000 / 5 / 10 000 | map, generation timing |
@@ -457,22 +515,22 @@ Writes `output/stats/{run_outcomes,viability_tests,survival_tests,fitness_mixed_
 | `TOURNAMENT_K` | 2 | GA tournament size |
 | `MUT_PROB` / `MUT_SIGMA` | 0.03 / 0.1 | inter‑generation mutation |
 | `ASEXUAL_MUT_PROB` / `ASEXUAL_MUT_SIGMA` | 0.05 / 0.1 | intra‑generation (reproduction) mutation |
-| `learning_rate` (RL_LR) | 0.02 | REINFORCE step size (going forward: **0.01** baseline env / **0.02** roaming env) |
+| `learning_rate` (RL_LR) | **0.01** baseline env / **0.02** predator env | REINFORCE step size, each from that environment's own LR sweep |
 | `epsilon_start` / `epsilon_end` | 0.3 / 0.05 | exploration (0.2/0.3/0.5/0.7 in sweep; 0 with `--no-epsilon`) |
 | `TRACE_DECAY` | 0.90 | eligibility‑trace decay |
 | `BASELINE_DECAY` | 0.9 | reward‑baseline EMA |
-| `HIDDEN_SIZE` | 64 | NN hidden width |
+| `hidden_size` | **128** (code default 64) | NN hidden width; every comparison run passes `--hidden-size 128` |
 | `STATE_SIZE` / `OUTPUT_SIZE` | 54 / 6 | NN input / output dims |
-| `GENOME_SIZE` | 3910 (= 61·H + 6) | NN weights at H=64 |
+| `GENOME_SIZE` | **7814** (= 61·H + 6) | NN weights at the production H=128 (3910 at H=64) |
 | `START_ENERGY` / `ENERGY_CAPACITY` | 300 / 500 | energy buffer / cap |
 | `ENERGY_DECAY_RATE` / `_INTERVAL` | 1 / 10 | base decay per 10 ticks |
 | day / night length | 300 / 300 | 600‑tick cycle |
 | food values | 0.5 / 1.0 / 2.0 | low / medium / prestige |
-| `EXPLORE_BONUS` / `DECAY_PENALTY` / `PREDATOR_DRAIN_PENALTY` | 0.15 / 0.05 / 0.5 | RL reward terms |
+| `EXPLORE_BONUS` / `DECAY_PENALTY` / `PREDATOR_DRAIN_PENALTY` | **0** / 0.05 / 0.5 | RL reward terms. The explore bonus is off by default and in every production run — see §3.2. |
 | reproduction trigger | 3.5 energy gained | asexual reproduction threshold |
 | `REPRODUCTION_SUCCESS_RATE` | 0.8 | child‑spawn success |
 | roaming predators / drain | 60 / 5 | comparison + sweeps |
-| `COLLAPSE_BUFFER_SIZE` | 25 | pure‑RL weight buffer |
+| `collapse_buffer_size` | **100** (code default 25) | pure‑RL weight buffer |
 
 ---
 

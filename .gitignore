@@ -20,6 +20,7 @@ dist/js/bundle.js.LICENSE.txt
 # scratch/HPC data, not repo data.
 /landscape/out/ 
 landscape/__pycache__/
+/landscape
 *.zip.
 
 # Per-seed map caches are regenerable from the seed (node generate_map_pool.js

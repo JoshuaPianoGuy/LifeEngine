@@ -110,6 +110,38 @@ WHAT IS WRITTEN
                             Wilson and seed-clustered bootstrap intervals.
   <out>/normalisation.csv   the rescaling constants, per fitness metric
 
+  <out>/.cache_values/<env>__<condition>/
+                            every number the figures and the tests above are
+                            built from, stored per cell so they survive the logs
+                            being transferred away. See THE VALUE CACHE.
+
+THE VALUE CACHE — ONE ENVIRONMENT AT A TIME
+--------------------------------------------
+The two log roots are tens of GB each and do not fit on one disk together, so
+the campaign is analysed in two passes. Every pass writes .cache_values for the
+cells it loaded, and any cell with no logs on disk is drawn and tested from that
+cache instead of being dropped:
+
+    # 1. predator logs on disk, baseline not yet transferred
+    python analyse_conditions_by_environment.py
+
+    # 2. swap the logs: remove logs_hard/, put the baseline under logs/
+    python analyse_conditions_by_environment.py
+
+Pass 2 loads baseline from its logs and hard from .cache_values, and produces the
+same figures, the same normalisation and the same tables as a pass with both log
+roots present. Verified by running it both ways: every figure is pixel-identical
+and every table agrees to float round-trip (< 5e-13).
+
+The cache holds per-generation mean/std/median/quartiles/n for every metric (so
+--band and --aggregate still work, and --smooth is still applied at draw time),
+the per-run converged table every significance test consumes, the min/max extent
+that keeps both environments on ONE normalised axis, and the time-to-viability
+event table. What it cannot do is change --final-window, --max-gen, --reps or
+--seeds after the fact: those choose what went into the stored numbers, so
+meta.json stamps them and a mismatched cache is refused out loud rather than
+mixed in. --no-cache turns the whole mechanism off.
+
 NORMALISATION — ONE RANGE PER METRIC, SHARED BY EVERY CONDITION *AND* BOTH
 ENVIRONMENTS
 --------------------------------------------------------------------------
@@ -166,7 +198,9 @@ Usage
 """
 
 import argparse
+import datetime as dt
 import hashlib
+import json
 import os
 
 import numpy as np
@@ -297,12 +331,19 @@ def usable(runs, skipped):
     return keep
 
 
-def load_cells(envs, conditions, max_gen, final_window, seeds, reps):
+def load_cells(envs, conditions, max_gen, final_window, seeds, reps,
+               cache_root=None, args=None):
     """Discover and load every (environment, condition) cell exactly once.
 
     Loading is done up front for ALL cells because the global normalisation range
     cannot be known until every run has been read — a two-pass structure is
     unavoidable. Cells with no runs are omitted, not faked.
+
+    A cell with no runs on disk falls back to `cache_root`, so an environment
+    whose logs have been transferred away still appears in every figure and
+    table built from converged values. The fallback is one-directional: runs on
+    disk always win, and a cache that is present but does not match the current
+    options is reported rather than used. See the value-cache section.
     """
     cells, skipped = {}, []
     for env in envs:
@@ -314,7 +355,17 @@ def load_cells(envs, conditions, max_gen, final_window, seeds, reps):
             found = len(runs)
             runs = usable(runs, skipped)
             if not runs:
-                print(f'  [skip] {env["key"]:<9} {cond["key"]:<10} no usable runs under {env["root"]}')
+                cached, why = ((None, None) if not cache_root else
+                               read_cache(cache_root, env['key'], cond['key'],
+                                          args, seeds))
+                if cached is not None:
+                    cells[(env['key'], cond['key'])] = cached
+                    print(f'  [cache] {env["key"]:<9} {cond["key"]:<10} '
+                          f'{cached["n"]:3d} runs from stored values '
+                          f'(no logs under {env["root"]})')
+                    continue
+                note = f'  [cache rejected: {why}]' if why else ''
+                print(f'  [skip] {env["key"]:<9} {cond["key"]:<10} no usable runs under {env["root"]}{note}')
                 continue
             table, curves = la.load_all(runs, max_gen, final_window)
             cells[(env['key'], cond['key'])] = {'table': table, 'curves': curves,
@@ -403,6 +454,11 @@ def load_behaviour(cells, cache_dir, max_gen, behaviour_reps):
     """
     total = 0
     for (env_key, cond_key), cell in sorted(cells.items()):
+        if cell.get('cached'):
+            n_beh = len(cell.get('behaviour_table', ()))
+            print(f'  [behaviour] {env_key:<9} {cond_key:<10} cached cell — '
+                  f'{n_beh} run(s) of stored values, no organisms.csv read')
+            continue
         runs = cell['runs']
         if behaviour_reps is not None:
             seen, capped = {}, []
@@ -430,10 +486,322 @@ def load_behaviour(cells, cache_dir, max_gen, behaviour_reps):
     return total
 
 
+# ── Value cache: figures and tests after the logs are gone ───────────────
+#
+# The two environments' logs are tens of GB each and do not sit on the same disk
+# at the same time, so a campaign gets analysed in two passes: one environment
+# now, the other after its logs are transferred in. Everything downstream of
+# loading reads a cell in one of four ways, and all four reduce to something
+# small enough to keep beside the figures:
+#
+#   curves.csv     per generation x metric x aggregation unit: n, mean, std,
+#                  median, q25, q75. That is every band --band can draw ('std'
+#                  and 'sem' from mean/std/n, 'iqr' from the quartiles) over
+#                  both --aggregate units, stored UNSMOOTHED. Smoothing is a
+#                  rolling mean applied at draw time; caching the smoothed line
+#                  would freeze --smooth at whatever it was when the logs were
+#                  last present.
+#   table.csv      one row per run, the converged value of every metric. This is
+#                  what every significance test actually consumes — the paired
+#                  seed tests, the clustered bootstrap, the collapse rates and
+#                  the variance components all start from this table and never
+#                  touch a per-generation curve.
+#   extent.csv     per metric, the min and max over every generation of every
+#                  run. It is the only thing normalisation_ranges() reads the
+#                  curves for, so a cached cell still joins the GLOBAL min-max
+#                  range and both environments stay on one normalised axis
+#                  whether or not their logs were present at the same time.
+#   survival.csv   one row per run: the time-to-viability event and its
+#                  censoring flag, at the --cross-sustain it was built with.
+#   behaviour_table.csv
+#                  one row per run, the converged value of each organisms.csv
+#                  metric. converged() aggregates these from the per-run frames,
+#                  which the cache does not keep.
+#
+# WHAT THE CACHE DELIBERATELY WILL NOT DO
+# ---------------------------------------
+# Every stored statistic is conditional on the options that chose which runs and
+# which generations went into it: --final-window, --max-gen, --reps, --seeds.
+# meta.json stamps all four and read_cache() REFUSES a cell whose stamp differs
+# from the current invocation, printing what disagreed, rather than quietly
+# pooling two definitions of "converged" into one figure. --cross-sustain is
+# stamped the same way and a mismatch drops the survival rows alone, since it
+# affects nothing else. Changing any of those options needs the logs back.
+#
+# A cell whose logs ARE present is always recomputed and never read from cache,
+# so a stale cache can only ever be the fallback, never an override.
+
+CACHE_MODES = ('runs', 'seeds')
+# The loading options every cached statistic is conditional on.
+CACHE_STAMP = ('final_window', 'max_gen', 'reps', 'seeds')
+
+
+def cache_stamp(args, seeds):
+    return {'final_window': args.final_window, 'max_gen': args.max_gen,
+            'reps': args.reps, 'seeds': (sorted(seeds) if seeds else None)}
+
+
+def cache_cell_dir(cache_root, env_key, cond_key):
+    return os.path.join(cache_root, f'{env_key}__{cond_key}')
+
+
+def metric_sources(figures):
+    """The (metric, source) pairs to cache, de-duplicated.
+
+    GEN_FIGURES lists avg_fitness twice (normalised and raw); the numbers behind
+    the two are identical, so caching it once is enough.
+    """
+    seen, out = set(), []
+    for metric, _stem, _norm, source in figures:
+        if (metric, source) not in seen:
+            seen.add((metric, source))
+            out.append((metric, source))
+    return out
+
+
+def curve_stats(series):
+    """Per-generation statistics for one metric, before smoothing.
+
+    Everything la.band_stats() needs: the mean and std that 'std'/'sem' centre
+    on, the n that turns one into the other, and the quartiles 'iqr' uses
+    instead. n is stored per generation rather than as band_stats's single
+    maximum so a cached curve still records where runs ended.
+    """
+    wide = pd.concat(series, axis=1).sort_index()
+    return pd.DataFrame({
+        'generation': wide.index.to_numpy(dtype=float),
+        'n': wide.notna().sum(axis=1).to_numpy(dtype=int),
+        'mean': wide.mean(axis=1).to_numpy(dtype=float),
+        'std': wide.std(axis=1).to_numpy(dtype=float),
+        'median': wide.median(axis=1).to_numpy(dtype=float),
+        'q25': wide.quantile(0.25, axis=1).to_numpy(dtype=float),
+        'q75': wide.quantile(0.75, axis=1).to_numpy(dtype=float),
+    })
+
+
+def band_from_cache(df, band, smooth):
+    """Cached statistics -> la.band_stats()'s (gens, centre, lo, hi, n).
+
+    Mirrors band_stats line for line, including the max-over-generations n that
+    'sem' divides by, so a cached panel and a live one are the same figure.
+    """
+    gens = df['generation'].to_numpy(dtype=float)
+    n = int(df['n'].max()) if len(df) else 0
+    if band == 'iqr':
+        centre, lo, hi = df['median'], df['q25'], df['q75']
+    else:
+        centre = df['mean']
+        spread = df['std'].fillna(0)
+        if band == 'sem':
+            spread = spread / max(np.sqrt(n), 1.0)
+        lo, hi = centre - spread, centre + spread
+    if smooth > 1:
+        roll = lambda s: s.rolling(smooth, min_periods=1, center=True).mean()
+        centre, lo, hi = roll(centre), roll(lo), roll(hi)
+    return (gens, centre.to_numpy(dtype=float), lo.to_numpy(dtype=float),
+            hi.to_numpy(dtype=float), n)
+
+
+def band_for(cell, metric, mode, band, smooth, source='gen'):
+    """Centre line + band for one condition, from the logs or from the cache.
+
+    Live curves take precedence: a cell whose logs are present is recomputed, so
+    the cache can only ever fill a gap and never overrule the data.
+    """
+    series = series_for(cell, metric, mode, source)
+    if series:
+        return la.band_stats(series, band, smooth)
+    df = cell.get('cache_curves', {}).get((metric, mode, source))
+    if df is None or df.empty:
+        return None
+    return band_from_cache(df, band, smooth)
+
+
+def write_cache(cells, cache_root, figures, args, seeds):
+    """Store every loaded cell's statistics under cache_root.
+
+    Only cells that were loaded FROM the logs are written; a cell that was itself
+    read from the cache is skipped, so re-running with one environment missing
+    cannot round-trip and degrade the stored numbers.
+    """
+    os.makedirs(cache_root, exist_ok=True)
+    pairs = metric_sources(figures)
+    written = 0
+    for (env_key, cond_key), cell in sorted(cells.items()):
+        if cell.get('cached'):
+            print(f'  [cache] {env_key:<9} {cond_key:<10} already cached, left as is')
+            continue
+        d = cache_cell_dir(cache_root, env_key, cond_key)
+        os.makedirs(d, exist_ok=True)
+
+        blocks = []
+        for metric, source in pairs:
+            for mode in CACHE_MODES:
+                series = series_for(cell, metric, mode, source)
+                if not series:
+                    continue
+                st = curve_stats(series)
+                st.insert(0, 'source', source)
+                st.insert(0, 'mode', mode)
+                st.insert(0, 'metric', metric)
+                blocks.append(st)
+        if blocks:
+            pd.concat(blocks, ignore_index=True).to_csv(
+                os.path.join(d, 'curves.csv'), index=False)
+
+        cell['table'].to_csv(os.path.join(d, 'table.csv'), index=False)
+
+        beh_rows = []
+        for (sd, rep, name), df in sorted(cell.get('behaviour', {}).items()):
+            row = {'seed': int(sd), 'rep': int(rep), 'run': name}
+            tail = df.tail(args.final_window)
+            for m in BEHAVIOUR_ORDER:
+                if m in df.columns:
+                    row[m] = float(tail[m].mean())
+            beh_rows.append(row)
+        if beh_rows:
+            pd.DataFrame(beh_rows).to_csv(
+                os.path.join(d, 'behaviour_table.csv'), index=False)
+
+        ext = []
+        for metric, source in pairs:
+            curves = cell['curves'] if source == 'gen' else cell.get('behaviour', {})
+            vals = [df[metric].to_numpy(dtype=float)
+                    for df in curves.values() if metric in df.columns]
+            vals = [v[np.isfinite(v)] for v in vals]
+            vals = [v for v in vals if v.size]
+            if not vals:
+                continue
+            allv = np.concatenate(vals)
+            ext.append({'metric': metric, 'source': source,
+                        'lo': float(allv.min()), 'hi': float(allv.max())})
+        if ext:
+            pd.DataFrame(ext).to_csv(os.path.join(d, 'extent.csv'), index=False)
+
+        meta = {'environment': env_key, 'condition': cond_key,
+                'n': int(cell['n']),
+                'n_behaviour': len(cell.get('behaviour', {})),
+                'runs': [r['name'] for r in cell['runs']],
+                'cross_sustain': None,
+                'written': dt.datetime.now().isoformat(timespec='seconds')}
+        meta.update(cache_stamp(args, seeds))
+        with open(os.path.join(d, 'meta.json'), 'w') as f:
+            json.dump(meta, f, indent=2)
+        written += 1
+        print(f'  [cache] {env_key:<9} {cond_key:<10} {cell["n"]:3d} runs -> {d}')
+    return written
+
+
+def write_cache_survival(cells, cache_root, tt, args):
+    """Add the time-to-viability event table to each freshly cached cell.
+
+    Separate from write_cache() because the event table depends on
+    --cross-sustain, which nothing else in the cache does, and because the cache
+    is written before the figures so that a crash in plotting cannot cost the
+    stored numbers.
+    """
+    if tt is None or not len(tt):
+        return 0
+    n = 0
+    for (env_key, cond_key), cell in sorted(cells.items()):
+        if cell.get('cached'):
+            continue
+        d = cache_cell_dir(cache_root, env_key, cond_key)
+        if not os.path.isdir(d):
+            continue
+        sub = tt[(tt['environment'] == env_key) & (tt['condition'] == cond_key)]
+        if not len(sub):
+            continue
+        sub.to_csv(os.path.join(d, 'survival.csv'), index=False)
+        mpath = os.path.join(d, 'meta.json')
+        try:
+            with open(mpath) as f:
+                meta = json.load(f)
+        except (ValueError, OSError):
+            meta = {}
+        meta['cross_sustain'] = args.cross_sustain
+        with open(mpath, 'w') as f:
+            json.dump(meta, f, indent=2)
+        n += 1
+    if n:
+        print(f'    cached the event table for {n} cell(s) '
+              f'(sustain = {args.cross_sustain})')
+    return n
+
+
+def read_cache(cache_root, env_key, cond_key, args, seeds):
+    """Rebuild one cell from stored statistics.
+
+    Returns (cell, None) on success and (None, reason) otherwise, so the caller
+    can say WHY a cache did not stand in — a silently ignored cache and an
+    absent one look identical in a figure and differ completely in what they
+    mean.
+    """
+    d = cache_cell_dir(cache_root, env_key, cond_key)
+    mpath = os.path.join(d, 'meta.json')
+    if not os.path.exists(mpath):
+        return None, None
+    try:
+        with open(mpath) as f:
+            meta = json.load(f)
+    except (ValueError, OSError) as exc:
+        return None, f'meta.json unreadable ({type(exc).__name__})'
+
+    want = cache_stamp(args, seeds)
+    bad = [k for k in CACHE_STAMP if meta.get(k) != want[k]]
+    if bad:
+        detail = ', '.join(f'{k}: cached {meta.get(k)!r} vs requested {want[k]!r}'
+                           for k in bad)
+        return None, f'stamp mismatch ({detail})'
+
+    cell = {'table': pd.DataFrame(), 'curves': {}, 'behaviour': {},
+            'runs': [], 'n': int(meta.get('n', 0)), 'cached': True,
+            'cache_curves': {}, 'extent': {}, 'meta': meta}
+
+    tpath = os.path.join(d, 'table.csv')
+    if os.path.exists(tpath):
+        cell['table'] = pd.read_csv(tpath)
+    if cell['table'].empty:
+        return None, 'table.csv missing or empty'
+    cell['n'] = int(len(cell['table']))
+
+    cpath = os.path.join(d, 'curves.csv')
+    if os.path.exists(cpath):
+        cur = pd.read_csv(cpath)
+        for (metric, mode, source), g in cur.groupby(['metric', 'mode', 'source']):
+            cell['cache_curves'][(str(metric), str(mode), str(source))] = (
+                g.sort_values('generation').reset_index(drop=True))
+
+    epath = os.path.join(d, 'extent.csv')
+    if os.path.exists(epath):
+        for _i, r in pd.read_csv(epath).iterrows():
+            cell['extent'][(str(r['metric']), str(r['source']))] = (
+                float(r['lo']), float(r['hi']))
+
+    bpath = os.path.join(d, 'behaviour_table.csv')
+    if os.path.exists(bpath):
+        cell['behaviour_table'] = pd.read_csv(bpath)
+
+    spath = os.path.join(d, 'survival.csv')
+    if os.path.exists(spath):
+        if meta.get('cross_sustain') == args.cross_sustain:
+            cell['survival'] = pd.read_csv(spath)
+        else:
+            cell['survival_rejected'] = (
+                f'cached at sustain {meta.get("cross_sustain")}, '
+                f'requested {args.cross_sustain}')
+    return cell, None
+
+
 # ── Normalisation ─────────────────────────────────────────────────────────────
 
 def normalisation_ranges(cells, metrics, scope):
-    """lo/hi per fitness metric, over every generation of every run in scope."""
+    """lo/hi per fitness metric, over every generation of every run in scope.
+
+    Cached cells contribute through their stored extent, so the range is the
+    same whether both environments' logs were on disk together or one was read
+    back from the cache — which is the whole point of storing the extent.
+    """
     out = {}
     env_keys = sorted({e for e, _c in cells})
     groups = ([('*', list(cells))] if scope == 'global'
@@ -442,10 +810,19 @@ def normalisation_ranges(cells, metrics, scope):
         for m in metrics:
             vals = []
             for k in keys:
-                for df in cells[k]['curves'].values():
+                cell = cells[k]
+                for df in cell['curves'].values():
                     if m in df.columns:
                         v = df[m].to_numpy(dtype=float)
                         vals.append(v[np.isfinite(v)])
+                # A cached cell kept only the min and max of that metric over
+                # every generation of every run, which is all this needs: the
+                # min-max of two endpoints IS the min-max of what produced them,
+                # so a cached environment joins the pooled range exactly.
+                if not cell['curves']:
+                    ext = cell.get('extent', {}).get((m, 'gen'))
+                    if ext is not None:
+                        vals.append(np.asarray(ext, dtype=float))
             if not vals:
                 continue
             allv = np.concatenate(vals)
@@ -502,12 +879,20 @@ def converged(cell, metric, source, final_window, rng=None):
             return np.array([])
         v = t[metric].to_numpy(dtype=float)
     else:
-        vals = []
-        for df in cell.get('behaviour', {}).values():
-            if metric in df.columns:
-                tail = df[metric].tail(final_window)
-                if len(tail):
-                    vals.append(float(tail.mean()))
+        frames = cell.get('behaviour', {})
+        if frames:
+            vals = []
+            for df in frames.values():
+                if metric in df.columns:
+                    tail = df[metric].tail(final_window)
+                    if len(tail):
+                        vals.append(float(tail.mean()))
+        else:
+            # Cached cell: the same per-run number, already aggregated over the
+            # same window when the organisms.csv files were last readable.
+            bt = cell.get('behaviour_table')
+            vals = ([] if bt is None or metric not in bt.columns
+                    else bt[metric].tolist())
         v = np.array(vals, dtype=float)
     v = v[np.isfinite(v)]
     return rescale(v, rng) if rng is not None else v
@@ -841,6 +1226,18 @@ def time_to_threshold(cells, envs, conditions, sustain=10, metric='avg_fitness')
             cell = cells.get((env['key'], cond['key']))
             if cell is None:
                 continue
+            if not cell['curves']:
+                # No curves to scan; the event table was stored instead. It is
+                # accepted only when it was built at this --cross-sustain, which
+                # read_cache() has already checked.
+                sv = cell.get('survival')
+                if sv is not None and len(sv):
+                    rows.extend(sv.to_dict('records'))
+                elif cell.get('survival_rejected'):
+                    print(f'    [skip] {env["key"]:<9} {cond["key"]:<10} '
+                          f'cached event table unusable: '
+                          f'{cell["survival_rejected"]}')
+                continue
             for (seed, rep, name), df in cell['curves'].items():
                 if metric not in df.columns:
                     continue
@@ -1009,10 +1406,10 @@ def draw_conditions(ax, cells, env_key, conditions, metric, mode, band, smooth,
         cell = cells.get((env_key, cond['key']))
         if cell is None:
             continue
-        series = series_for(cell, metric, mode, source)
-        if not series:
+        stats = band_for(cell, metric, mode, band, smooth, source)
+        if stats is None:
             continue
-        gens, centre, lo, hi, n = la.band_stats(series, band, smooth)
+        gens, centre, lo, hi, n = stats
         if rng is not None:
             centre, lo, hi = rescale(centre, rng), rescale(lo, rng), rescale(hi, rng)
         if metric in getattr(la, 'NONNEGATIVE', set()) or metric.startswith('frac_'):
@@ -1042,12 +1439,44 @@ def draw_conditions(ax, cells, env_key, conditions, metric, mode, band, smooth,
     return rows
 
 
-def side_legend(fig, entries, final_window, band, anchor=(0.775, 0.5)):
-    """Converged mean ± 1 std per condition, OUTSIDE the axes.
+def legend_strip(fig, handles, title, ncol=None, y=0.005, fontsize=9.0):
+    """A legend UNDER the axes, one column per entry.
 
-    Matches output/hard_conditions_combined: the plot area holds nothing but the
-    lines it exists to compare, and the number a reader would quote sits on the
-    figure instead of only in summary.csv.
+    WHY NOT DOWN THE RIGHT-HAND SIDE, WHICH IS WHERE THIS USED TO LIVE
+    ------------------------------------------------------------------
+    A legend column costs its width across the FULL height of the plate, and
+    three short blocks of text do not fill that height — on the two-panel
+    comparison it reserved 19.5% of the width and left most of that column
+    blank, on the single-panel figures 23.5%. In a thesis the figure is scaled
+    to the text width, so that blank column is paid for by shrinking the axes:
+    the curves lose a quarter of their width to whitespace that carries nothing.
+
+    Underneath, the same text runs ACROSS the width in as many columns as there
+    are conditions, so it occupies a band roughly two text-lines deep and the
+    axes get the whole width back. It is also the correct reading order — the
+    numbers are read after the curves, not beside them.
+
+    `y` is a figure-fraction anchor slightly below 0, so the strip hangs off the
+    bottom and save()'s bbox_inches='tight' grows the canvas to include it. That
+    keeps tight_layout's rect free to give the axes the full width, which is the
+    entire point.
+    """
+    leg = fig.legend(handles=handles, loc='upper center',
+                     bbox_to_anchor=(0.5, y), ncol=(ncol or len(handles)),
+                     frameon=False, fontsize=fontsize, labelcolor=INK,
+                     handlelength=2.4, handletextpad=0.8, columnspacing=3.0,
+                     borderaxespad=0.0, title=title)
+    leg.get_title().set_fontsize(9)
+    leg.get_title().set_color(INK)
+    return leg
+
+
+def side_legend(fig, entries, final_window, band, anchor=None):
+    """Converged mean ± 1 std per condition, in a strip beneath the axes.
+
+    The plot area still holds nothing but the lines it exists to compare, and
+    the number a reader would quote is still on the figure rather than only in
+    summary.csv — see legend_strip for where it moved to and why.
     """
     handles = []
     for cond, v in entries:
@@ -1059,13 +1488,8 @@ def side_legend(fig, entries, final_window, band, anchor=(0.775, 0.5)):
         handles.append(Line2D([], [], color=cond['colour'], ls=cond['ls'],
                               lw=2.4, label=txt))
     spread = 'IQR' if band == 'iqr' else '1 std'
-    leg = fig.legend(handles=handles, loc='center left', bbox_to_anchor=anchor,
-                     frameon=False, fontsize=9.5, labelcolor=INK,
-                     labelspacing=1.5, handlelength=2.6,
-                     title=f'converged mean ± {spread} across runs')
-    leg.get_title().set_fontsize(9)
-    leg.get_title().set_color(INK)
-    return leg
+    return legend_strip(fig, handles,
+                        f'converged mean ± {spread} across runs')
 
 
 def bar_key(ax):
@@ -1338,7 +1762,7 @@ def draw_km(ax, tt, env, conditions, sustain, show_ci=True):
     return drawn
 
 
-def km_legend(fig, drawn, sustain, anchor=(0.775, 0.5)):
+def km_legend(fig, drawn, sustain, anchor=None):
     handles = []
     for cond, sub, kmf in drawn:
         med = kmf.median_survival_time_
@@ -1348,13 +1772,8 @@ def km_legend(fig, drawn, sustain, anchor=(0.775, 0.5)):
         handles.append(Line2D([], [], color=cond['colour'], ls=cond['ls'], lw=2.4,
                               label=f'{cond["label"]}\nmedian gen {med_txt}'
                                     f'  (n = {len(sub)}{tail})'))
-    leg = fig.legend(handles=handles, loc='center left', bbox_to_anchor=anchor,
-                     frameon=False, fontsize=9.5, labelcolor=INK,
-                     labelspacing=1.5, handlelength=2.6,
-                     title='median generation reaching\nsustained viability')
-    leg.get_title().set_fontsize(9)
-    leg.get_title().set_color(INK)
-    return leg
+    return legend_strip(fig, handles,
+                        'median generation reaching sustained viability')
 
 
 def _thr_text(thr_norm):
@@ -1371,7 +1790,7 @@ def _thr_text(thr_norm):
 
 
 def fig_km(tt, env, conditions, sustain, out_path, thr_norm=None):
-    fig, ax = plt.subplots(figsize=(11.0, 4.9))
+    fig, ax = plt.subplots(figsize=(8.6, 4.9))
     drawn = draw_km(ax, tt, env, conditions, sustain)
     if not drawn:
         plt.close(fig)
@@ -1384,12 +1803,12 @@ def fig_km(tt, env, conditions, sustain, out_path, thr_norm=None):
     km_legend(fig, drawn, sustain)
     fig.suptitle(f'Time to viability — {env["label"]}', fontsize=12.5,
                  color=INK, y=0.995)
-    save(fig, out_path, rect=(0, 0, 0.765, 0.93))
+    save(fig, out_path, rect=(0, 0, 1, 0.93))
     return True
 
 
 def fig_km_compare(tt, envs, conditions, sustain, out_path, thr_norm=None):
-    fig, axs = plt.subplots(1, 2, figsize=(13.6, 4.9), sharey=True)
+    fig, axs = plt.subplots(1, 2, figsize=(11.6, 4.9), sharey=True)
     per_env, any_drawn = [], False
     for ax, env in zip(axs, envs):
         drawn = draw_km(ax, tt, env, conditions, sustain)
@@ -1431,7 +1850,7 @@ def fig_km_compare(tt, envs, conditions, sustain, out_path, thr_norm=None):
              f'{_thr_text(thr_norm)} · shaded 95% CI · shared y-axis, '
              f'INDEPENDENT x (the two environments differ ~10x in timescale)',
              ha='center', fontsize=8.5, color=INK, alpha=0.78)
-    save(fig, out_path, rect=(0, 0, 0.805, 0.925))
+    save(fig, out_path, rect=(0, 0, 1, 0.925))
     return True
 
 
@@ -1446,7 +1865,10 @@ def per_environment(cells, env, conditions, ranges, scope, args, out_root, figur
 
     for metric, stem, normalise, source in figures:
         rng = get_range(ranges, env_key, metric, scope) if normalise else None
-        fig, ax = plt.subplots(figsize=(11.0, 4.9))
+        # 8.6in of plate, all of it axes. Was 11.0in with the right-hand 23.5%
+        # reserved for the legend, i.e. the same 8.4in of curve on a plate a
+        # quarter wider — see legend_strip.
+        fig, ax = plt.subplots(figsize=(8.6, 4.5))
         drawn = draw_conditions(ax, cells, env_key, conditions, metric,
                                 args.aggregate, args.band, args.smooth,
                                 source=source, rng=rng,
@@ -1475,8 +1897,12 @@ def per_environment(cells, env, conditions, ranges, scope, args, out_root, figur
         side_legend(fig, entries, args.final_window, args.band)
         fig.suptitle(f'{metric_label(metric, source)} — {env["label"]}  ·  '
                      f'{n_total} runs across {len(drawn)} conditions',
-                     fontsize=12.5, color=INK, y=0.995)
-        save(fig, os.path.join(out_dir, f'{stem}.png'), rect=(0, 0, 0.765, 0.93))
+                     fontsize=12.5, color=INK, y=1.0)
+        # 0.945, not 0.93: the axes title already carries the method note, so
+        # the only thing this band still holds is the suptitle. Raising it
+        # further is a false economy — savefig(bbox_inches='tight') just grows
+        # the canvas to fit whatever spills over the top.
+        save(fig, os.path.join(out_dir, f'{stem}.png'), rect=(0, 0, 1, 0.945))
 
     # Converged-fitness strips, raw and normalised.
     for normalise, stem in ((False, 'strip_final_fitness_raw'),
@@ -1521,7 +1947,7 @@ def comparisons(cells, envs, conditions, ranges, scope, args, out_root, figures)
     print(f'  side-by-side -> {out_dir}')
 
     for metric, stem, normalise, source in figures:
-        fig, axs = plt.subplots(1, 2, figsize=(13.6, 4.9), sharey=True)
+        fig, axs = plt.subplots(1, 2, figsize=(11.6, 4.5), sharey=True)
         drawn_any, per_env = False, []
         for ax, env in zip(axs, envs):
             rng = get_range(ranges, env['key'], metric, scope) if normalise else None
@@ -1560,12 +1986,7 @@ def comparisons(cells, envs, conditions, ranges, scope, args, out_root, figures)
                                       lw=2.4,
                                       label=cond['label'] + '\n' + '\n'.join(parts)))
         spread = 'IQR' if args.band == 'iqr' else '1 std'
-        leg = fig.legend(handles=handles, loc='center left',
-                         bbox_to_anchor=(0.815, 0.5), frameon=False, fontsize=9,
-                         labelcolor=INK, labelspacing=1.6, handlelength=2.6,
-                         title=f'converged mean ± {spread} across runs')
-        leg.get_title().set_fontsize(9)
-        leg.get_title().set_color(INK)
+        legend_strip(fig, handles, f'converged mean ± {spread} across runs')
 
         note = (f'{la.centre_label(args.band)} over runs · shaded '
                 f'{la.band_label(args.band, args.aggregate)} · shared y-axis'
@@ -1575,11 +1996,11 @@ def comparisons(cells, envs, conditions, ranges, scope, args, out_root, figures)
             note += f' · one min–max range for both panels ({scope} scope)'
         fig.suptitle(f'{metric_label(metric, source)} — '
                      f'{envs[0]["short"]} vs {envs[1]["short"]}',
-                     fontsize=12.5, color=INK, y=1.005)
-        fig.text(0.40, 0.945, note, ha='center', fontsize=8.5, color=INK,
+                     fontsize=12.5, color=INK, y=1.01)
+        fig.text(0.5, 0.955, note, ha='center', fontsize=8.5, color=INK,
                  alpha=0.78)
         save(fig, os.path.join(out_dir, f'compare_{stem}.png'),
-             rect=(0, 0, 0.805, 0.925))
+             rect=(0, 0, 1, 0.94))
 
     # Strip comparison.
     for normalise, stem in ((False, 'strip_final_fitness_raw'),
@@ -2042,6 +2463,13 @@ def main():
     ap.add_argument('--cross-sustain', type=int, default=10,
                     help='consecutive generations at or above the viability '
                          'threshold that count as reaching it (default 10)')
+    ap.add_argument('--cache-dir', default=None,
+                    help='where per-cell statistics are stored and read back '
+                         '(default <out>/.cache_values). A cell with no logs on '
+                         'disk is drawn and tested from this instead, so one '
+                         'environment can be analysed after its logs are gone')
+    ap.add_argument('--no-cache', action='store_true',
+                    help='neither write nor read the value cache')
     ap.add_argument('--n-boot', type=int, default=10000,
                     help='bootstrap resamples (default 10000)')
     ap.add_argument('--formats', default='png,pdf',
@@ -2066,11 +2494,15 @@ def main():
     out_root = args.out
     os.makedirs(out_root, exist_ok=True)
 
+    cache_root = (None if args.no_cache else
+                  (args.cache_dir or os.path.join(out_root, '.cache_values')))
+
     print('Discovering runs (params.json is authoritative) ...')
     cells = load_cells(ENVIRONMENTS, CONDITIONS, args.max_gen, args.final_window,
-                       seeds, args.reps)
+                       seeds, args.reps, cache_root=cache_root, args=args)
     if not cells:
-        raise SystemExit('No runs matched. Check the log roots and filters.')
+        raise SystemExit('No runs matched, and no usable cache. '
+                         'Check the log roots, the filters and --cache-dir.')
 
     figures = [(m, s, n, 'gen') for m, s, n in GEN_FIGURES]
     if not args.no_behaviour:
@@ -2085,6 +2517,10 @@ def main():
     print(f'\nNormalisation ({args.norm_scope} scope):')
     for (g, m), (lo, hi) in sorted(ranges.items()):
         print(f'  {m:<24} {g:<9} lo={lo:8.4f}  hi={hi:8.4f}  span={hi - lo:8.4f}')
+
+    if cache_root:
+        print(f'\nValue cache -> {cache_root}')
+        write_cache(cells, cache_root, figures, args, seeds)
 
     print('\nPer-environment figures:')
     for env in ENVIRONMENTS:
@@ -2116,6 +2552,8 @@ def main():
         p_tt = os.path.join(out_root, 'time_to_threshold.csv')
         tt.to_csv(p_tt, index=False)
         print(f'    wrote {p_tt}   ({len(tt)} runs)')
+        if cache_root:
+            write_cache_survival(cells, cache_root, tt, args)
         _fits, km_tab = km_curves(tt, ENVIRONMENTS, CONDITIONS)
         cox = cox_models(tt, ENVIRONMENTS, CONDITIONS)
         lr = logrank_by_env(tt, ENVIRONMENTS)
