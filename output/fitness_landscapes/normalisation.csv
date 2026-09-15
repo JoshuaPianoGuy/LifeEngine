@@ -1,0 +1,4 @@
+scope,group,metric,lo,hi,span,viability_4.375_normalised,n_slices,environments
+global,*,f_evo,1.26592,24.0874,22.821479999999998,0.1362348103628687,12,"hard|baseline"
+global,*,f_learn,1.26592,24.0874,22.821479999999998,0.1362348103628687,12,"hard|baseline"
+global,*,lift,0.0,22.821479999999998,22.821479999999998,,12,"hard|baseline"

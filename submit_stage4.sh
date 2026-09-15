@@ -5,7 +5,7 @@
 # Stage 4 = 3 random filter-normalised planes per environment (baseline, hard),
 # each a full 25x25 x R=10 x {RL off, RL on} grid = 12,500 probes. This driver
 # loops the 6 plane out-dirs and submits each as its own sharded SLURM array via
-# the generic runner run_landscape_probe_array.slurm. The predator config for the
+# the generic runner slurm/run_landscape_probe_array.slurm. The predator config for the
 # hard planes is already baked into their jobs.json (set at generation time), so
 # PARAMS here only supplies the RL hyperparameters for the RL-on pass.
 #

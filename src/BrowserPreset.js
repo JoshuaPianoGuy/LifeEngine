@@ -96,17 +96,17 @@ const CONDITIONS = {
     // --condition learning --mode standard
     learning:  {
         learning_enabled: true,  experiment_mode: 'standard',
-        label: 'Learning', detail: 'GA + within-life REINFORCE',
+        label: 'Learning', detail: 'EA + within-life REINFORCE',
     },
     // --condition evolution --mode standard  (no RL knobs passed at all)
     evolution: {
         learning_enabled: false, experiment_mode: 'standard',
-        label: 'Evolution', detail: 'GA only, no within-life learning',
+        label: 'Evolution', detail: 'EA only, no within-life learning',
     },
     // --condition learning --mode pure_rl
     pure_rl:   {
         learning_enabled: true,  experiment_mode: 'pure_rl',
-        label: 'Pure RL', detail: 'within-life REINFORCE only, no GA',
+        label: 'Pure RL', detail: 'within-life REINFORCE only, no EA',
     },
 };
 

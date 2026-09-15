@@ -1,0 +1,3 @@
+env,test,n_slices,n_positive,median_of_medians,min,max,p_sign,p_wilcoxon,p_floor_at_this_n
+baseline,lift > 0 across slices,6,6,0.023755689815033936,0.022950308218397778,0.028723816334435798,0.03125,0.03125,0.03125
+baseline,lift: succeed vs underperform,6,-1,0.001339089314102277,0.02551835668268082,0.023487229282821886,nan,0.4,0.1

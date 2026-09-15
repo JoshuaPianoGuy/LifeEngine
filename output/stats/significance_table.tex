@@ -1,0 +1,51 @@
+\begin{table*}[t]
+  \centering
+  \caption{The statistical tests reported in Section~\ref{sec:results}, one test
+  per claim. Each block names its own statistic, because the families answer
+  different questions and their statistics are not comparable to one another.
+  The $n$ column gives the unit each test is computed on: the first three
+  families are computed on individual runs, because when a run crossed
+  viability, whether it collapsed, and how far runs scatter are quantities that
+  exist only at run level; the fourth is paired across the ten map seeds.
+  Runs sharing a map seed share their terrain and are not independent, so the
+  run-level $n$ overstates the evidence --- Table~\ref{tab:neff} quantifies by
+  how much in each cell. $\alpha = 0.05$ throughout.}
+  \label{tab:significance}
+  \small
+  \setlength{\tabcolsep}{5pt}
+  \begin{tabular}{@{}llrrrr@{}}
+    \toprule
+    Contrast & Detail & Statistic & $n$ & $p$ & $p$ (Holm) \\
+    \midrule
+    \multicolumn{6}{@{}p{\textwidth}@{}}{\footnotesize \textit{Generations until mean fitness sits at or above the viability threshold of 4.375 for ten consecutive generations (Figure~4). Runs that never cross are censored at generation 1000. The stratified test compares runs only against other runs on the same terrain and is the one we quote; the unstratified statistic is given beside it so the effect of the clustering is visible. Both were implemented directly and verified against \texttt{lifelines} in the unstratified case.}}\\[2pt]
+    Baseline: A vs B vs C, stratified by map seed & 2 df, censored at generation 1000 & 18.41 & 300 & $1{\times}10^{-4}$ & -- \\
+    Baseline: A vs B vs C, unstratified & 2 df, censored at generation 1000 & 20.94 & 300 & $3{\times}10^{-5}$ & -- \\
+    Predator: A vs B vs C, stratified by map seed & 2 df, censored at generation 1000 & 176.7 & 300 & $4{\times}10^{-39}$ & -- \\
+    Predator: A vs B vs C, unstratified & 2 df, censored at generation 1000 & 188.2 & 300 & $1{\times}10^{-41}$ & -- \\
+    \midrule
+    \multicolumn{6}{@{}p{\textwidth}@{}}{\footnotesize \textit{Number of runs whose converged fitness fell below 4.375, predator environment only --- no run in either condition fell below it in the baseline (Figure~2). Fisher is exact, so the zero cell is not a problem; a $\chi^2$ approximation here would not be trustworthy. Holm-adjusted over the two contrasts.}}\\[2pt]
+    Predator: A vs B & 10/100 vs 0/100 & $\infty$ & 200 & 0.002 & 0.003 \\
+    Predator: A vs C & 10/100 vs 2/100 & 5.444 & 200 & 0.033 & 0.033 \\
+    \midrule
+    \multicolumn{6}{@{}p{\textwidth}@{}}{\footnotesize \textit{Spread of converged fitness across the 100 runs of each condition (Figure~2, Table~4). Brown--Forsythe is Levene's test centred on the median, which is what makes it survive the bimodal distributions the predator environment produces. Pairwise contrasts are Holm-adjusted over the two.}}\\[2pt]
+    Baseline: A vs B vs C (omnibus) & sd(A)=0.0551  sd(B)=0.0666  sd(C)=0.1150 & 23.85 & 300 & $2{\times}10^{-10}$ & -- \\
+    Baseline: B vs A & sd(B)=0.0666 vs sd(A)=0.0551 & 4.507 & 200 & 0.035 & 0.035 \\
+    Baseline: B vs C & sd(B)=0.0666 vs sd(C)=0.1150 & 20.14 & 200 & $1{\times}10^{-5}$ & $2{\times}10^{-5}$ \\
+    Baseline: A vs C & sd(A)=0.0551 vs sd(C)=0.1150 & 36.76 & 200 & $7{\times}10^{-9}$ & $2{\times}10^{-8}$ \\
+    Predator: A vs B vs C (omnibus) & sd(A)=1.0174  sd(B)=0.0614  sd(C)=0.4913 & 13.19 & 300 & $3{\times}10^{-6}$ & -- \\
+    Predator: B vs A & sd(B)=0.0614 vs sd(A)=1.0174 & 20.42 & 200 & $1{\times}10^{-5}$ & $2{\times}10^{-5}$ \\
+    Predator: B vs C & sd(B)=0.0614 vs sd(C)=0.4913 & 40.68 & 200 & $1{\times}10^{-9}$ & $4{\times}10^{-9}$ \\
+    Predator: A vs C & sd(A)=1.0174 vs sd(C)=0.4913 & 2.881 & 200 & 0.091 & 0.091 \\
+    \midrule
+    \multicolumn{6}{@{}p{\textwidth}@{}}{\footnotesize \textit{Inherited genomes re-evaluated with learning disabled, paired across the ten map seeds at each founder-dump checkpoint (Figure~3). Positive favours the learning condition. Rank-based because $n=10$ is too small to assume normality; Holm-adjusted over the four checkpoints within each environment.}}\\[2pt]
+    Baseline: B vs A at generation 250 & mean difference -0.67 raw f_off, 3/10 seeds favour B & 8 & 10 & 0.049 & 0.195 \\
+    Baseline: B vs A at generation 500 & mean difference -0.38 raw f_off, 4/10 seeds favour B & 18 & 10 & 0.375 & 1.000 \\
+    Baseline: B vs A at generation 750 & mean difference +0.18 raw f_off, 6/10 seeds favour B & 21 & 10 & 0.557 & 1.000 \\
+    Baseline: B vs A at generation 1000 & mean difference +0.15 raw f_off, 6/10 seeds favour B & 24 & 10 & 0.770 & 1.000 \\
+    Predator: B vs A at generation 250 & mean difference +7.19 raw f_off, 8/10 seeds favour B & 3 & 10 & 0.010 & 0.039 \\
+    Predator: B vs A at generation 500 & mean difference +5.59 raw f_off, 8/10 seeds favour B & 5 & 10 & 0.020 & 0.059 \\
+    Predator: B vs A at generation 750 & mean difference +1.31 raw f_off, 4/10 seeds favour B & 21 & 10 & 0.557 & 1.000 \\
+    Predator: B vs A at generation 1000 & mean difference +0.12 raw f_off, 5/10 seeds favour B & 25 & 10 & 0.846 & 1.000 \\
+    \bottomrule
+  \end{tabular}
+\end{table*}

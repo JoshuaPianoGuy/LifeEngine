@@ -1,0 +1,4 @@
+scope,metric,lo,hi,span,viability_4.375_normalised
+global,f_off,0.0107,36.8387,36.828,0.11850494189203865
+global,f_on,0.0107,36.8387,36.828,0.11850494189203865
+global,lift,0.0,36.828,36.828,

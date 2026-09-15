@@ -1,0 +1,20 @@
+\begin{table}[t]
+  \centering
+  \caption{Variance components of converged average fitness, in raw fitness units (mean of the last 50 generations per run; 10 map seeds $\times$ 10 replicates per cell). $\sigma_{\text{between}}$ is the standard deviation attributable to map identity and $\sigma_{\text{within}}$ that of replicate runs on a fixed map, both estimated by one-way random-effects ANOVA. The ICC is their variance ratio and is therefore scale-free: it is identical in both tables.}
+  \label{tab:icc}
+  \small
+  \setlength{\tabcolsep}{6pt}
+  \begin{tabular}{@{}llrrrr@{}}
+    \toprule
+    Environment & Condition & $\sigma_{\text{total}}$ & $\sigma_{\text{between}}$ & $\sigma_{\text{within}}$ & ICC \\
+    \midrule
+    Baseline  & Evolution & 0.0551 & 0.0396 & 0.0402 & 0.49 \\
+    Baseline  & Learning  & 0.0666 & 0.0362 & 0.0570 & 0.29 \\
+    Baseline  & Pure RL   & 0.1150 & 0.0209 & 0.1132 & 0.03 \\
+    \midrule
+    Predator  & Evolution & 1.0174 & 0.2811 & 0.9815 & 0.08 \\
+    Predator  & Learning  & 0.0614 & 0.0381 & 0.0495 & 0.37 \\
+    Predator  & Pure RL   & 0.4913 & 0.0522 & 0.4888 & 0.01 \\
+    \bottomrule
+  \end{tabular}
+\end{table}

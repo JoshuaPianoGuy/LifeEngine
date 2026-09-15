@@ -1,0 +1,44 @@
+{
+  "generated_at": "2026-09-14T15:29:21.398Z",
+  "node_version": "v24.19.0",
+  "config": {
+    "seed": 2001,
+    "width": 200,
+    "height": 200,
+    "generations": 3,
+    "hidden_size": 128,
+    "logs_roots": [
+      "logs",
+      "logs_hard"
+    ]
+  },
+  "passed": 2,
+  "total": 2,
+  "results": [
+    {
+      "check": "mad_live",
+      "passed": true,
+      "headline": "live evolution run: mean absolute weight difference == 0 on all 3 generations, active_weights aliases genome_weights for 93/93 founders",
+      "facts": {
+        "founders": 93,
+        "active_weights === genome_weights": "93/93",
+        "eligibility traces allocated": "0/93 (expected 0)",
+        "max per-founder mean absolute weight difference": 0,
+        "max logged avg_learned_weight_diff": 0
+      }
+    },
+    {
+      "check": "mad_logged_runs",
+      "passed": true,
+      "headline": "100 evolution runs on disk: 0/100000 generation rows carry a nonzero avg_learned_weight_diff",
+      "facts": {
+        "runs scanned": 100,
+        "generation rows": 100000,
+        "nonzero rows": 0,
+        "worst value": 0,
+        "first offenders": [],
+        "roots searched": "logs, logs_hard"
+      }
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 # Headless runner — learning-vs-evolution experiment
 
-`src/headless.js` runs the **learning-vs-evolution experiment** (GA / RL / frozen-policy
+`src/headless.js` runs the **learning-vs-evolution experiment** (EA / RL / frozen-policy
 conditions, seeded map pool, predators, structured CSV logging) as a pure Node.js
 process with no browser, canvas, or display. It is built for the CHPC (PBS) cluster.
 
@@ -201,7 +201,7 @@ The map seed identifies a **world**. Anything sharing a `--map-seed` plays on
   and seed run at once. Locally, serial runs get `run_N`; if you launch parallel local runs
   of the same condition, pass distinct `--run-name` values.
 
-**Why replicates matter here:** only the *terrain* is seeded. GA mutation, RL exploration,
+**Why replicates matter here:** only the *terrain* is seeded. EA mutation, RL exploration,
 and predator wandering use unseeded `Math.random()` (left to chance, by design — see
 `MATHEMATICAL_REFERENCE.md` / the experiment notes). So two runs with identical
 `--map-seed` and `--condition` will diverge — run several per (world × condition) to

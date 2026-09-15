@@ -6,7 +6,7 @@
 # to estimate the ruggedness scalar lambda and (via Stage 8) the NK effective K.
 # After the methodology hardening (5 walks x 500 steps, detrend, LS-fit lambda),
 # each of the 4 dirs holds 20,040 probes = 5 walks x 501 steps x R=8. Like Stage
-# 3/4 the compute is the SAME generic runner (run_landscape_probe_array.slurm);
+# 3/4 the compute is the SAME generic runner (slurm/run_landscape_probe_array.slurm);
 # only the jobs.json content changed. Stage 6 is RL-OFF, so PARAMS supplies only
 # the base env config (map_seed etc.); the hard predator override lives in the
 # hard dirs' jobs.json.

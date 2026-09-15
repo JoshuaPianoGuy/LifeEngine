@@ -1,0 +1,4 @@
+scope,group,metric,lo,hi,span,viability_4.375_normalised
+global,*,avg_fitness,0.5604,8.7833,8.222900000000001,0.46389959746561427
+global,*,best_fitness,3.5,124.0,120.5,0.007261410788381743
+global,*,top20percent_fitness,1.995,24.9211,22.926099999999998,0.10381181273744772

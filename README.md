@@ -19,9 +19,16 @@ Three mechanisms, one world, one yardstick:
 
 | Condition | Mechanism | What is inherited | Lamarckian? | Code |
 |---|---|---|---|---|
-| **Evolution** | Genetic algorithm only | `genome_weights` | n/a — nothing is learned | `GAManager` |
-| **Learning** | GA **plus** in-lifetime REINFORCE | `genome_weights` only | **No** — RL moves `active_weights`, the genome stays frozen and is all the GA sees. A Baldwin-effect setup. | `GAManager` with `rl_enabled` |
-| **Pure RL** | In-lifetime REINFORCE only, no GA | `active_weights`, synced into the genome at reproduction | **Yes** | `PureRLManager` |
+| **Evolution** | Evolutionary algorithm only | `genome_weights` | n/a — nothing is learned | `GAManager` |
+| **Learning** | EA **plus** in-lifetime REINFORCE | `genome_weights` only | **No** — RL moves `active_weights`, the genome stays frozen and is all the EA sees. A Baldwin-effect setup. | `GAManager` with `rl_enabled` |
+| **Pure RL** | In-lifetime REINFORCE only, no EA | `genome_weights` within a generation; `active_weights` synced into the genome at the window boundary | **Between generations only** — see EXPERIMENTS.md §3.3 | `PureRLManager` |
+
+**"EA", not "GA".** The evolutionary arm is called an *evolutionary algorithm*
+throughout, because it searches **continuous** network weights directly — Gaussian
+per-weight mutation on a real-valued genome, no bit-string encoding and no
+encode/decode step. The seminal definition of a genetic algorithm assumes that
+encoding, so it does not describe what runs here. The class is still named
+`GAManager` in the source; the term in the prose and on every figure is EA.
 
 All three share the same grid, terrain, food, energy rules, day/night cycle, caves,
 predators, network architecture and generation timing. They differ **only** in the
@@ -37,7 +44,7 @@ Each is run in two environments:
 ## 2. What it measures
 
 **Fitness is `cumulative_food_score`** — the total food value an organism ate over its
-life. It is the GA's selection signal and is *independent of the RL reward*, so the
+life. It is the EA's selection signal and is *independent of the RL reward*, so the
 learning and evolution arms are scored on the same yardstick rather than each on its
 own objective.
 
@@ -48,7 +55,7 @@ Four things anchor that number, and they matter more than the number itself:
   constants are `ExperimentParams` values, so the threshold is **derived, not fitted** —
   identical for every run, condition and environment, and needing no calibration.
 - **The chance floor = 1.537 ± 0.139.** `--random-floor` runs the evolution condition
-  *minus between-generation selection*: the full GA loop, then the gene pool is thrown
+  *minus between-generation selection*: the full EA loop, then the gene pool is thrown
   away at the boundary so every generation starts from fresh Xavier initialisation.
   Without it a converged fitness of 3.6 is a number with no scale; with it, that run is
   2.3× chance and ~16 sd above it — genuine adaptation that stalls below replacement,
@@ -63,7 +70,7 @@ Four things anchor that number, and they matter more than the number itself:
   beside it.
 
 Secondary measures: population size, lifetime, death-cause composition, genome
-variance (GA diversity), mean absolute weight difference `mean|active − genome|` (the
+variance (EA diversity), mean absolute weight difference `mean|active − genome|` (the
 learning signal, identically zero in the evolution arm), and per-organism behaviour
 from `organisms.csv` — cells explored, cave entries by day/night, food eaten by tier,
 predator encounters.
@@ -76,7 +83,7 @@ src/                        the simulator (JS, Node 16 compatible)
   BrowserPreset.js            makes a browser run match a cluster run
   ExperimentParams.js         every tunable, overridden at module load
   Organism/                   GAManager, PureRLManager, NNBrain, predators, perception
-  eval/                       the probe harness: run one fixed genome, GA off
+  eval/                       the probe harness: run one fixed genome, EA off
     validate.js               the verification suite
 headless.js                 the ORIGINAL Life Engine runner — not used by the experiments
 analyse_*.py                one script per experiment family; all discover runs via params.json
@@ -92,7 +99,7 @@ logs/  logs_hard/           run output, baseline and predator (gitignored)
 | Question | Read |
 |---|---|
 | What are the experiments, exactly how do they run, what do they write | [`EXPERIMENTS.md`](EXPERIMENTS.md) — the authoritative reference |
-| The RL / GA / energy equations | [`MATHEMATICAL_REFERENCE.md`](MATHEMATICAL_REFERENCE.md) |
+| The RL / EA / energy equations | [`MATHEMATICAL_REFERENCE.md`](MATHEMATICAL_REFERENCE.md) |
 | Every headless flag | [`HEADLESS.md`](HEADLESS.md) |
 | The landscape pipeline stage by stage | [`landscape/README.md`](landscape/README.md) |
 | Cluster environment setup | `CHPC Guide.pdf` |
@@ -174,13 +181,13 @@ and `--condition learning --mode pure_rl`.
 Each experiment is a SLURM job array, one array task per point in the grid:
 
 ```bash
-sbatch run_learning_condition_hard_w500_h128_array.slurm      # 100 runs
-GENERATIONS=200 sbatch run_evolution_condition_hard_w500_h128_array.slurm
-SEEDS="2001 2002 2003" sbatch --array=0-29 run_pure_rl_condition_hard_w500_h128_array.slurm
+sbatch slurm/run_learning_condition_hard_w500_h128_array.slurm      # 100 runs
+GENERATIONS=200 sbatch slurm/run_evolution_condition_hard_w500_h128_array.slurm
+SEEDS="2001 2002 2003" sbatch --array=0-29 slurm/run_pure_rl_condition_hard_w500_h128_array.slurm
 ```
 
 The current comparison set is six of these — `{evolution, learning, pure_rl} ×
-{baseline, hard}` — plus `run_random_floor_condition_hard_w500_h128_array.slurm` for the
+{baseline, hard}` — plus `slurm/run_random_floor_condition_hard_w500_h128_array.slurm` for the
 chance anchor.
 
 ### 4.5 Verifying the build
@@ -275,7 +282,7 @@ for every comparison. Writes `output/stats/`.
 
 The landscape work has two layers: the **JS probe** (`src/eval/`) is the only code that
 runs the world, measuring `f(θ)` for one fixed genome as a monomorphic population of 100
-clones with the GA disabled; the **Python side** (`landscape/`) chooses the θ points,
+clones with the EA disabled; the **Python side** (`landscape/`) chooses the θ points,
 calls the probe, and draws the results.
 
 A *slice* is a 31×31 (or 47×47) grid of `f(θ)` over a 2D plane cut through the 7814-dimensional
@@ -293,7 +300,7 @@ High-level steps:
 python landscape/make_slice_jobs.py --out-root landscape/out/slices_h128_companion ...
 
 # 2. CLUSTER — run the probes as a sharded array
-sbatch run_landscape_slices_h128_array.slurm
+sbatch slurm/run_landscape_slices_h128_array.slurm
 
 # 3. LOCAL — merge the shards, draw the landscapes, compute the metrics
 bash landscape/run_slice_landscapes.sh
@@ -336,12 +343,12 @@ Three things to know before reading a slice panel:
 
 ```bash
 python assimilation/make_founder_jobs.py ...     # LOCAL
-sbatch run_founder_probe_array.slurm             # CLUSTER
+sbatch slurm/run_founder_probe_array.slurm             # CLUSTER
 ./.venv/bin/python assimilation/analyse_assimilation.py
 ```
 
 Re-probes the 400 logged founder genomes per run — 100 founders at each of generations
-250, 500, 750 and 1000 — as monomorphic cohorts with the GA off,
+250, 500, 750 and 1000 — as monomorphic cohorts with the EA off,
 once with RL off (`f_off` — what the *inherited* weights do alone) and once with RL on
 (`f_on`). Assimilation is the innate phenotype catching up to the learned one, so the
 statistic is the ratio `Δf_off / Δf_on`: above 1 means innate is gaining on learned.
@@ -422,7 +429,7 @@ population. The full table, including the values the defaults sit at, is
 
 - **Seeded:** map terrain (`--map-seed`) and, optionally, the disaster PRNG. A seed fixes
   the same 50-map pool for every condition, which is what makes the comparison controlled.
-- **Unseeded, deliberately:** GA mutation, RL exploration, reproduction chance, predator
+- **Unseeded, deliberately:** EA mutation, RL exploration, reproduction chance, predator
   wandering. Each run is an independent sample of stochastic dynamics on a fixed world —
   which is exactly why the seed, not the run, is the unit of independent replication.
 - **Fully recorded:** overrides bake in at module load, so `params.json` describes a run
@@ -433,5 +440,5 @@ population. The full table, including the values the defaults sit at, is
 Simulator and world derived from **The Life Engine** by Max Robinson
 ([original repo](https://github.com/MaxRobinsonTheGreat/EvolutionSimulatorV2)) — see
 [`LICENSE`](LICENSE) and [`README_upstream.md`](README_upstream.md). The neural policy,
-RL and GA managers, predators, headless experiment runner, evaluation harness and the
+RL and EA managers, predators, headless experiment runner, evaluation harness and the
 whole analysis pipeline are additions made for this project.

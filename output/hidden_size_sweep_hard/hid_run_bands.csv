@@ -1,0 +1,136 @@
+band_scheme,condition,hidden_size,unit,final,previous,late_growth,band_index,band,trajectory
+takeoff,evolution,32,seed1_r4,3.4451125,3.4687955,-0.02368300000000012,0,plateaued low (≤ 4.92),plateaued
+takeoff,evolution,32,seed1_r1,3.446044,3.4433299999999996,0.0027140000000005493,0,plateaued low (≤ 4.92),plateaued
+takeoff,evolution,32,seed1_r5,3.4650909999999997,3.4290259999999995,0.036065000000000236,0,plateaued low (≤ 4.92),plateaued
+takeoff,evolution,32,seed1_r3,3.479124,3.416479,0.06264500000000028,0,plateaued low (≤ 4.92),plateaued
+takeoff,evolution,32,seed42_r5,3.5675974999999998,3.592747,-0.02514950000000038,0,plateaued low (≤ 4.92),plateaued
+takeoff,evolution,32,seed999_r2,3.637687,3.622591,0.01509600000000022,0,plateaued low (≤ 4.92),plateaued
+takeoff,evolution,32,seed999_r1,3.6579469999999996,3.6390085,0.018938499999999525,0,plateaued low (≤ 4.92),plateaued
+takeoff,evolution,32,seed999_r4,3.6711575,3.691875,-0.020717499999999944,0,plateaued low (≤ 4.92),plateaued
+takeoff,evolution,32,seed1_r2,3.6763644999999996,3.6594870000000004,0.016877499999999213,0,plateaued low (≤ 4.92),plateaued
+takeoff,evolution,32,seed42_r2,3.777806,3.7700345000000004,0.007771499999999598,0,plateaued low (≤ 4.92),plateaued
+takeoff,evolution,32,seed999_r3,4.2332875,3.840008,0.3932795000000002,0,plateaued low (≤ 4.92),still climbing
+takeoff,evolution,32,seed42_r1,7.0178025,6.853777500000001,0.16402499999999876,1,took off (> 4.92),still climbing
+takeoff,evolution,32,seed999_r5,7.0934695,7.1347685,-0.04129899999999953,1,took off (> 4.92),plateaued
+takeoff,evolution,32,seed42_r3,7.175183,7.1586915,0.01649149999999988,1,took off (> 4.92),plateaued
+takeoff,evolution,32,seed42_r4,7.207134000000001,7.139232,0.06790200000000102,1,took off (> 4.92),plateaued
+takeoff,evolution,64,seed1_r2,3.489637,3.4756904999999993,0.01394650000000075,0,plateaued low (≤ 4.92),plateaued
+takeoff,evolution,64,seed999_r5,3.5530245000000003,3.5512004999999998,0.001824000000000492,0,plateaued low (≤ 4.92),plateaued
+takeoff,evolution,64,seed999_r2,3.653335,3.667688,-0.014352999999999838,0,plateaued low (≤ 4.92),plateaued
+takeoff,evolution,64,seed999_r4,3.685427,3.6602015000000008,0.025225499999999013,0,plateaued low (≤ 4.92),plateaued
+takeoff,evolution,64,seed42_r4,3.7523135,3.7334195,0.018893999999999966,0,plateaued low (≤ 4.92),plateaued
+takeoff,evolution,64,seed999_r1,3.7737455000000004,3.741949,0.03179650000000045,0,plateaued low (≤ 4.92),plateaued
+takeoff,evolution,64,seed1_r5,3.8271939999999995,3.810784,0.01640999999999959,0,plateaued low (≤ 4.92),plateaued
+takeoff,evolution,64,seed42_r1,3.8486825,3.7969365000000006,0.05174599999999918,0,plateaued low (≤ 4.92),plateaued
+takeoff,evolution,64,seed42_r3,6.27448,4.3286415,1.9458384999999998,1,took off (> 4.92),still climbing
+takeoff,evolution,64,seed42_r2,6.785539,4.429081,2.356458,1,took off (> 4.92),still climbing
+takeoff,evolution,64,seed42_r5,6.854453000000001,5.2964459999999995,1.5580070000000017,1,took off (> 4.92),still climbing
+takeoff,evolution,64,seed999_r3,7.0230385,6.999231,0.023807500000000203,1,took off (> 4.92),plateaued
+takeoff,evolution,64,seed1_r1,7.1695645,7.117037,0.05252750000000006,1,took off (> 4.92),plateaued
+takeoff,evolution,64,seed1_r3,7.216948500000001,7.207266999999999,0.009681500000001897,1,took off (> 4.92),plateaued
+takeoff,evolution,64,seed1_r4,7.257846,7.2634475,-0.005601500000000037,1,took off (> 4.92),plateaued
+takeoff,evolution,128,seed1_r2,3.4809224999999997,3.4916795,-0.01075700000000035,0,plateaued low (≤ 4.92),plateaued
+takeoff,evolution,128,seed42_r4,3.6292535,3.6552334999999996,-0.02597999999999967,0,plateaued low (≤ 4.92),plateaued
+takeoff,evolution,128,seed999_r5,3.6661875,3.6426445000000003,0.023542999999999648,0,plateaued low (≤ 4.92),plateaued
+takeoff,evolution,128,seed999_r1,3.8028485,3.6920185000000005,0.11082999999999954,0,plateaued low (≤ 4.92),still climbing
+takeoff,evolution,128,seed1_r5,4.1982675,3.6763495,0.5219179999999999,0,plateaued low (≤ 4.92),still climbing
+takeoff,evolution,128,seed42_r3,6.0845445,4.5722095,1.5123350000000002,1,took off (> 4.92),still climbing
+takeoff,evolution,128,seed1_r1,6.504327000000001,4.783783000000001,1.7205440000000003,1,took off (> 4.92),still climbing
+takeoff,evolution,128,seed1_r3,6.969704500000001,5.029729499999999,1.9399750000000013,1,took off (> 4.92),still climbing
+takeoff,evolution,128,seed42_r2,7.0015730000000005,5.038895999999999,1.9626770000000011,1,took off (> 4.92),still climbing
+takeoff,evolution,128,seed999_r2,7.0297735,7.0365575,-0.006783999999999679,1,took off (> 4.92),plateaued
+takeoff,evolution,128,seed999_r4,7.0763545,6.851833,0.22452149999999982,1,took off (> 4.92),still climbing
+takeoff,evolution,128,seed999_r3,7.100535,7.063188,0.037346999999999575,1,took off (> 4.92),plateaued
+takeoff,evolution,128,seed42_r1,7.1732295,7.1031415,0.07008799999999926,1,took off (> 4.92),plateaued
+takeoff,evolution,128,seed1_r4,7.174215,7.156468500000001,0.017746499999999443,1,took off (> 4.92),plateaued
+takeoff,evolution,128,seed42_r5,7.198782000000001,7.0972415,0.10154050000000137,1,took off (> 4.92),plateaued
+takeoff,learning,32,seed42_r3,5.645412,3.5987105,2.0467015,1,took off (> 4.92),still climbing
+takeoff,learning,32,seed999_r1,6.655024000000001,4.836926,1.8180980000000009,1,took off (> 4.92),still climbing
+takeoff,learning,32,seed999_r2,7.062691500000001,7.079653499999999,-0.01696199999999859,1,took off (> 4.92),plateaued
+takeoff,learning,32,seed999_r3,7.112488000000001,7.0777455,0.03474250000000101,1,took off (> 4.92),plateaued
+takeoff,learning,32,seed42_r5,7.122139,7.1287995,-0.006660500000000624,1,took off (> 4.92),plateaued
+takeoff,learning,32,seed999_r4,7.169422000000001,7.167116,0.0023060000000008074,1,took off (> 4.92),plateaued
+takeoff,learning,32,seed999_r5,7.192743,7.1711175,0.021625499999999853,1,took off (> 4.92),plateaued
+takeoff,learning,32,seed1_r4,7.200087000000001,7.225372500000001,-0.02528549999999985,1,took off (> 4.92),plateaued
+takeoff,learning,32,seed42_r4,7.2005225,7.2192925,-0.018769999999999953,1,took off (> 4.92),plateaued
+takeoff,learning,32,seed1_r5,7.234472499999999,7.2527645000000005,-0.01829200000000153,1,took off (> 4.92),plateaued
+takeoff,learning,32,seed42_r1,7.235437999999999,7.215100500000001,0.020337499999998343,1,took off (> 4.92),plateaued
+takeoff,learning,32,seed1_r2,7.263885,7.167283500000001,0.09660149999999934,1,took off (> 4.92),plateaued
+takeoff,learning,32,seed1_r3,7.27182,7.249302,0.022517999999999816,1,took off (> 4.92),plateaued
+takeoff,learning,32,seed1_r1,7.286852,6.958284000000001,0.32856799999999886,1,took off (> 4.92),still climbing
+takeoff,learning,32,seed42_r2,7.331018499999999,7.2692175,0.06180099999999911,1,took off (> 4.92),plateaued
+takeoff,learning,64,seed999_r4,3.5324969999999998,3.5271440000000003,0.005352999999999497,0,plateaued low (≤ 4.92),plateaued
+takeoff,learning,64,seed999_r1,7.126655,7.140368499999999,-0.013713499999998824,1,took off (> 4.92),plateaued
+takeoff,learning,64,seed999_r2,7.127125000000001,7.1714994999999995,-0.04437449999999821,1,took off (> 4.92),plateaued
+takeoff,learning,64,seed1_r1,7.1479099999999995,7.161985499999999,-0.014075499999999685,1,took off (> 4.92),plateaued
+takeoff,learning,64,seed999_r3,7.167186500000001,7.09702,0.07016650000000091,1,took off (> 4.92),plateaued
+takeoff,learning,64,seed999_r5,7.172064000000001,7.1947525,-0.022688499999999223,1,took off (> 4.92),plateaued
+takeoff,learning,64,seed42_r4,7.172805499999999,7.2464949999999995,-0.07368950000000041,1,took off (> 4.92),plateaued
+takeoff,learning,64,seed42_r5,7.176512,7.2170890000000005,-0.04057700000000075,1,took off (> 4.92),plateaued
+takeoff,learning,64,seed1_r2,7.1880049999999995,7.204773499999999,-0.01676849999999952,1,took off (> 4.92),plateaued
+takeoff,learning,64,seed42_r2,7.203665,7.189533,0.014132000000000033,1,took off (> 4.92),plateaued
+takeoff,learning,64,seed1_r3,7.214308000000001,7.185473999999999,0.02883400000000158,1,took off (> 4.92),plateaued
+takeoff,learning,64,seed1_r4,7.226916000000001,7.2271695,-0.0002534999999985743,1,took off (> 4.92),plateaued
+takeoff,learning,64,seed1_r5,7.234534,7.2073255,0.027208500000000413,1,took off (> 4.92),plateaued
+takeoff,learning,64,seed42_r1,7.257945500000001,7.2516945,0.006251000000000673,1,took off (> 4.92),plateaued
+takeoff,learning,64,seed42_r3,7.2681885,7.208127999999999,0.060060500000000516,1,took off (> 4.92),plateaued
+takeoff,learning,128,seed999_r2,7.0901440000000004,7.0518705,0.03827350000000074,1,took off (> 4.92),plateaued
+takeoff,learning,128,seed42_r5,7.0911,7.080735,0.01036500000000018,1,took off (> 4.92),plateaued
+takeoff,learning,128,seed999_r5,7.1335735,7.178891,-0.045317500000000344,1,took off (> 4.92),plateaued
+takeoff,learning,128,seed1_r3,7.152149999999999,7.184680999999999,-0.03253100000000053,1,took off (> 4.92),plateaued
+takeoff,learning,128,seed999_r3,7.154059999999999,7.1530095000000005,0.001050499999998955,1,took off (> 4.92),plateaued
+takeoff,learning,128,seed42_r1,7.1612670000000005,7.19038,-0.029112999999999722,1,took off (> 4.92),plateaued
+takeoff,learning,128,seed42_r4,7.1663559999999995,7.214146499999999,-0.047790499999999625,1,took off (> 4.92),plateaued
+takeoff,learning,128,seed42_r3,7.1744025,7.2087035,-0.03430100000000014,1,took off (> 4.92),plateaued
+takeoff,learning,128,seed1_r1,7.177433000000001,7.2212335,-0.04380049999999969,1,took off (> 4.92),plateaued
+takeoff,learning,128,seed999_r4,7.1814815,7.211056000000001,-0.029574500000000725,1,took off (> 4.92),plateaued
+takeoff,learning,128,seed999_r1,7.183064999999999,7.172169,0.010895999999998907,1,took off (> 4.92),plateaued
+takeoff,learning,128,seed1_r4,7.201193,7.12398,0.07721299999999953,1,took off (> 4.92),plateaued
+takeoff,learning,128,seed1_r2,7.209648,7.163627,0.046020999999999646,1,took off (> 4.92),plateaued
+takeoff,learning,128,seed1_r5,7.2099885,7.1440975,0.0658909999999997,1,took off (> 4.92),plateaued
+takeoff,learning,128,seed42_r2,7.265777000000001,7.258346,0.0074310000000004095,1,took off (> 4.92),plateaued
+takeoff,pure_rl,32,seed1_r2,5.834457,5.792831,0.04162599999999994,1,took off (> 4.92),plateaued
+takeoff,pure_rl,32,seed42_r4,5.8906855,5.9473595,-0.05667400000000011,1,took off (> 4.92),plateaued
+takeoff,pure_rl,32,seed42_r1,5.91668,6.095184,-0.17850399999999933,1,took off (> 4.92),plateaued
+takeoff,pure_rl,32,seed999_r5,5.988259499999999,5.177166,0.8110934999999992,1,took off (> 4.92),still climbing
+takeoff,pure_rl,32,seed42_r5,6.0030285,6.12403,-0.1210015000000002,1,took off (> 4.92),plateaued
+takeoff,pure_rl,32,seed999_r4,6.015935,6.0293920000000005,-0.013457000000000718,1,took off (> 4.92),plateaued
+takeoff,pure_rl,32,seed999_r1,6.0312635,5.907041999999999,0.12422150000000087,1,took off (> 4.92),still climbing
+takeoff,pure_rl,32,seed1_r1,6.0385275,6.067127,-0.028599500000000333,1,took off (> 4.92),plateaued
+takeoff,pure_rl,32,seed1_r5,6.0392855,5.741820000000001,0.2974654999999995,1,took off (> 4.92),still climbing
+takeoff,pure_rl,32,seed999_r2,6.1124675,6.1203445,-0.00787699999999969,1,took off (> 4.92),plateaued
+takeoff,pure_rl,32,seed42_r2,6.170984499999999,6.5281270000000005,-0.35714250000000103,1,took off (> 4.92),plateaued
+takeoff,pure_rl,32,seed42_r3,6.208194000000001,6.0644184999999995,0.14377550000000117,1,took off (> 4.92),still climbing
+takeoff,pure_rl,32,seed999_r3,6.3601495,6.001555499999999,0.35859400000000097,1,took off (> 4.92),still climbing
+takeoff,pure_rl,32,seed1_r4,6.422017,6.342559,0.0794580000000007,1,took off (> 4.92),plateaued
+takeoff,pure_rl,32,seed1_r3,6.459606,6.652039500000001,-0.1924335000000008,1,took off (> 4.92),plateaued
+takeoff,pure_rl,64,seed999_r1,5.685861,5.794466,-0.10860499999999984,1,took off (> 4.92),plateaued
+takeoff,pure_rl,64,seed999_r5,5.726217500000001,5.400953500000001,0.3252639999999998,1,took off (> 4.92),still climbing
+takeoff,pure_rl,64,seed42_r3,5.761602,5.866840999999999,-0.1052389999999992,1,took off (> 4.92),plateaued
+takeoff,pure_rl,64,seed999_r3,5.924845,5.8136015,0.1112435000000005,1,took off (> 4.92),plateaued
+takeoff,pure_rl,64,seed42_r2,6.0083575,5.898018500000001,0.11033899999999885,1,took off (> 4.92),plateaued
+takeoff,pure_rl,64,seed1_r5,6.027242,6.5438675,-0.5166255,1,took off (> 4.92),plateaued
+takeoff,pure_rl,64,seed42_r5,6.063381000000001,5.326821499999999,0.7365595000000011,1,took off (> 4.92),still climbing
+takeoff,pure_rl,64,seed1_r2,6.31241,6.070548,0.24186200000000024,1,took off (> 4.92),still climbing
+takeoff,pure_rl,64,seed42_r1,6.437829999999999,5.9552724999999995,0.48255749999999953,1,took off (> 4.92),still climbing
+takeoff,pure_rl,64,seed999_r2,6.487795000000001,6.333403499999999,0.1543915000000018,1,took off (> 4.92),still climbing
+takeoff,pure_rl,64,seed999_r4,6.508411,6.2923405,0.21607049999999983,1,took off (> 4.92),still climbing
+takeoff,pure_rl,64,seed42_r4,6.5267290000000004,6.5145005,0.012228500000000864,1,took off (> 4.92),plateaued
+takeoff,pure_rl,64,seed1_r3,6.540670499999999,6.4968515,0.043818999999999164,1,took off (> 4.92),plateaued
+takeoff,pure_rl,64,seed1_r4,6.560723,6.003960999999999,0.5567620000000009,1,took off (> 4.92),still climbing
+takeoff,pure_rl,64,seed1_r1,6.6473355,6.308942500000001,0.33839299999999906,1,took off (> 4.92),still climbing
+takeoff,pure_rl,128,seed1_r5,5.5971969999999995,5.862172500000001,-0.26497550000000114,1,took off (> 4.92),plateaued
+takeoff,pure_rl,128,seed999_r1,5.616030499999999,6.008058,-0.3920275000000011,1,took off (> 4.92),plateaued
+takeoff,pure_rl,128,seed42_r5,5.916666500000002,5.837036,0.07963050000000127,1,took off (> 4.92),plateaued
+takeoff,pure_rl,128,seed999_r4,5.993709,5.9176075,0.07610150000000004,1,took off (> 4.92),plateaued
+takeoff,pure_rl,128,seed42_r4,5.999609499999999,5.562005500000001,0.43760399999999855,1,took off (> 4.92),still climbing
+takeoff,pure_rl,128,seed999_r2,6.0820555,5.826526000000001,0.25552949999999885,1,took off (> 4.92),still climbing
+takeoff,pure_rl,128,seed999_r3,6.10956,5.675256500000001,0.4343034999999995,1,took off (> 4.92),still climbing
+takeoff,pure_rl,128,seed999_r5,6.1940445,5.7541835,0.4398610000000005,1,took off (> 4.92),still climbing
+takeoff,pure_rl,128,seed42_r2,6.212465999999999,6.035708499999999,0.1767574999999999,1,took off (> 4.92),still climbing
+takeoff,pure_rl,128,seed42_r3,6.264634000000001,6.2846055000000005,-0.019971499999999587,1,took off (> 4.92),plateaued
+takeoff,pure_rl,128,seed1_r4,6.277893000000001,5.9949129999999995,0.2829800000000011,1,took off (> 4.92),still climbing
+takeoff,pure_rl,128,seed1_r1,6.3529515,6.410678000000001,-0.057726500000001124,1,took off (> 4.92),plateaued
+takeoff,pure_rl,128,seed1_r3,6.364391,6.490812000000001,-0.12642100000000056,1,took off (> 4.92),plateaued
+takeoff,pure_rl,128,seed42_r1,6.423432499999999,6.233616,0.18981649999999917,1,took off (> 4.92),still climbing
+takeoff,pure_rl,128,seed1_r2,6.536239499999999,6.3443695,0.19186999999999887,1,took off (> 4.92),still climbing

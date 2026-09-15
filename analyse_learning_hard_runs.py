@@ -10,9 +10,9 @@ be put side by side without a single axis or colour differing. Like that script
 it compares nothing: the only factor is the RUN itself, and every figure is a
 mean over runs with the run-to-run spread drawn around it.
 
-    run_evolution_condition_hard_w500_h128_array.slurm   GA only   -> analyse_evolution_hard_runs.py
-    run_learning_condition_hard_w500_h128_array.slurm    GA + RL   -> THIS FILE
-    run_pure_rl_condition_hard_w500_h128_array.slurm     RL only
+    slurm/run_evolution_condition_hard_w500_h128_array.slurm   GA only   -> analyse_evolution_hard_runs.py
+    slurm/run_learning_condition_hard_w500_h128_array.slurm    GA + RL   -> THIS FILE
+    slurm/run_pure_rl_condition_hard_w500_h128_array.slurm     RL only
 
 Runs are found by params.json (never by folder name):
 

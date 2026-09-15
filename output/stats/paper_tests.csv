@@ -1,0 +1,23 @@
+family,environment,contrast,detail,statistic,statistic_name,n,p,p_holm,n_favouring_b,mean_difference
+"Log-rank, time to sustained viability",baseline,"A vs B vs C, stratified by map seed","2 df, censored at generation 1000",18.41334636664435,chi-square,300,0.00010036739210174193,,,
+"Log-rank, time to sustained viability",baseline,"A vs B vs C, unstratified","2 df, censored at generation 1000",20.942400899808696,chi-square,300,2.8341016681654103e-05,,,
+"Log-rank, time to sustained viability",hard,"A vs B vs C, stratified by map seed","2 df, censored at generation 1000",176.67419878518083,chi-square,300,4.322004218674555e-39,,,
+"Log-rank, time to sustained viability",hard,"A vs B vs C, unstratified","2 df, censored at generation 1000",188.21503198468105,chi-square,300,1.3477989040845436e-41,,,
+"Fisher's exact, runs below viability",hard,A vs B,10/100 vs 0/100,inf,odds ratio,200,0.0015420521254357008,0.0030841042508714016,,
+"Fisher's exact, runs below viability",hard,A vs C,10/100 vs 2/100,5.444444444444445,odds ratio,200,0.03304010932418497,0.03304010932418497,,
+"Brown-Forsythe, equality of variance",baseline,A vs B vs C (omnibus),sd(A)=0.0551  sd(B)=0.0666  sd(C)=0.1150,23.850696373483,W,300,2.4776591337183395e-10,,,
+"Brown-Forsythe, equality of variance",baseline,B vs A,sd(B)=0.0666 vs sd(A)=0.0551,4.507377770622819,W,200,0.034990885427631936,0.034990885427631936,,
+"Brown-Forsythe, equality of variance",baseline,B vs C,sd(B)=0.0666 vs sd(C)=0.1150,20.1362837193751,W,200,1.2217958900322948e-05,2.4435917800645897e-05,,
+"Brown-Forsythe, equality of variance",baseline,A vs C,sd(A)=0.0551 vs sd(C)=0.1150,36.76062422324126,W,200,6.647068812876694e-09,1.9941206438630082e-08,,
+"Brown-Forsythe, equality of variance",hard,A vs B vs C (omnibus),sd(A)=1.0174  sd(B)=0.0614  sd(C)=0.4913,13.185082874712752,W,300,3.2650531853593294e-06,,,
+"Brown-Forsythe, equality of variance",hard,B vs A,sd(B)=0.0614 vs sd(A)=1.0174,20.41928454561138,W,200,1.0684344837163854e-05,2.1368689674327707e-05,,
+"Brown-Forsythe, equality of variance",hard,B vs C,sd(B)=0.0614 vs sd(C)=0.4913,40.680652880869054,W,200,1.2394394866254489e-09,3.7183184598763466e-09,,
+"Brown-Forsythe, equality of variance",hard,A vs C,sd(A)=1.0174 vs sd(C)=0.4913,2.881459358755851,W,200,0.09117594216873078,0.09117594216873078,,
+"Wilcoxon signed-rank, inherited genomes",baseline,B vs A at generation 250,"mean difference -0.67 raw f_off, 3/10 seeds favour B",8.0,W,10,0.048828125,0.1953125,3.0,-0.6659470000000003
+"Wilcoxon signed-rank, inherited genomes",baseline,B vs A at generation 500,"mean difference -0.38 raw f_off, 4/10 seeds favour B",18.0,W,10,0.375,1.0,4.0,-0.384186399999999
+"Wilcoxon signed-rank, inherited genomes",baseline,B vs A at generation 750,"mean difference +0.18 raw f_off, 6/10 seeds favour B",21.0,W,10,0.556640625,1.0,6.0,0.1830104666666663
+"Wilcoxon signed-rank, inherited genomes",baseline,B vs A at generation 1000,"mean difference +0.15 raw f_off, 6/10 seeds favour B",24.0,W,10,0.76953125,1.0,6.0,0.1506014
+"Wilcoxon signed-rank, inherited genomes",hard,B vs A at generation 250,"mean difference +7.19 raw f_off, 8/10 seeds favour B",3.0,W,10,0.009765625,0.0390625,8.0,7.192200066666667
+"Wilcoxon signed-rank, inherited genomes",hard,B vs A at generation 500,"mean difference +5.59 raw f_off, 8/10 seeds favour B",5.0,W,10,0.01953125,0.05859375,8.0,5.5930672
+"Wilcoxon signed-rank, inherited genomes",hard,B vs A at generation 750,"mean difference +1.31 raw f_off, 4/10 seeds favour B",21.0,W,10,0.556640625,1.0,4.0,1.3114421666666671
+"Wilcoxon signed-rank, inherited genomes",hard,B vs A at generation 1000,"mean difference +0.12 raw f_off, 5/10 seeds favour B",25.0,W,10,0.845703125,1.0,5.0,0.1228505333333332

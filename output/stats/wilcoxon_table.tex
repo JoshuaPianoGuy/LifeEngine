@@ -1,0 +1,35 @@
+\begin{table}[t]
+  \centering
+  \caption{Inherited-genome fitness, condition B against condition A, at each
+  founder-dump checkpoint. Each row is a Wilcoxon signed-rank test on the ten
+  paired map-seed means, so the two conditions are always compared on identical
+  terrain. $W$ is the smaller of the two signed-rank sums, which always total
+  55 at $n=10$; small $W$ therefore means the larger differences fall
+  consistently on one side. $W$ is unsigned, so the direction is given by the
+  last column --- in the baseline the early checkpoints favour condition~A,
+  whereas in the predator environment every checkpoint favours condition~B.
+  $p$ is exact, enumerated over all $2^{10}$ sign assignments rather than
+  approximated, and is Holm-adjusted over the four checkpoints within each
+  environment. At $n=10$ the rejection region is $W \le 8$ and the smallest
+  attainable $p$ is 0.002.}
+  \label{tab:wilcoxon}
+  \small
+  \setlength{\tabcolsep}{6pt}
+  \begin{tabular}{@{}lrrrr@{}}
+    \toprule
+    Generation & $W$ & $p$ & $p$ (Holm) & Seeds favouring B \\
+    \midrule
+    \multicolumn{5}{@{}l@{}}{\textit{Baseline environment}} \\
+    250 & 8 & 0.049 & 0.195 & 3 of 10 \\
+    500 & 18 & 0.375 & 1.000 & 4 of 10 \\
+    750 & 21 & 0.557 & 1.000 & 6 of 10 \\
+    1000 & 24 & 0.770 & 1.000 & 6 of 10 \\
+    \midrule
+    \multicolumn{5}{@{}l@{}}{\textit{Predator environment}} \\
+    250 & 3 & 0.010 & 0.039 & 8 of 10 \\
+    500 & 5 & 0.020 & 0.059 & 8 of 10 \\
+    750 & 21 & 0.557 & 1.000 & 4 of 10 \\
+    1000 & 25 & 0.846 & 1.000 & 5 of 10 \\
+    \bottomrule
+  \end{tabular}
+\end{table}

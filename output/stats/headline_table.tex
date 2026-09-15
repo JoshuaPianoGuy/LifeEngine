@@ -1,0 +1,39 @@
+\begin{table}[t]
+  \centering
+  \caption{The tests behind the four claims of Section~\ref{sec:results}.
+  Conditions are A (evolution), B (learning) and C (pure RL). The log-rank and
+  Brown--Forsythe rows are omnibus tests across all three conditions, so each is
+  a single test and needs no adjustment; the two Fisher rows form one family of
+  two and carry a Holm-adjusted $p$ alongside the raw one. Each Wilcoxon row
+  is one founder-dump checkpoint, Holm-adjusted over the four checkpoints in
+  that environment; the gap opening and then closing is the assimilation
+  signature and is why the checkpoints are shown rather than summarised. An
+  infinite odds
+  ratio means the learning condition had no runs below the threshold. Per-pair
+  contrasts and the inherited-genome checkpoints are in
+  Table~\ref{tab:significance}, and Table~\ref{tab:neff} gives the effective
+  sample size behind each run-level $n$.}
+  \label{tab:headline}
+  \small
+  \setlength{\tabcolsep}{5pt}
+  \begin{tabular}{@{}lllrrr@{}}
+    \toprule
+    Environment & Comparison & Test & Statistic & $p$ & $p$ (Holm) \\
+    \midrule
+    Baseline & A vs B vs C, time to viability & Log-rank (seed-stratified) & $\chi^2(2)$ = 18.41 & $1{\times}10^{-4}$ & -- \\
+    Baseline & A vs B vs C, converged fitness variance & Brown--Forsythe & $W$ = 23.85 & $2{\times}10^{-10}$ & -- \\
+    Baseline & B vs A, inherited genome fitness at generation 250 & Wilcoxon signed-rank (paired by seed) & $W$ = 8 & 0.049 & 0.195 \\
+    Baseline & B vs A, inherited genome fitness at generation 500 & Wilcoxon signed-rank (paired by seed) & $W$ = 18 & 0.375 & 1.000 \\
+    Baseline & B vs A, inherited genome fitness at generation 750 & Wilcoxon signed-rank (paired by seed) & $W$ = 21 & 0.557 & 1.000 \\
+    Baseline & B vs A, inherited genome fitness at generation 1000 & Wilcoxon signed-rank (paired by seed) & $W$ = 24 & 0.770 & 1.000 \\
+    Predator & A vs B vs C, time to viability & Log-rank (seed-stratified) & $\chi^2(2)$ = 176.7 & $4{\times}10^{-39}$ & -- \\
+    Predator & A vs B, runs below threshold & Fisher's exact & OR = $\infty$ & 0.002 & 0.003 \\
+    Predator & A vs C, runs below threshold & Fisher's exact & OR = 5.444 & 0.033 & 0.033 \\
+    Predator & A vs B vs C, converged fitness variance & Brown--Forsythe & $W$ = 13.19 & $3{\times}10^{-6}$ & -- \\
+    Predator & B vs A, inherited genome fitness at generation 250 & Wilcoxon signed-rank (paired by seed) & $W$ = 3 & 0.010 & 0.039 \\
+    Predator & B vs A, inherited genome fitness at generation 500 & Wilcoxon signed-rank (paired by seed) & $W$ = 5 & 0.020 & 0.059 \\
+    Predator & B vs A, inherited genome fitness at generation 750 & Wilcoxon signed-rank (paired by seed) & $W$ = 21 & 0.557 & 1.000 \\
+    Predator & B vs A, inherited genome fitness at generation 1000 & Wilcoxon signed-rank (paired by seed) & $W$ = 25 & 0.846 & 1.000 \\
+    \bottomrule
+  \end{tabular}
+\end{table}

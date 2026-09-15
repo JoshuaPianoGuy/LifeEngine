@@ -7,14 +7,14 @@ directions). Two layers:
 
 - **Simulator (JS, `src/eval/`)** — the only code that runs the world. It
   measures `f(θ)`: the fitness of one fixed genome as a monomorphic population of
-  100 clones, GA disabled.
+  100 clones, EA disabled.
 - **Analysis (Python, `landscape/`)** — generates the θ points for each stage
   (PCA plane, random directions, mutational walk), calls the JS probe, and makes
   the plots + scalars.
 
 ## What f(θ) is (and the constraints that make it honest)
 
-`f(θ)` = mean `cumulative_food_score` over 100 clones of θ, GA fully off,
+`f(θ)` = mean `cumulative_food_score` over 100 clones of θ, EA fully off,
 `reproduction_success_rate = 0` (fixed cohort), on one seeded map. The unit of
 replication is the **run**, not the clone — the 100 clones share a world and are
 correlated, so the error bar comes from spread across runs, never
@@ -42,7 +42,7 @@ Two findings from building this that **correct the original plan's premises**:
 
 | file | role |
 |---|---|
-| `probe.js` | `Probe(rlEnabled).evaluate(θ,{mapIndex,ticks})` → f(θ) as 100 clones, GA off |
+| `probe.js` | `Probe(rlEnabled).evaluate(θ,{mapIndex,ticks})` → f(θ) as 100 clones, EA off |
 | `replay.js` | Stage-9 B1: same 100 clones but **reproduction ON** over a full generation → the scale the 4.375 viability threshold is defined on |
 | `config.js` | `applyConfig({paramsPath,overrides})` (must run before requiring the sim); genome base64 codec |
 | `run_probe.js` | batch driver: jobs.json → results CSV, `--shard i/N`, resumable |
@@ -261,7 +261,7 @@ the orders measured, extended to all 2^70 strings, with K = degree in E.
 `--wiring measured` keeps the measured edges; `--wiring random --K k` is the dial
 (rewires at degree k, coefficients resampled from the measured distributions).
 Being multilinear it also extends to `[0,1]^70`, so a surrogate step can be as
-**partial** as a real mutation: `sim`/`model` report ρ(1) under a *real GA step*
+**partial** as a real mutation: `sim`/`model` report ρ(1) under a *real EA step*
 (per-locus sd `MUT_SIGMA*sqrt(MUT_PROB)/||delta[block]||`), which is the only row
 comparable to Stage 6. Full allele flips reach ~82% of loci per step and overshoot
 into ρ(1) < 0 — that mismatch is exactly why `quick` K is a lower bound.
@@ -423,7 +423,7 @@ significance — which is itself informative.
 `replay.js` runs the same 100 monomorphic clones but with **reproduction ON**
 across a full generation (5 maps × 2000 ticks, energy carryover, `NEXT_MAP`
 transitions firing), stopping one tick short of the generation boundary so
-`evolve()` never runs — the GA is still fully disabled. It reports mean
+`evolve()` never runs — the EA is still fully disabled. It reports mean
 `cumulative_food_score` over `ga.all_agents` (**every agent that existed**,
 founders + descendants) and, alongside, over founders only.
 

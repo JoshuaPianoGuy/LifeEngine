@@ -1,0 +1,13 @@
+env,row,group,condition,is_anchor,seed,run,run_final_fitness,read_on,plane_frac,start_f,end_f,slice_median,slice_best,headroom,end_pct,n_unsampled
+hard,"Evolution — failed (f < 0.136, below viability)",underperform,evolution,True,2005,"roam60d5_w500_evolution_h128_seed2005_r8",3.68023,f_evo,0.69287,0.13244,0.18237,0.15530,0.22141,0.03903,85.37800,0
+hard,"Evolution — failed (f < 0.136, below viability)",underperform,learning,False,2005,"roam60d5_w500_learning_h128_lr0.02_seed2005_r9",nan,f_learn,0.69287,0.13750,0.09594,0.16500,0.25573,0.15979,11.22680,0
+hard,"Evolution — failed (f < 0.136, below viability)",underperform,evolution,True,2008,"roam60d5_w500_evolution_h128_seed2008_r4",3.64196,f_evo,0.68835,0.13152,0.17777,0.15071,0.30524,0.12747,93.34541,0
+hard,"Evolution — failed (f < 0.136, below viability)",underperform,learning,False,2008,"roam60d5_w500_learning_h128_lr0.02_seed2008_r9",nan,f_learn,0.68835,0.13866,0.18893,0.15498,0.32935,0.14042,93.52648,0
+hard,"Evolution — failed (f < 0.136, below viability)",underperform,evolution,True,2004,"roam60d5_w500_evolution_h128_seed2004_r6",3.59961,f_evo,0.68900,0.11208,0.15050,0.10605,0.16080,0.01030,97.64599,0
+hard,"Evolution — failed (f < 0.136, below viability)",underperform,learning,False,2004,"roam60d5_w500_learning_h128_lr0.02_seed2004_r4",nan,f_learn,0.68900,0.12415,0.10739,0.11740,0.17532,0.06792,36.07967,0
+hard,"Evolution — succeeded",succeed,evolution,True,2007,"roam60d5_w500_evolution_h128_seed2007_r4",7.24550,f_evo,0.61576,0.49025,0.75481,0.45093,0.85595,0.10114,90.71978,0
+hard,"Evolution — succeeded",succeed,learning,False,2007,"roam60d5_w500_learning_h128_lr0.02_seed2007_r3",nan,f_learn,0.61576,0.53358,0.41603,0.49901,0.84745,0.43142,36.30602,0
+hard,"Evolution — succeeded",succeed,evolution,True,2002,"roam60d5_w500_evolution_h128_seed2002_r9",7.24307,f_evo,0.61937,0.47383,0.70088,0.34688,0.86714,0.16626,82.97872,0
+hard,"Evolution — succeeded",succeed,learning,False,2002,"roam60d5_w500_learning_h128_lr0.02_seed2002_r9",nan,f_learn,0.61937,0.50235,0.27514,0.41664,0.85984,0.58471,27.11634,0
+hard,"Evolution — succeeded",succeed,evolution,True,2001,"roam60d5_w500_evolution_h128_seed2001_r9",7.23862,f_evo,0.63715,0.14023,0.66773,0.27102,0.73434,0.06661,86.23812,0
+hard,"Evolution — succeeded",succeed,learning,False,2001,"roam60d5_w500_learning_h128_lr0.02_seed2001_r9",nan,f_learn,0.63715,0.15822,0.05091,0.32473,0.76169,0.71078,7.24310,0

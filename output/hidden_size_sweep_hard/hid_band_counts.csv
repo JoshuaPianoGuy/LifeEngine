@@ -1,0 +1,37 @@
+condition,hidden_size,band,n_runs,arm_total,share
+evolution,32,plateaued low (≤ 4.92),11,15,0.7333333333333333
+evolution,32,took off (> 4.92),4,15,0.26666666666666666
+evolution,32,[trajectory] still climbing,2,15,0.13333333333333333
+evolution,32,[trajectory] plateaued,13,15,0.8666666666666667
+evolution,64,plateaued low (≤ 4.92),8,15,0.5333333333333333
+evolution,64,took off (> 4.92),7,15,0.4666666666666667
+evolution,64,[trajectory] still climbing,3,15,0.2
+evolution,64,[trajectory] plateaued,12,15,0.8
+evolution,128,plateaued low (≤ 4.92),5,15,0.3333333333333333
+evolution,128,took off (> 4.92),10,15,0.6666666666666666
+evolution,128,[trajectory] still climbing,7,15,0.4666666666666667
+evolution,128,[trajectory] plateaued,8,15,0.5333333333333333
+learning,32,plateaued low (≤ 4.92),0,15,0.0
+learning,32,took off (> 4.92),15,15,1.0
+learning,32,[trajectory] still climbing,3,15,0.2
+learning,32,[trajectory] plateaued,12,15,0.8
+learning,64,plateaued low (≤ 4.92),1,15,0.06666666666666667
+learning,64,took off (> 4.92),14,15,0.9333333333333333
+learning,64,[trajectory] still climbing,0,15,0.0
+learning,64,[trajectory] plateaued,15,15,1.0
+learning,128,plateaued low (≤ 4.92),0,15,0.0
+learning,128,took off (> 4.92),15,15,1.0
+learning,128,[trajectory] still climbing,0,15,0.0
+learning,128,[trajectory] plateaued,15,15,1.0
+pure_rl,32,plateaued low (≤ 4.92),0,15,0.0
+pure_rl,32,took off (> 4.92),15,15,1.0
+pure_rl,32,[trajectory] still climbing,5,15,0.3333333333333333
+pure_rl,32,[trajectory] plateaued,10,15,0.6666666666666666
+pure_rl,64,plateaued low (≤ 4.92),0,15,0.0
+pure_rl,64,took off (> 4.92),15,15,1.0
+pure_rl,64,[trajectory] still climbing,8,15,0.5333333333333333
+pure_rl,64,[trajectory] plateaued,7,15,0.4666666666666667
+pure_rl,128,plateaued low (≤ 4.92),0,15,0.0
+pure_rl,128,took off (> 4.92),15,15,1.0
+pure_rl,128,[trajectory] still climbing,8,15,0.5333333333333333
+pure_rl,128,[trajectory] plateaued,7,15,0.4666666666666667

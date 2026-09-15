@@ -158,7 +158,7 @@ Usage
       --logs-root logs --env-label baseline \\
       --out-root assimilation/out/founders_baseline
 
-Then transfer the out-root and submit run_founder_probe_array.slurm; the
+Then transfer the out-root and submit slurm/run_founder_probe_array.slurm; the
 preflight there prints the --array line to use.
 """
 
@@ -675,7 +675,7 @@ def main():
     print(f'  SHARDS_PER_UNIT={args.shards_per_unit} -> {tasks} tasks, '
           f'~{per_task_h:.1f} h each')
     print(f'\n  UNITS_ROOT={args.out_root} SHARDS_PER_UNIT={args.shards_per_unit} \\')
-    print(f'      sbatch --array=0-{tasks - 1} run_founder_probe_array.slurm')
+    print(f'      sbatch --array=0-{tasks - 1} slurm/run_founder_probe_array.slurm')
     print(f'\n  wrote {os.path.join(args.out_root, "manifest.json")}')
 
 

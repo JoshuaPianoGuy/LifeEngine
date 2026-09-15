@@ -568,13 +568,6 @@ class NNBrain {
         this._last_action = null;
     }
 
-    // Copy the current learned policy into the inherited genome so future
-    // offspring continue from the updated weights.
-    syncGenomeFromActive() {
-        if (!this.active_weights || !this.genome_weights) return;
-        this.genome_weights = new Float32Array(this.active_weights);
-    }
-
     // ── Serialisation ─────────────────────────────────────────────────────────
 
     serialize() {

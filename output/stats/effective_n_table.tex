@@ -1,0 +1,25 @@
+\begin{table}[t]
+  \centering
+  \caption{Effective sample size per cell. Runs sharing a map seed are not
+  independent, so the 100 runs in a cell are worth fewer than 100 independent
+  observations. The design effect is $1 + (m-1)\,\mathrm{ICC}$ with $m = 10$
+  runs per seed, and $n_{\mathrm{eff}} = 100 / \mathrm{deff}$. The ICC is the
+  one reported in Table~\ref{tab:icc}. The spread is the point: baseline
+  evolution carries about as much evidence as 18 independent runs, predator
+  pure RL about 91.}
+  \label{tab:neff}
+  \small
+  \setlength{\tabcolsep}{6pt}
+  \begin{tabular}{@{}llrrr@{}}
+    \toprule
+    Environment & Condition & ICC & Design effect & $n_{\mathrm{eff}}$ \\
+    \midrule
+    Baseline & Evolution & 0.493 & 5.44 & 18 \\
+    Baseline & Learning & 0.287 & 3.58 & 28 \\
+    Baseline & Pure RL & 0.033 & 1.30 & 77 \\
+    Predator & Evolution & 0.076 & 1.68 & 59 \\
+    Predator & Learning & 0.372 & 4.35 & 23 \\
+    Predator & Pure RL & 0.011 & 1.10 & 91 \\
+    \bottomrule
+  \end{tabular}
+\end{table}

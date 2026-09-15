@@ -1,0 +1,331 @@
+condition,label,seed,rep,run,n_gens,converged_fitness,viable,time,event,ever_reached
+evolution,Evolution (GA only),2001,1,roam60d5_w500_evolution_h128_seed2001_r1,1000,7.122762,1,64.0,1,1
+evolution,Evolution (GA only),2001,2,roam60d5_w500_evolution_h128_seed2001_r2,1000,7.080884,1,56.0,1,1
+evolution,Evolution (GA only),2001,3,roam60d5_w500_evolution_h128_seed2001_r3,1000,3.9686800000000004,0,31.0,1,1
+evolution,Evolution (GA only),2001,4,roam60d5_w500_evolution_h128_seed2001_r4,1000,7.1996280000000015,1,34.0,1,1
+evolution,Evolution (GA only),2001,5,roam60d5_w500_evolution_h128_seed2001_r5,1000,6.9021560000000015,1,477.0,1,1
+evolution,Evolution (GA only),2001,6,roam60d5_w500_evolution_h128_seed2001_r6,1000,7.1371519999999995,1,405.0,1,1
+evolution,Evolution (GA only),2001,7,roam60d5_w500_evolution_h128_seed2001_r7,1000,7.035259999999999,1,399.0,1,1
+evolution,Evolution (GA only),2001,8,roam60d5_w500_evolution_h128_seed2001_r8,1000,6.400346,1,330.0,1,1
+evolution,Evolution (GA only),2001,9,roam60d5_w500_evolution_h128_seed2001_r9,1000,7.238624,1,195.0,1,1
+evolution,Evolution (GA only),2001,10,roam60d5_w500_evolution_h128_seed2001_r10,1000,7.0879959999999995,1,46.0,1,1
+evolution,Evolution (GA only),2002,1,roam60d5_w500_evolution_h128_seed2002_r1,1000,3.929646000000001,0,83.0,1,1
+evolution,Evolution (GA only),2002,2,roam60d5_w500_evolution_h128_seed2002_r2,1000,7.152756,1,19.0,1,1
+evolution,Evolution (GA only),2002,3,roam60d5_w500_evolution_h128_seed2002_r3,1000,7.107996000000002,1,86.0,1,1
+evolution,Evolution (GA only),2002,4,roam60d5_w500_evolution_h128_seed2002_r4,1000,7.211136,1,64.0,1,1
+evolution,Evolution (GA only),2002,5,roam60d5_w500_evolution_h128_seed2002_r5,1000,7.225484,1,43.0,1,1
+evolution,Evolution (GA only),2002,6,roam60d5_w500_evolution_h128_seed2002_r6,1000,7.194538000000001,1,43.0,1,1
+evolution,Evolution (GA only),2002,7,roam60d5_w500_evolution_h128_seed2002_r7,1000,7.0798440000000005,1,43.0,1,1
+evolution,Evolution (GA only),2002,8,roam60d5_w500_evolution_h128_seed2002_r8,1000,7.09517,1,420.0,1,1
+evolution,Evolution (GA only),2002,9,roam60d5_w500_evolution_h128_seed2002_r9,1000,7.24307,1,117.0,1,1
+evolution,Evolution (GA only),2002,10,roam60d5_w500_evolution_h128_seed2002_r10,1000,7.15945,1,43.0,1,1
+evolution,Evolution (GA only),2003,1,roam60d5_w500_evolution_h128_seed2003_r1,1000,7.047986,1,79.0,1,1
+evolution,Evolution (GA only),2003,2,roam60d5_w500_evolution_h128_seed2003_r2,1000,7.055780000000001,1,22.0,1,1
+evolution,Evolution (GA only),2003,3,roam60d5_w500_evolution_h128_seed2003_r3,1000,7.102736,1,97.0,1,1
+evolution,Evolution (GA only),2003,4,roam60d5_w500_evolution_h128_seed2003_r4,1000,6.959784000000001,1,357.0,1,1
+evolution,Evolution (GA only),2003,5,roam60d5_w500_evolution_h128_seed2003_r5,1000,7.096286000000001,1,28.0,1,1
+evolution,Evolution (GA only),2003,6,roam60d5_w500_evolution_h128_seed2003_r6,1000,7.0621220000000005,1,25.0,1,1
+evolution,Evolution (GA only),2003,7,roam60d5_w500_evolution_h128_seed2003_r7,1000,6.945092,1,171.0,1,1
+evolution,Evolution (GA only),2003,8,roam60d5_w500_evolution_h128_seed2003_r8,1000,6.496543999999999,1,201.0,1,1
+evolution,Evolution (GA only),2003,9,roam60d5_w500_evolution_h128_seed2003_r9,1000,6.969152000000001,1,303.0,1,1
+evolution,Evolution (GA only),2003,10,roam60d5_w500_evolution_h128_seed2003_r10,1000,7.0420940000000005,1,43.0,1,1
+evolution,Evolution (GA only),2004,1,roam60d5_w500_evolution_h128_seed2004_r1,1000,7.124942,1,43.0,1,1
+evolution,Evolution (GA only),2004,2,roam60d5_w500_evolution_h128_seed2004_r2,1000,7.064711999999998,1,25.0,1,1
+evolution,Evolution (GA only),2004,3,roam60d5_w500_evolution_h128_seed2004_r3,1000,7.0832820000000005,1,144.0,1,1
+evolution,Evolution (GA only),2004,4,roam60d5_w500_evolution_h128_seed2004_r4,1000,7.112824,1,34.0,1,1
+evolution,Evolution (GA only),2004,5,roam60d5_w500_evolution_h128_seed2004_r5,1000,7.12641,1,28.0,1,1
+evolution,Evolution (GA only),2004,6,roam60d5_w500_evolution_h128_seed2004_r6,1000,3.599614,0,234.0,1,1
+evolution,Evolution (GA only),2004,7,roam60d5_w500_evolution_h128_seed2004_r7,1000,6.748682,1,264.0,1,1
+evolution,Evolution (GA only),2004,8,roam60d5_w500_evolution_h128_seed2004_r8,1000,7.06677,1,174.0,1,1
+evolution,Evolution (GA only),2004,9,roam60d5_w500_evolution_h128_seed2004_r9,1000,7.049694,1,294.0,1,1
+evolution,Evolution (GA only),2004,10,roam60d5_w500_evolution_h128_seed2004_r10,1000,5.2162120000000005,1,28.0,1,1
+evolution,Evolution (GA only),2005,1,roam60d5_w500_evolution_h128_seed2005_r1,1000,7.117102,1,133.0,1,1
+evolution,Evolution (GA only),2005,2,roam60d5_w500_evolution_h128_seed2005_r2,1000,6.810367999999999,1,546.0,1,1
+evolution,Evolution (GA only),2005,3,roam60d5_w500_evolution_h128_seed2005_r3,1000,6.231483999999999,1,237.0,1,1
+evolution,Evolution (GA only),2005,4,roam60d5_w500_evolution_h128_seed2005_r4,1000,3.7458639999999996,0,255.0,1,1
+evolution,Evolution (GA only),2005,5,roam60d5_w500_evolution_h128_seed2005_r5,1000,7.003938,1,91.0,1,1
+evolution,Evolution (GA only),2005,6,roam60d5_w500_evolution_h128_seed2005_r6,1000,6.931394,1,309.0,1,1
+evolution,Evolution (GA only),2005,7,roam60d5_w500_evolution_h128_seed2005_r7,1000,6.077932000000001,1,813.0,1,1
+evolution,Evolution (GA only),2005,8,roam60d5_w500_evolution_h128_seed2005_r8,1000,3.68023,0,567.0,1,1
+evolution,Evolution (GA only),2005,9,roam60d5_w500_evolution_h128_seed2005_r9,1000,3.7011799999999995,0,474.0,1,1
+evolution,Evolution (GA only),2005,10,roam60d5_w500_evolution_h128_seed2005_r10,1000,7.141659999999999,1,37.0,1,1
+evolution,Evolution (GA only),2006,1,roam60d5_w500_evolution_h128_seed2006_r1,1000,7.167846,1,91.0,1,1
+evolution,Evolution (GA only),2006,2,roam60d5_w500_evolution_h128_seed2006_r2,1000,7.199884000000001,1,31.0,1,1
+evolution,Evolution (GA only),2006,3,roam60d5_w500_evolution_h128_seed2006_r3,1000,7.038588,1,25.0,1,1
+evolution,Evolution (GA only),2006,4,roam60d5_w500_evolution_h128_seed2006_r4,1000,7.12139,1,19.0,1,1
+evolution,Evolution (GA only),2006,5,roam60d5_w500_evolution_h128_seed2006_r5,1000,7.0509640000000005,1,61.0,1,1
+evolution,Evolution (GA only),2006,6,roam60d5_w500_evolution_h128_seed2006_r6,1000,5.739129999999999,1,81.0,1,1
+evolution,Evolution (GA only),2006,7,roam60d5_w500_evolution_h128_seed2006_r7,1000,3.826668,0,516.0,1,1
+evolution,Evolution (GA only),2006,8,roam60d5_w500_evolution_h128_seed2006_r8,1000,7.134312000000001,1,249.0,1,1
+evolution,Evolution (GA only),2006,9,roam60d5_w500_evolution_h128_seed2006_r9,1000,6.687338,1,22.0,1,1
+evolution,Evolution (GA only),2006,10,roam60d5_w500_evolution_h128_seed2006_r10,1000,3.9570539999999994,0,229.0,1,1
+evolution,Evolution (GA only),2007,1,roam60d5_w500_evolution_h128_seed2007_r1,1000,6.99469,1,31.0,1,1
+evolution,Evolution (GA only),2007,2,roam60d5_w500_evolution_h128_seed2007_r2,1000,6.929486,1,31.0,1,1
+evolution,Evolution (GA only),2007,3,roam60d5_w500_evolution_h128_seed2007_r3,1000,7.205221999999999,1,207.0,1,1
+evolution,Evolution (GA only),2007,4,roam60d5_w500_evolution_h128_seed2007_r4,1000,7.245498000000001,1,31.0,1,1
+evolution,Evolution (GA only),2007,5,roam60d5_w500_evolution_h128_seed2007_r5,1000,7.120424000000001,1,62.0,1,1
+evolution,Evolution (GA only),2007,6,roam60d5_w500_evolution_h128_seed2007_r6,1000,7.118796000000001,1,28.0,1,1
+evolution,Evolution (GA only),2007,7,roam60d5_w500_evolution_h128_seed2007_r7,1000,7.229436000000001,1,28.0,1,1
+evolution,Evolution (GA only),2007,8,roam60d5_w500_evolution_h128_seed2007_r8,1000,6.1148940000000005,1,186.0,1,1
+evolution,Evolution (GA only),2007,9,roam60d5_w500_evolution_h128_seed2007_r9,1000,6.9474360000000015,1,462.0,1,1
+evolution,Evolution (GA only),2007,10,roam60d5_w500_evolution_h128_seed2007_r10,1000,6.2609140000000005,1,216.0,1,1
+evolution,Evolution (GA only),2008,1,roam60d5_w500_evolution_h128_seed2008_r1,1000,7.102452,1,59.0,1,1
+evolution,Evolution (GA only),2008,2,roam60d5_w500_evolution_h128_seed2008_r2,1000,7.035044,1,328.0,1,1
+evolution,Evolution (GA only),2008,3,roam60d5_w500_evolution_h128_seed2008_r3,1000,7.078334,1,324.0,1,1
+evolution,Evolution (GA only),2008,4,roam60d5_w500_evolution_h128_seed2008_r4,1000,3.641962,0,156.0,1,1
+evolution,Evolution (GA only),2008,5,roam60d5_w500_evolution_h128_seed2008_r5,1000,3.771706,0,300.0,1,1
+evolution,Evolution (GA only),2008,6,roam60d5_w500_evolution_h128_seed2008_r6,1000,6.985282,1,186.0,1,1
+evolution,Evolution (GA only),2008,7,roam60d5_w500_evolution_h128_seed2008_r7,1000,7.142904,1,546.0,1,1
+evolution,Evolution (GA only),2008,8,roam60d5_w500_evolution_h128_seed2008_r8,1000,6.096583999999999,1,31.0,1,1
+evolution,Evolution (GA only),2008,9,roam60d5_w500_evolution_h128_seed2008_r9,1000,7.1710519999999995,1,306.0,1,1
+evolution,Evolution (GA only),2008,10,roam60d5_w500_evolution_h128_seed2008_r10,1000,6.37838,1,609.0,1,1
+evolution,Evolution (GA only),2009,1,roam60d5_w500_evolution_h128_seed2009_r1,1000,7.049442,1,95.0,1,1
+evolution,Evolution (GA only),2009,2,roam60d5_w500_evolution_h128_seed2009_r2,1000,6.97818,1,279.0,1,1
+evolution,Evolution (GA only),2009,3,roam60d5_w500_evolution_h128_seed2009_r3,1000,7.0357780000000005,1,477.0,1,1
+evolution,Evolution (GA only),2009,4,roam60d5_w500_evolution_h128_seed2009_r4,1000,7.084134000000001,1,35.0,1,1
+evolution,Evolution (GA only),2009,5,roam60d5_w500_evolution_h128_seed2009_r5,1000,7.050231999999999,1,507.0,1,1
+evolution,Evolution (GA only),2009,6,roam60d5_w500_evolution_h128_seed2009_r6,1000,7.041067999999999,1,25.0,1,1
+evolution,Evolution (GA only),2009,7,roam60d5_w500_evolution_h128_seed2009_r7,1000,7.145228,1,25.0,1,1
+evolution,Evolution (GA only),2009,8,roam60d5_w500_evolution_h128_seed2009_r8,1000,7.151826,1,106.0,1,1
+evolution,Evolution (GA only),2009,9,roam60d5_w500_evolution_h128_seed2009_r9,1000,7.141572000000001,1,25.0,1,1
+evolution,Evolution (GA only),2009,10,roam60d5_w500_evolution_h128_seed2009_r10,1000,7.01252,1,25.0,1,1
+evolution,Evolution (GA only),2010,1,roam60d5_w500_evolution_h128_seed2010_r1,1000,7.136616000000001,1,82.0,1,1
+evolution,Evolution (GA only),2010,2,roam60d5_w500_evolution_h128_seed2010_r2,1000,7.004152,1,25.0,1,1
+evolution,Evolution (GA only),2010,3,roam60d5_w500_evolution_h128_seed2010_r3,1000,7.058038,1,43.0,1,1
+evolution,Evolution (GA only),2010,4,roam60d5_w500_evolution_h128_seed2010_r4,1000,7.1661340000000004,1,37.0,1,1
+evolution,Evolution (GA only),2010,5,roam60d5_w500_evolution_h128_seed2010_r5,1000,7.141355999999999,1,52.0,1,1
+evolution,Evolution (GA only),2010,6,roam60d5_w500_evolution_h128_seed2010_r6,1000,7.178800000000001,1,37.0,1,1
+evolution,Evolution (GA only),2010,7,roam60d5_w500_evolution_h128_seed2010_r7,1000,7.185358,1,91.0,1,1
+evolution,Evolution (GA only),2010,8,roam60d5_w500_evolution_h128_seed2010_r8,1000,6.952264000000001,1,639.0,1,1
+evolution,Evolution (GA only),2010,9,roam60d5_w500_evolution_h128_seed2010_r9,1000,7.174244000000001,1,325.0,1,1
+evolution,Evolution (GA only),2010,10,roam60d5_w500_evolution_h128_seed2010_r10,1000,7.205480000000001,1,112.0,1,1
+learning,Learning (GA + in-life RL),2001,1,roam60d5_w500_learning_h128_lr0.02_seed2001_r1,1000,7.158836,1,7.0,1,1
+learning,Learning (GA + in-life RL),2001,2,roam60d5_w500_learning_h128_lr0.02_seed2001_r2,1000,7.2273960000000015,1,16.0,1,1
+learning,Learning (GA + in-life RL),2001,3,roam60d5_w500_learning_h128_lr0.02_seed2001_r3,1000,7.168843999999999,1,7.0,1,1
+learning,Learning (GA + in-life RL),2001,4,roam60d5_w500_learning_h128_lr0.02_seed2001_r4,1000,7.236778,1,16.0,1,1
+learning,Learning (GA + in-life RL),2001,5,roam60d5_w500_learning_h128_lr0.02_seed2001_r5,1000,7.241078,1,10.0,1,1
+learning,Learning (GA + in-life RL),2001,6,roam60d5_w500_learning_h128_lr0.02_seed2001_r6,1000,7.209168000000001,1,16.0,1,1
+learning,Learning (GA + in-life RL),2001,7,roam60d5_w500_learning_h128_lr0.02_seed2001_r7,1000,7.169502000000001,1,10.0,1,1
+learning,Learning (GA + in-life RL),2001,8,roam60d5_w500_learning_h128_lr0.02_seed2001_r8,1000,7.210774,1,7.0,1,1
+learning,Learning (GA + in-life RL),2001,9,roam60d5_w500_learning_h128_lr0.02_seed2001_r9,1000,7.242428000000001,1,13.0,1,1
+learning,Learning (GA + in-life RL),2001,10,roam60d5_w500_learning_h128_lr0.02_seed2001_r10,1000,7.151954000000001,1,16.0,1,1
+learning,Learning (GA + in-life RL),2002,1,roam60d5_w500_learning_h128_lr0.02_seed2002_r1,1000,7.225927999999999,1,10.0,1,1
+learning,Learning (GA + in-life RL),2002,2,roam60d5_w500_learning_h128_lr0.02_seed2002_r2,1000,7.204781999999999,1,16.0,1,1
+learning,Learning (GA + in-life RL),2002,3,roam60d5_w500_learning_h128_lr0.02_seed2002_r3,1000,7.250792000000001,1,13.0,1,1
+learning,Learning (GA + in-life RL),2002,4,roam60d5_w500_learning_h128_lr0.02_seed2002_r4,1000,7.25633,1,7.0,1,1
+learning,Learning (GA + in-life RL),2002,5,roam60d5_w500_learning_h128_lr0.02_seed2002_r5,1000,7.237816000000001,1,13.0,1,1
+learning,Learning (GA + in-life RL),2002,6,roam60d5_w500_learning_h128_lr0.02_seed2002_r6,1000,7.221694,1,7.0,1,1
+learning,Learning (GA + in-life RL),2002,7,roam60d5_w500_learning_h128_lr0.02_seed2002_r7,1000,7.1891099999999994,1,7.0,1,1
+learning,Learning (GA + in-life RL),2002,8,roam60d5_w500_learning_h128_lr0.02_seed2002_r8,1000,7.26356,1,13.0,1,1
+learning,Learning (GA + in-life RL),2002,9,roam60d5_w500_learning_h128_lr0.02_seed2002_r9,1000,7.276486000000001,1,7.0,1,1
+learning,Learning (GA + in-life RL),2002,10,roam60d5_w500_learning_h128_lr0.02_seed2002_r10,1000,7.209128,1,16.0,1,1
+learning,Learning (GA + in-life RL),2003,1,roam60d5_w500_learning_h128_lr0.02_seed2003_r1,1000,7.065214000000001,1,16.0,1,1
+learning,Learning (GA + in-life RL),2003,2,roam60d5_w500_learning_h128_lr0.02_seed2003_r2,1000,7.152498,1,99.0,1,1
+learning,Learning (GA + in-life RL),2003,3,roam60d5_w500_learning_h128_lr0.02_seed2003_r3,1000,6.9796580000000015,1,7.0,1,1
+learning,Learning (GA + in-life RL),2003,4,roam60d5_w500_learning_h128_lr0.02_seed2003_r4,1000,7.0684499999999995,1,19.0,1,1
+learning,Learning (GA + in-life RL),2003,5,roam60d5_w500_learning_h128_lr0.02_seed2003_r5,1000,7.116880000000001,1,19.0,1,1
+learning,Learning (GA + in-life RL),2003,6,roam60d5_w500_learning_h128_lr0.02_seed2003_r6,1000,7.079107999999999,1,10.0,1,1
+learning,Learning (GA + in-life RL),2003,7,roam60d5_w500_learning_h128_lr0.02_seed2003_r7,1000,7.107466,1,13.0,1,1
+learning,Learning (GA + in-life RL),2003,8,roam60d5_w500_learning_h128_lr0.02_seed2003_r8,1000,7.154957999999999,1,13.0,1,1
+learning,Learning (GA + in-life RL),2003,9,roam60d5_w500_learning_h128_lr0.02_seed2003_r9,1000,7.154496,1,16.0,1,1
+learning,Learning (GA + in-life RL),2003,10,roam60d5_w500_learning_h128_lr0.02_seed2003_r10,1000,7.165294,1,16.0,1,1
+learning,Learning (GA + in-life RL),2004,1,roam60d5_w500_learning_h128_lr0.02_seed2004_r1,1000,7.106210000000001,1,13.0,1,1
+learning,Learning (GA + in-life RL),2004,2,roam60d5_w500_learning_h128_lr0.02_seed2004_r2,1000,7.205864000000002,1,19.0,1,1
+learning,Learning (GA + in-life RL),2004,3,roam60d5_w500_learning_h128_lr0.02_seed2004_r3,1000,7.156228,1,16.0,1,1
+learning,Learning (GA + in-life RL),2004,4,roam60d5_w500_learning_h128_lr0.02_seed2004_r4,1000,7.254945999999999,1,10.0,1,1
+learning,Learning (GA + in-life RL),2004,5,roam60d5_w500_learning_h128_lr0.02_seed2004_r5,1000,7.110268000000001,1,10.0,1,1
+learning,Learning (GA + in-life RL),2004,6,roam60d5_w500_learning_h128_lr0.02_seed2004_r6,1000,7.112074,1,16.0,1,1
+learning,Learning (GA + in-life RL),2004,7,roam60d5_w500_learning_h128_lr0.02_seed2004_r7,1000,7.181929999999999,1,10.0,1,1
+learning,Learning (GA + in-life RL),2004,8,roam60d5_w500_learning_h128_lr0.02_seed2004_r8,1000,7.24308,1,10.0,1,1
+learning,Learning (GA + in-life RL),2004,9,roam60d5_w500_learning_h128_lr0.02_seed2004_r9,1000,7.2243200000000005,1,13.0,1,1
+learning,Learning (GA + in-life RL),2004,10,roam60d5_w500_learning_h128_lr0.02_seed2004_r10,1000,7.124268,1,13.0,1,1
+learning,Learning (GA + in-life RL),2005,1,roam60d5_w500_learning_h128_lr0.02_seed2005_r1,1000,7.177930000000001,1,13.0,1,1
+learning,Learning (GA + in-life RL),2005,2,roam60d5_w500_learning_h128_lr0.02_seed2005_r2,1000,7.165254,1,13.0,1,1
+learning,Learning (GA + in-life RL),2005,3,roam60d5_w500_learning_h128_lr0.02_seed2005_r3,1000,7.16949,1,7.0,1,1
+learning,Learning (GA + in-life RL),2005,4,roam60d5_w500_learning_h128_lr0.02_seed2005_r4,1000,7.174846,1,13.0,1,1
+learning,Learning (GA + in-life RL),2005,5,roam60d5_w500_learning_h128_lr0.02_seed2005_r5,1000,7.151626000000001,1,13.0,1,1
+learning,Learning (GA + in-life RL),2005,6,roam60d5_w500_learning_h128_lr0.02_seed2005_r6,1000,7.156542000000001,1,13.0,1,1
+learning,Learning (GA + in-life RL),2005,7,roam60d5_w500_learning_h128_lr0.02_seed2005_r7,1000,7.206995999999999,1,7.0,1,1
+learning,Learning (GA + in-life RL),2005,8,roam60d5_w500_learning_h128_lr0.02_seed2005_r8,1000,7.189216,1,7.0,1,1
+learning,Learning (GA + in-life RL),2005,9,roam60d5_w500_learning_h128_lr0.02_seed2005_r9,1000,7.2356799999999994,1,7.0,1,1
+learning,Learning (GA + in-life RL),2005,10,roam60d5_w500_learning_h128_lr0.02_seed2005_r10,1000,7.113480000000001,1,7.0,1,1
+learning,Learning (GA + in-life RL),2006,1,roam60d5_w500_learning_h128_lr0.02_seed2006_r1,1000,7.195074000000001,1,16.0,1,1
+learning,Learning (GA + in-life RL),2006,2,roam60d5_w500_learning_h128_lr0.02_seed2006_r2,1000,7.247361999999999,1,13.0,1,1
+learning,Learning (GA + in-life RL),2006,3,roam60d5_w500_learning_h128_lr0.02_seed2006_r3,1000,7.150175999999999,1,16.0,1,1
+learning,Learning (GA + in-life RL),2006,4,roam60d5_w500_learning_h128_lr0.02_seed2006_r4,1000,7.217938,1,13.0,1,1
+learning,Learning (GA + in-life RL),2006,5,roam60d5_w500_learning_h128_lr0.02_seed2006_r5,1000,7.165939999999999,1,13.0,1,1
+learning,Learning (GA + in-life RL),2006,6,roam60d5_w500_learning_h128_lr0.02_seed2006_r6,1000,7.185780000000001,1,13.0,1,1
+learning,Learning (GA + in-life RL),2006,7,roam60d5_w500_learning_h128_lr0.02_seed2006_r7,1000,7.23488,1,13.0,1,1
+learning,Learning (GA + in-life RL),2006,8,roam60d5_w500_learning_h128_lr0.02_seed2006_r8,1000,7.196333999999999,1,7.0,1,1
+learning,Learning (GA + in-life RL),2006,9,roam60d5_w500_learning_h128_lr0.02_seed2006_r9,1000,7.202264,1,13.0,1,1
+learning,Learning (GA + in-life RL),2006,10,roam60d5_w500_learning_h128_lr0.02_seed2006_r10,1000,7.222193999999999,1,7.0,1,1
+learning,Learning (GA + in-life RL),2007,1,roam60d5_w500_learning_h128_lr0.02_seed2007_r1,1000,7.249587999999999,1,7.0,1,1
+learning,Learning (GA + in-life RL),2007,2,roam60d5_w500_learning_h128_lr0.02_seed2007_r2,1000,7.294246,1,10.0,1,1
+learning,Learning (GA + in-life RL),2007,3,roam60d5_w500_learning_h128_lr0.02_seed2007_r3,1000,7.319799999999999,1,7.0,1,1
+learning,Learning (GA + in-life RL),2007,4,roam60d5_w500_learning_h128_lr0.02_seed2007_r4,1000,7.222488000000001,1,7.0,1,1
+learning,Learning (GA + in-life RL),2007,5,roam60d5_w500_learning_h128_lr0.02_seed2007_r5,1000,7.2708699999999995,1,7.0,1,1
+learning,Learning (GA + in-life RL),2007,6,roam60d5_w500_learning_h128_lr0.02_seed2007_r6,1000,7.2617780000000005,1,13.0,1,1
+learning,Learning (GA + in-life RL),2007,7,roam60d5_w500_learning_h128_lr0.02_seed2007_r7,1000,7.1924079999999995,1,10.0,1,1
+learning,Learning (GA + in-life RL),2007,8,roam60d5_w500_learning_h128_lr0.02_seed2007_r8,1000,7.208327999999999,1,10.0,1,1
+learning,Learning (GA + in-life RL),2007,9,roam60d5_w500_learning_h128_lr0.02_seed2007_r9,1000,7.234122,1,7.0,1,1
+learning,Learning (GA + in-life RL),2007,10,roam60d5_w500_learning_h128_lr0.02_seed2007_r10,1000,7.195912,1,7.0,1,1
+learning,Learning (GA + in-life RL),2008,1,roam60d5_w500_learning_h128_lr0.02_seed2008_r1,1000,7.146698,1,16.0,1,1
+learning,Learning (GA + in-life RL),2008,2,roam60d5_w500_learning_h128_lr0.02_seed2008_r2,1000,7.1871420000000015,1,16.0,1,1
+learning,Learning (GA + in-life RL),2008,3,roam60d5_w500_learning_h128_lr0.02_seed2008_r3,1000,7.159479999999999,1,10.0,1,1
+learning,Learning (GA + in-life RL),2008,4,roam60d5_w500_learning_h128_lr0.02_seed2008_r4,1000,7.1987,1,13.0,1,1
+learning,Learning (GA + in-life RL),2008,5,roam60d5_w500_learning_h128_lr0.02_seed2008_r5,1000,7.231366,1,10.0,1,1
+learning,Learning (GA + in-life RL),2008,6,roam60d5_w500_learning_h128_lr0.02_seed2008_r6,1000,7.171455999999998,1,16.0,1,1
+learning,Learning (GA + in-life RL),2008,7,roam60d5_w500_learning_h128_lr0.02_seed2008_r7,1000,7.196139999999999,1,10.0,1,1
+learning,Learning (GA + in-life RL),2008,8,roam60d5_w500_learning_h128_lr0.02_seed2008_r8,1000,7.198788,1,10.0,1,1
+learning,Learning (GA + in-life RL),2008,9,roam60d5_w500_learning_h128_lr0.02_seed2008_r9,1000,7.276496,1,10.0,1,1
+learning,Learning (GA + in-life RL),2008,10,roam60d5_w500_learning_h128_lr0.02_seed2008_r10,1000,7.200219999999999,1,10.0,1,1
+learning,Learning (GA + in-life RL),2009,1,roam60d5_w500_learning_h128_lr0.02_seed2009_r1,1000,7.1542639999999995,1,13.0,1,1
+learning,Learning (GA + in-life RL),2009,2,roam60d5_w500_learning_h128_lr0.02_seed2009_r2,1000,7.064428,1,13.0,1,1
+learning,Learning (GA + in-life RL),2009,3,roam60d5_w500_learning_h128_lr0.02_seed2009_r3,1000,7.19552,1,10.0,1,1
+learning,Learning (GA + in-life RL),2009,4,roam60d5_w500_learning_h128_lr0.02_seed2009_r4,1000,7.226228,1,13.0,1,1
+learning,Learning (GA + in-life RL),2009,5,roam60d5_w500_learning_h128_lr0.02_seed2009_r5,1000,7.1007679999999995,1,13.0,1,1
+learning,Learning (GA + in-life RL),2009,6,roam60d5_w500_learning_h128_lr0.02_seed2009_r6,1000,7.15685,1,13.0,1,1
+learning,Learning (GA + in-life RL),2009,7,roam60d5_w500_learning_h128_lr0.02_seed2009_r7,1000,7.220650000000001,1,13.0,1,1
+learning,Learning (GA + in-life RL),2009,8,roam60d5_w500_learning_h128_lr0.02_seed2009_r8,1000,7.091656,1,13.0,1,1
+learning,Learning (GA + in-life RL),2009,9,roam60d5_w500_learning_h128_lr0.02_seed2009_r9,1000,7.181898,1,10.0,1,1
+learning,Learning (GA + in-life RL),2009,10,roam60d5_w500_learning_h128_lr0.02_seed2009_r10,1000,7.046113999999999,1,7.0,1,1
+learning,Learning (GA + in-life RL),2010,1,roam60d5_w500_learning_h128_lr0.02_seed2010_r1,1000,7.383282,1,13.0,1,1
+learning,Learning (GA + in-life RL),2010,2,roam60d5_w500_learning_h128_lr0.02_seed2010_r2,1000,7.144356,1,13.0,1,1
+learning,Learning (GA + in-life RL),2010,3,roam60d5_w500_learning_h128_lr0.02_seed2010_r3,1000,7.246824,1,16.0,1,1
+learning,Learning (GA + in-life RL),2010,4,roam60d5_w500_learning_h128_lr0.02_seed2010_r4,1000,7.156708000000001,1,13.0,1,1
+learning,Learning (GA + in-life RL),2010,5,roam60d5_w500_learning_h128_lr0.02_seed2010_r5,1000,7.173674,1,13.0,1,1
+learning,Learning (GA + in-life RL),2010,6,roam60d5_w500_learning_h128_lr0.02_seed2010_r6,1000,7.13733,1,13.0,1,1
+learning,Learning (GA + in-life RL),2010,7,roam60d5_w500_learning_h128_lr0.02_seed2010_r7,1000,7.227609999999999,1,13.0,1,1
+learning,Learning (GA + in-life RL),2010,8,roam60d5_w500_learning_h128_lr0.02_seed2010_r8,1000,7.148986,1,13.0,1,1
+learning,Learning (GA + in-life RL),2010,9,roam60d5_w500_learning_h128_lr0.02_seed2010_r9,1000,7.12097,1,13.0,1,1
+learning,Learning (GA + in-life RL),2010,10,roam60d5_w500_learning_h128_lr0.02_seed2010_r10,1000,7.2470680000000005,1,13.0,1,1
+pure_rl,Pure RL (no GA),2001,1,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2001_r1,1000,6.5649939999999996,1,5.0,1,1
+pure_rl,Pure RL (no GA),2001,2,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2001_r2,1000,5.964308,1,5.0,1,1
+pure_rl,Pure RL (no GA),2001,3,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2001_r3,1000,5.750291999999999,1,5.0,1,1
+pure_rl,Pure RL (no GA),2001,4,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2001_r4,1000,6.293628000000001,1,2.0,1,1
+pure_rl,Pure RL (no GA),2001,5,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2001_r5,1000,6.05901,1,2.0,1,1
+pure_rl,Pure RL (no GA),2001,6,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2001_r6,1000,6.638396,1,5.0,1,1
+pure_rl,Pure RL (no GA),2001,7,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2001_r7,1000,6.667657999999999,1,5.0,1,1
+pure_rl,Pure RL (no GA),2001,8,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2001_r8,1000,6.211850000000001,1,5.0,1,1
+pure_rl,Pure RL (no GA),2001,9,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2001_r9,1000,6.288927999999999,1,5.0,1,1
+pure_rl,Pure RL (no GA),2001,10,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2001_r10,1000,5.971822,1,5.0,1,1
+pure_rl,Pure RL (no GA),2002,1,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2002_r1,1000,6.80939,1,3.0,1,1
+pure_rl,Pure RL (no GA),2002,2,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2002_r2,1000,5.939462000000001,1,2.0,1,1
+pure_rl,Pure RL (no GA),2002,3,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2002_r3,1000,6.107167999999999,1,5.0,1,1
+pure_rl,Pure RL (no GA),2002,4,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2002_r4,1000,5.761196,1,5.0,1,1
+pure_rl,Pure RL (no GA),2002,5,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2002_r5,1000,6.526155999999999,1,2.0,1,1
+pure_rl,Pure RL (no GA),2002,6,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2002_r6,1000,5.6377060000000006,1,8.0,1,1
+pure_rl,Pure RL (no GA),2002,7,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2002_r7,1000,6.348398,1,3.0,1,1
+pure_rl,Pure RL (no GA),2002,8,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2002_r8,1000,6.322652000000001,1,8.0,1,1
+pure_rl,Pure RL (no GA),2002,9,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2002_r9,1000,6.235541999999999,1,2.0,1,1
+pure_rl,Pure RL (no GA),2002,10,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2002_r10,1000,6.324285999999998,1,17.0,1,1
+pure_rl,Pure RL (no GA),2003,1,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2003_r1,1000,6.391776,1,5.0,1,1
+pure_rl,Pure RL (no GA),2003,2,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2003_r2,1000,5.906224,1,2.0,1,1
+pure_rl,Pure RL (no GA),2003,3,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2003_r3,1000,5.786898,1,5.0,1,1
+pure_rl,Pure RL (no GA),2003,4,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2003_r4,1000,5.8635959999999985,1,5.0,1,1
+pure_rl,Pure RL (no GA),2003,5,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2003_r5,1000,6.382313999999997,1,5.0,1,1
+pure_rl,Pure RL (no GA),2003,6,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2003_r6,1000,5.794387999999999,1,5.0,1,1
+pure_rl,Pure RL (no GA),2003,7,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2003_r7,1000,6.540552,1,5.0,1,1
+pure_rl,Pure RL (no GA),2003,8,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2003_r8,1000,3.6334479999999996,0,5.0,1,1
+pure_rl,Pure RL (no GA),2003,9,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2003_r9,1000,6.2322180000000005,1,5.0,1,1
+pure_rl,Pure RL (no GA),2003,10,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2003_r10,1000,6.416946,1,5.0,1,1
+pure_rl,Pure RL (no GA),2004,1,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2004_r1,1000,5.281727999999999,1,5.0,1,1
+pure_rl,Pure RL (no GA),2004,2,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2004_r2,1000,5.913660000000001,1,5.0,1,1
+pure_rl,Pure RL (no GA),2004,3,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2004_r3,1000,6.372934,1,8.0,1,1
+pure_rl,Pure RL (no GA),2004,4,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2004_r4,1000,6.631952,1,5.0,1,1
+pure_rl,Pure RL (no GA),2004,5,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2004_r5,1000,5.673985999999998,1,5.0,1,1
+pure_rl,Pure RL (no GA),2004,6,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2004_r6,1000,5.438934,1,8.0,1,1
+pure_rl,Pure RL (no GA),2004,7,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2004_r7,1000,6.546307999999999,1,5.0,1,1
+pure_rl,Pure RL (no GA),2004,8,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2004_r8,1000,5.263348000000001,1,5.0,1,1
+pure_rl,Pure RL (no GA),2004,9,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2004_r9,1000,6.411316,1,2.0,1,1
+pure_rl,Pure RL (no GA),2004,10,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2004_r10,1000,6.390428000000001,1,5.0,1,1
+pure_rl,Pure RL (no GA),2005,1,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2005_r1,1000,6.374554,1,5.0,1,1
+pure_rl,Pure RL (no GA),2005,2,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2005_r2,1000,5.531782,1,8.0,1,1
+pure_rl,Pure RL (no GA),2005,3,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2005_r3,1000,6.437366000000001,1,5.0,1,1
+pure_rl,Pure RL (no GA),2005,4,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2005_r4,1000,5.891881999999999,1,8.0,1,1
+pure_rl,Pure RL (no GA),2005,5,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2005_r5,1000,6.499117999999999,1,5.0,1,1
+pure_rl,Pure RL (no GA),2005,6,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2005_r6,1000,6.0332799999999995,1,5.0,1,1
+pure_rl,Pure RL (no GA),2005,7,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2005_r7,1000,6.482822,1,5.0,1,1
+pure_rl,Pure RL (no GA),2005,8,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2005_r8,1000,6.476266000000001,1,11.0,1,1
+pure_rl,Pure RL (no GA),2005,9,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2005_r9,1000,6.069698000000001,1,11.0,1,1
+pure_rl,Pure RL (no GA),2005,10,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2005_r10,1000,6.481723999999999,1,5.0,1,1
+pure_rl,Pure RL (no GA),2006,1,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2006_r1,1000,6.506405999999999,1,5.0,1,1
+pure_rl,Pure RL (no GA),2006,2,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2006_r2,1000,6.389361999999998,1,5.0,1,1
+pure_rl,Pure RL (no GA),2006,3,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2006_r3,1000,6.418409999999999,1,5.0,1,1
+pure_rl,Pure RL (no GA),2006,4,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2006_r4,1000,6.469699999999998,1,5.0,1,1
+pure_rl,Pure RL (no GA),2006,5,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2006_r5,1000,6.166228000000001,1,5.0,1,1
+pure_rl,Pure RL (no GA),2006,6,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2006_r6,1000,5.887746,1,5.0,1,1
+pure_rl,Pure RL (no GA),2006,7,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2006_r7,1000,6.345924000000001,1,5.0,1,1
+pure_rl,Pure RL (no GA),2006,8,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2006_r8,1000,6.444648000000001,1,5.0,1,1
+pure_rl,Pure RL (no GA),2006,9,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2006_r9,1000,6.49748,1,5.0,1,1
+pure_rl,Pure RL (no GA),2006,10,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2006_r10,1000,6.335128,1,1.0,1,1
+pure_rl,Pure RL (no GA),2007,1,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2007_r1,1000,6.482274,1,5.0,1,1
+pure_rl,Pure RL (no GA),2007,2,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2007_r2,1000,6.541581999999998,1,8.0,1,1
+pure_rl,Pure RL (no GA),2007,3,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2007_r3,1000,6.20255,1,5.0,1,1
+pure_rl,Pure RL (no GA),2007,4,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2007_r4,1000,6.061958000000001,1,2.0,1,1
+pure_rl,Pure RL (no GA),2007,5,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2007_r5,1000,6.315996,1,5.0,1,1
+pure_rl,Pure RL (no GA),2007,6,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2007_r6,1000,6.362778,1,8.0,1,1
+pure_rl,Pure RL (no GA),2007,7,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2007_r7,1000,5.656046,1,11.0,1,1
+pure_rl,Pure RL (no GA),2007,8,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2007_r8,1000,5.9806539999999995,1,5.0,1,1
+pure_rl,Pure RL (no GA),2007,9,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2007_r9,1000,6.450398,1,2.0,1,1
+pure_rl,Pure RL (no GA),2007,10,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2007_r10,1000,6.720023999999999,1,5.0,1,1
+pure_rl,Pure RL (no GA),2008,1,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2008_r1,1000,6.248134,1,8.0,1,1
+pure_rl,Pure RL (no GA),2008,2,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2008_r2,1000,6.306032,1,21.0,1,1
+pure_rl,Pure RL (no GA),2008,3,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2008_r3,1000,6.479628,1,5.0,1,1
+pure_rl,Pure RL (no GA),2008,4,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2008_r4,1000,6.443462000000002,1,9.0,1,1
+pure_rl,Pure RL (no GA),2008,5,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2008_r5,1000,6.319759999999999,1,8.0,1,1
+pure_rl,Pure RL (no GA),2008,6,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2008_r6,1000,6.499956,1,32.0,1,1
+pure_rl,Pure RL (no GA),2008,7,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2008_r7,1000,5.823677999999998,1,11.0,1,1
+pure_rl,Pure RL (no GA),2008,8,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2008_r8,1000,6.527495999999998,1,11.0,1,1
+pure_rl,Pure RL (no GA),2008,9,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2008_r9,1000,6.462186,1,8.0,1,1
+pure_rl,Pure RL (no GA),2008,10,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2008_r10,1000,5.74506,1,5.0,1,1
+pure_rl,Pure RL (no GA),2009,1,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2009_r1,1000,5.928505999999999,1,5.0,1,1
+pure_rl,Pure RL (no GA),2009,2,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2009_r2,1000,6.308912,1,5.0,1,1
+pure_rl,Pure RL (no GA),2009,3,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2009_r3,1000,6.518096000000001,1,5.0,1,1
+pure_rl,Pure RL (no GA),2009,4,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2009_r4,1000,5.74582,1,5.0,1,1
+pure_rl,Pure RL (no GA),2009,5,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2009_r5,1000,6.353090000000001,1,5.0,1,1
+pure_rl,Pure RL (no GA),2009,6,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2009_r6,1000,6.281316,1,5.0,1,1
+pure_rl,Pure RL (no GA),2009,7,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2009_r7,1000,6.634608000000001,1,5.0,1,1
+pure_rl,Pure RL (no GA),2009,8,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2009_r8,1000,5.9695279999999995,1,5.0,1,1
+pure_rl,Pure RL (no GA),2009,9,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2009_r9,1000,6.593988,1,5.0,1,1
+pure_rl,Pure RL (no GA),2009,10,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2009_r10,1000,6.2380700000000004,1,5.0,1,1
+pure_rl,Pure RL (no GA),2010,1,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2010_r1,1000,5.823176,1,2.0,1,1
+pure_rl,Pure RL (no GA),2010,2,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2010_r2,1000,6.416134,1,2.0,1,1
+pure_rl,Pure RL (no GA),2010,3,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2010_r3,1000,6.017462,1,5.0,1,1
+pure_rl,Pure RL (no GA),2010,4,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2010_r4,1000,6.4402099999999995,1,5.0,1,1
+pure_rl,Pure RL (no GA),2010,5,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2010_r5,1000,5.94887,1,8.0,1,1
+pure_rl,Pure RL (no GA),2010,6,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2010_r6,1000,6.079863999999999,1,2.0,1,1
+pure_rl,Pure RL (no GA),2010,7,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2010_r7,1000,5.909538,1,2.0,1,1
+pure_rl,Pure RL (no GA),2010,8,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2010_r8,1000,6.5375239999999994,1,2.0,1,1
+pure_rl,Pure RL (no GA),2010,9,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2010_r9,1000,3.580374,0,5.0,1,1
+pure_rl,Pure RL (no GA),2010,10,roam60d5_w500_purerl_h128_noeps_lr0.02_seed2010_r10,1000,6.504721999999999,1,5.0,1,1
+random_floor,Random policy (chance floor),2001,1,roam60d5_w500_randomfloor_h128_seed2001_r1,40,1.50076,0,40.0,0,0
+random_floor,Random policy (chance floor),2001,2,roam60d5_w500_randomfloor_h128_seed2001_r2,40,1.515795,0,40.0,0,0
+random_floor,Random policy (chance floor),2001,3,roam60d5_w500_randomfloor_h128_seed2001_r3,40,1.5014825000000003,0,40.0,0,0
+random_floor,Random policy (chance floor),2002,1,roam60d5_w500_randomfloor_h128_seed2002_r1,40,1.4983125000000002,0,40.0,0,0
+random_floor,Random policy (chance floor),2002,2,roam60d5_w500_randomfloor_h128_seed2002_r2,40,1.56104,0,40.0,0,0
+random_floor,Random policy (chance floor),2002,3,roam60d5_w500_randomfloor_h128_seed2002_r3,40,1.4852750000000001,0,40.0,0,0
+random_floor,Random policy (chance floor),2003,1,roam60d5_w500_randomfloor_h128_seed2003_r1,40,1.4571925000000001,0,40.0,0,0
+random_floor,Random policy (chance floor),2003,2,roam60d5_w500_randomfloor_h128_seed2003_r2,40,1.4523700000000002,0,40.0,0,0
+random_floor,Random policy (chance floor),2003,3,roam60d5_w500_randomfloor_h128_seed2003_r3,40,1.41302,0,40.0,0,0
+random_floor,Random policy (chance floor),2004,1,roam60d5_w500_randomfloor_h128_seed2004_r1,40,1.6328600000000002,0,40.0,0,0
+random_floor,Random policy (chance floor),2004,2,roam60d5_w500_randomfloor_h128_seed2004_r2,40,1.67402,0,40.0,0,0
+random_floor,Random policy (chance floor),2004,3,roam60d5_w500_randomfloor_h128_seed2004_r3,40,1.6148150000000001,0,40.0,0,0
+random_floor,Random policy (chance floor),2005,1,roam60d5_w500_randomfloor_h128_seed2005_r1,40,1.6091950000000002,0,40.0,0,0
+random_floor,Random policy (chance floor),2005,2,roam60d5_w500_randomfloor_h128_seed2005_r2,40,1.6051775,0,40.0,0,0
+random_floor,Random policy (chance floor),2005,3,roam60d5_w500_randomfloor_h128_seed2005_r3,40,1.65403,0,40.0,0,0
+random_floor,Random policy (chance floor),2006,1,roam60d5_w500_randomfloor_h128_seed2006_r1,40,1.7149,0,40.0,0,0
+random_floor,Random policy (chance floor),2006,2,roam60d5_w500_randomfloor_h128_seed2006_r2,40,1.6827725,0,40.0,0,0
+random_floor,Random policy (chance floor),2006,3,roam60d5_w500_randomfloor_h128_seed2006_r3,40,1.6603575,0,40.0,0,0
+random_floor,Random policy (chance floor),2007,1,roam60d5_w500_randomfloor_h128_seed2007_r1,40,1.7466549999999998,0,40.0,0,0
+random_floor,Random policy (chance floor),2007,2,roam60d5_w500_randomfloor_h128_seed2007_r2,40,1.7932375,0,40.0,0,0
+random_floor,Random policy (chance floor),2007,3,roam60d5_w500_randomfloor_h128_seed2007_r3,40,1.7968475000000002,0,40.0,0,0
+random_floor,Random policy (chance floor),2008,1,roam60d5_w500_randomfloor_h128_seed2008_r1,40,1.3026525,0,40.0,0,0
+random_floor,Random policy (chance floor),2008,2,roam60d5_w500_randomfloor_h128_seed2008_r2,40,1.3394225,0,40.0,0,0
+random_floor,Random policy (chance floor),2008,3,roam60d5_w500_randomfloor_h128_seed2008_r3,40,1.31196,0,40.0,0,0
+random_floor,Random policy (chance floor),2009,1,roam60d5_w500_randomfloor_h128_seed2009_r1,40,1.40123,0,40.0,0,0
+random_floor,Random policy (chance floor),2009,2,roam60d5_w500_randomfloor_h128_seed2009_r2,40,1.4187224999999999,0,40.0,0,0
+random_floor,Random policy (chance floor),2009,3,roam60d5_w500_randomfloor_h128_seed2009_r3,40,1.413525,0,40.0,0,0
+random_floor,Random policy (chance floor),2010,1,roam60d5_w500_randomfloor_h128_seed2010_r1,40,1.4612349999999998,0,40.0,0,0
+random_floor,Random policy (chance floor),2010,2,roam60d5_w500_randomfloor_h128_seed2010_r2,40,1.4625724999999998,0,40.0,0,0
+random_floor,Random policy (chance floor),2010,3,roam60d5_w500_randomfloor_h128_seed2010_r3,40,1.4228224999999999,0,40.0,0,0

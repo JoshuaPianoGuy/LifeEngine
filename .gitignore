@@ -8,7 +8,6 @@ dist/js/bundle.js.LICENSE.txt
 /logs_decay_sweep
 /logs_buffer
 /output_logs
-/output
 /figures
 .claude
 .venv
@@ -21,7 +20,7 @@ dist/js/bundle.js.LICENSE.txt
 /landscape/out/ 
 landscape/__pycache__/
 /landscape
-*.zip.
+*.zip
 
 # Per-seed map caches are regenerable from the seed (node generate_map_pool.js
 # --seed N); the seed is the reproducible artifact, so don't bloat the repo with
@@ -32,3 +31,6 @@ src/maps/map_pool_seed*.json
 # per environment). Regenerate with assimilation/make_founder_jobs.py.
 assimilation/out/
 
+
+# Stray single-run export; per-run generations.csv live in the log dirs.
+/generations.csv

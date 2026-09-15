@@ -12,7 +12,7 @@ WHAT A PANEL IS
 ---------------
 One slice = one 31x31 grid of f(theta) over the plane anchored at ONE run's
 trajectory mean and spanned by that run's own best 2D directions (see
-make_slice_jobs.py). Every cell is a real probe: 100 clones of theta, GA off,
+make_slice_jobs.py). Every cell is a real probe: 100 clones of theta, EA off,
 averaged over R=5 fixed maps. The run's own trajectory is overlaid in the same
 (alpha, beta) coordinates — it is the ONLY overlay on a panel, so nothing on the
 surface can be mistaken for it. Viability is reported as a percentage in the
@@ -678,8 +678,9 @@ def fig_paired(rows, out_path, threshold, unit, title, sub, viab, run_f):
     # Shared axes for the same reason as _surface_figure, and it pays twice as
     # well here: this figure has twice the columns, so it was repeating the beta
     # scale 2 x n_slices times per row.
-    fig, axs = plt.subplots(nrow, ncol, figsize=(2.55 * ncol + 1.3,
-                                                 3.0 * nrow + 0.6),
+    fw = LAY['w'] or (2.55 * ncol + 1.3)
+    fig, axs = plt.subplots(nrow, ncol,
+                            figsize=(fw, LAY['h_row'] * nrow + LAY['h_pad']),
                             squeeze=False, sharex=True, sharey=True)
 
     im = None
@@ -694,47 +695,50 @@ def fig_paired(rows, out_path, threshold, unit, title, sub, viab, run_f):
                 im = _panel(ax, G[field], G, 'viridis', norm, threshold=viab)
                 pct = viable_pct(G[field], threshold)
                 ax.set_title(('RL OFF' if k == 0 else 'RL ON')
-                             + f'\n{pct:.1f}% viable', fontsize=8.5,
-                             color=INK, pad=3)
+                             + f'\n{pct:.1f}% viable',
+                             fontsize=LAY['fs_panel'], color=INK, pad=3)
                 if k == 0:
                     # The slice's identity sits over the PAIR, not over one half.
                     # 1.15, not 1.20: the pair header has to clear its own two
                     # panel titles and still sit clearly inside the row gutter.
                     # With hspace tightened it was landing against the bottom of
                     # the row above, where it read as that row's caption.
-                    ax.text(1.03, 1.15, f"seed {G['seed']}  ·  run f = "
+                    ax.text(1.03, LAY['pair_y'], f"seed {G['seed']}  ·  run f = "
                             f"{run_f(G):.3f}  ·  plane "
                             f"{G['plane_frac']:.0%}",
                             transform=ax.transAxes, ha='center', va='bottom',
-                            fontsize=9.5, color=INK)
+                            fontsize=LAY['fs_pair'], color=INK)
                 if k == 0 and c == 0:
-                    ax.set_ylabel('β', fontsize=9, color=INK)
-                    ax.text(-0.26, 0.5, textwrap.fill(label, 26),
+                    ax.set_ylabel('β', fontsize=LAY['fs_axis'], color=INK)
+                    ax.text(LAY['row_x'], 0.5,
+                            textwrap.fill(label, LAY['wrap_row']),
                             transform=ax.transAxes, rotation=90, va='center',
-                            ha='center', fontsize=9.5, color=colour,
-                            fontweight='bold', linespacing=1.35)
+                            ha='center', fontsize=LAY['fs_row'], color=colour,
+                            fontweight='bold', linespacing=1.25)
                 # No set_yticklabels([]) on the other columns: sharey already
                 # hides them, and calling it on a shared axis clears the labels
                 # on every axis in the group, including the one column that is
                 # supposed to keep them.
                 if r == nrow - 1:
-                    ax.set_xlabel('α', fontsize=9, color=INK)
+                    ax.set_xlabel('α', fontsize=LAY['fs_axis'], color=INK)
 
     # Each PAIR carries a header line above its two panel titles, so this needs
     # more headroom than the single-surface figures: wrap the suptitle first,
     # then give the axes only what is left under it.
     title = '\n'.join(l for part in title.split('\n')
-                      for l in (textwrap.wrap(part, 104) or ['']))
+                      for l in (textwrap.wrap(part, LAY['wrap_title']) or ['']))
     n_title = title.count('\n') + 1
     # hspace .40 rather than _surface_figure's .26: this figure puts a pair
     # header ABOVE the two panel titles, so its row gutter has three lines of
     # text to hold instead of two.
-    fig.subplots_adjust(left=.058, right=.915, top=.875 - .045 * n_title,
-                        bottom=.10, hspace=.40, wspace=.05)
-    cax = fig.add_axes([.928, .12, .012, .68])
+    fig.subplots_adjust(left=LAY['left'], right=LAY['right'],
+                        top=LAY['top_base'] - .045 * n_title,
+                        bottom=LAY['bottom'],
+                        hspace=LAY['hspace'], wspace=.05)
+    cax = fig.add_axes(LAY['cb'])
     cb = fig.colorbar(im, cax=cax)
-    cb.set_label(sub, fontsize=9, color=INK)
-    cb.ax.tick_params(colors=INK, labelsize=8)
+    cb.set_label(sub, fontsize=LAY['fs_cb'], color=INK)
+    cb.ax.tick_params(colors=INK, labelsize=LAY['fs_cb_tick'])
     cb.outline.set_edgecolor(GRID_C)
 
     handles = [Line2D([], [], color=TRAJ_STYLE[c]['colour'], lw=1.8,
@@ -750,10 +754,10 @@ def fig_paired(rows, out_path, threshold, unit, title, sub, viab, run_f):
                 Line2D([], [], color='none', marker='*', mfc=INK, mec='white',
                        ms=11, label='final generation')]
     fig.legend(handles=handles, loc='lower center', ncol=len(handles),
-               frameon=False, fontsize=8.5, labelcolor=INK,
-               bbox_to_anchor=(.49, -.02))
+               frameon=False, fontsize=LAY['fs_leg'], labelcolor=INK,
+               bbox_to_anchor=(.49, LAY['leg_y']))
 
-    fig.suptitle(title, fontsize=12.5, color=INK, y=.985)
+    fig.suptitle(title, fontsize=LAY['fs_title'], color=INK, y=.985)
     fig.savefig(out_path, dpi=160, bbox_inches='tight', facecolor='white')
     plt.close(fig)
     print(f'  wrote {out_path}')
@@ -1127,6 +1131,78 @@ def write_endpoint_csv(recs, path):
     print(f'  wrote {path}')
 
 
+def lift_sign_test(rows, path, env_name):
+    """Is the RL-on lift real? The SLICE is the unit, so n = 6.
+
+    WHY NOT THE CELL. Each slice's median_lift is a median over ~2200 cells x 5
+    maps, every one paired at the SAME theta on the SAME map, so within a slice
+    the lift is measured with enormous precision. Testing over cells would give a
+    p-value with ten zeros in it and would be wrong twice: neighbouring cells are
+    not independent (the measured autocorrelation length is ~2 grid cells, so the
+    effective n is a fraction of 2200), and — the binding objection — a
+    cell-level test answers "is the lift positive ON THIS PLANE", which is not
+    the question. Generalising to runs needs the slice as the unit.
+
+    WHAT IT CAN AND CANNOT SHOW. With n = 6 the sign test bottoms out at
+    p = 2 * 0.5^6 = 0.031, which a unanimous result reaches: that is enough to
+    establish the DIRECTION of the lift, and it is assumption-free. It is not
+    enough to compare GROUPS — succeeded against underperforming slices is 3 vs
+    3, where Mann-Whitney cannot return anything below 0.100 however large the
+    separation. That contrast is reported with its floor stated so the number is
+    not mistaken for a null result; the slices are six deliberately chosen
+    anchors, not a sample, and the comparison they support is descriptive.
+    """
+    from scipy import stats
+    # `rows` is ordered()'s [(label, colour, [slice, ...]), ...] — the same
+    # structure write_summary() consumes — so the per-slice median is computed
+    # here exactly as it is written to slice_summary.csv.
+    flat = [(G['group'], float(np.nanmedian(G['lift'])))
+            for _l, _c, sel in rows for G in sel]
+    flat = [(g, m) for g, m in flat if np.isfinite(m)]
+    v = np.array([m for _g, m in flat], dtype=float)
+    if v.size < 2:
+        return
+    pos, n = int((v > 0).sum()), int(v.size)
+    p_sign = float(stats.binomtest(pos, n, 0.5).pvalue)
+    try:
+        p_w = float(stats.wilcoxon(v).pvalue)
+    except ValueError:
+        p_w = float('nan')
+    out = [{'env': env_name, 'test': 'lift > 0 across slices', 'n_slices': n,
+            'n_positive': pos, 'median_of_medians': float(np.median(v)),
+            'min': float(v.min()), 'max': float(v.max()),
+            'p_sign': p_sign, 'p_wilcoxon': p_w,
+            'p_floor_at_this_n': float(2.0 * 0.5 ** n)}]
+    groups = sorted({g for g, _m in flat})
+    if len(groups) == 2:
+        a = np.array([m for g, m in flat if g == groups[0]], float)
+        b = np.array([m for g, m in flat if g == groups[1]], float)
+        if a.size and b.size:
+            u = stats.mannwhitneyu(a, b, alternative='two-sided')
+            from math import comb
+            floor = 2.0 / comb(a.size + b.size, a.size)
+            out.append({'env': env_name,
+                        'test': f'lift: {groups[0]} vs {groups[1]}',
+                        'n_slices': int(a.size + b.size), 'n_positive': -1,
+                        'median_of_medians': float(np.median(a) - np.median(b)),
+                        'min': float(a.mean()), 'max': float(b.mean()),
+                        'p_sign': float('nan'), 'p_wilcoxon': float(u.pvalue),
+                        'p_floor_at_this_n': floor})
+    import csv as _csv
+    with open(path, 'w', newline='') as fh:
+        w = _csv.DictWriter(fh, fieldnames=list(out[0]))
+        w.writeheader()
+        for r in out:
+            w.writerow(r)
+    print(f'  wrote {path}')
+    for r in out:
+        pw = 'n/a' if not np.isfinite(r['p_wilcoxon']) else f'{r["p_wilcoxon"]:.4f}'
+        extra = (f'  {r["n_positive"]}/{r["n_slices"]} positive'
+                 if r['n_positive'] >= 0 else '')
+        print(f'    {r["test"]:<34} n={r["n_slices"]}{extra}  '
+              f'p={pw}  (floor at this n: {r["p_floor_at_this_n"]:.3f})')
+
+
 def write_summary(rows, path, threshold, normalised):
     """Per-slice numbers, in normalised units where the figures are, plus the
     raw food-score columns beside them and the RL-on coverage the f_learn
@@ -1176,6 +1252,32 @@ def write_summary(rows, path, threshold, normalised):
 # reader should see. 'hard' is the internal shorthand for the roaming-predator
 # environment; 'predator' is what it actually is.
 ENV_TITLE = {'hard': 'predator', 'baseline': 'baseline'}
+
+# ── Plate geometry ────────────────────────────────────────────────────────────
+# 'wide' is the original: panels sized for the screen, the plate grown to fit
+# them. At 16.6in it is scaled to 0.42 when included at a 504.4pt \textwidth,
+# which prints a 9pt tick label at 3.8pt.
+#
+# 'compact' fixes the plate at the width it is PLACED at, so nothing is shrunk
+# and the panels give up the space instead. Everything that carries text has to
+# come down with it — this figure positions its furniture with subplots_adjust
+# FRACTIONS, so a narrower canvas keeps the same fractions while the text keeps
+# its absolute size, and the labels collide unless they shrink too.
+LAYOUT = {
+    'wide': dict(w=None, h_row=3.0, h_pad=0.6, fs_pair=9.5, fs_panel=8.5,
+                 fs_axis=9, fs_row=9.5, fs_cb=9, fs_cb_tick=8, fs_leg=8.5,
+                 fs_title=12.5, wrap_row=26, wrap_title=104,
+                 left=.058, right=.915, bottom=.10, hspace=.40,
+                 cb=[.928, .12, .012, .68], leg_y=-.02,
+                 pair_y=1.15, top_base=.875, row_x=-0.26),
+    'compact': dict(w=9.0, h_row=1.28, h_pad=0.48, fs_pair=7.0, fs_panel=6.2,
+                    fs_axis=7, fs_row=7.0, fs_cb=6.8, fs_cb_tick=6,
+                    fs_leg=6.8, fs_title=9.0, wrap_row=17, wrap_title=118,
+                    left=.118, right=.900, bottom=.135, hspace=.72,
+                    cb=[.915, .16, .013, .62], leg_y=-.05,
+                    pair_y=1.40, top_base=.845, row_x=-0.56),
+}
+LAY = LAYOUT['wide']
 
 
 def env_label_for(env, overrides):
@@ -1228,11 +1330,17 @@ def main():
     ap.add_argument('--raw', action='store_true',
                     help='Plot f(θ) in raw food-score units instead of min-max '
                          'normalising it to [0, 1]. See NORMALISATION.')
+    ap.add_argument('--layout', choices=tuple(LAYOUT), default='wide',
+                    help='plate geometry. wide (default) sizes the panels and '
+                         'grows the plate; compact fixes the plate at the width '
+                         'it is placed at so nothing is shrunk on the page')
     ap.add_argument('--norm-scope', choices=('global', 'env'), default='global',
                     help="'global' (default) puts every environment on ONE ruler, "
                          "so the gap between them is real. 'env' rescales each "
                          'environment against its own range and deletes that gap.')
     args = ap.parse_args()
+    global LAY
+    LAY = LAYOUT[args.layout]
     roots = [parse_root(r) for r in (args.slices_root
                                      or ['landscape/out/slices_h128_hard'])]
     threshold_raw, thr_note = resolve_replacement(args.replacement, args.calib_json)
@@ -1344,7 +1452,7 @@ def main():
                 rows, out, threshold, unit,
                 'Fitness landscape slices, RL OFF beside RL ON — identical '
                 f'cells, identical maps{env_note}\n{viab_note}',
-                f'f(θ){unit}  (mean cumulative food score, 100 clones, GA off)',
+                f'f(θ){unit}  (mean cumulative food score, 100 clones, EA off)',
                 viab=contour, run_f=run_f)
 
         for out in paths(out_dir, 'slices_f_evo', shown):
@@ -1352,7 +1460,7 @@ def main():
                 rows, 'f_evo', 'viridis',
                 'Fitness landscape slices, RL OFF — one plane per run, anchored '
                 f'on that run’s own trajectory{env_note}\n{viab_note}',
-                f'f(θ){unit}  (mean cumulative food score, 100 clones, GA off)',
+                f'f(θ){unit}  (mean cumulative food score, 100 clones, EA off)',
                 out, annotate=pct_off, viab=contour, run_f=run_f)
 
         for out in paths(out_dir, 'slices_f_learn', shown):
@@ -1383,6 +1491,7 @@ def main():
             write_endpoint_csv(recs, os.path.join(out_dir, 'endpoints.csv'))
         write_summary(rows, os.path.join(out_dir, 'slice_summary.csv'),
                       threshold, rng is not None)
+        lift_sign_test(rows, os.path.join(out_dir, 'lift_significance.csv'), shown)
 
 
 if __name__ == '__main__':

@@ -2,7 +2,7 @@
 
 Mathematical definitions of the reward, fitness, learning, and energy functions used in the learning‑vs‑evolution‑vs‑pure‑RL experiments.
 
-> **Status.** Updated to the **current** implementation (tournament GA, importance‑weighted REINFORCE with a baseline, 54→128→6 network, enabled mutation, energy/day‑night as coded). For experiment/run structure and the SLURM jobs, see `EXPERIMENTS.md`. Values here are the in‑code defaults in `ExperimentParams.js`, `NNBrain.js`, `GAManager.js`, `PureRLManager.js`, `AdvancedOrganism.js`; per‑run overrides are recorded in each run's `params.json`. **Where the comparison runs override a default — `hidden_size` 128, `collapse_buffer_size` 100, `learning_rate` 0.01/0.02, `epsilon_enabled` false — both values are given.**
+> **Status.** Updated to the **current** implementation (tournament EA, importance‑weighted REINFORCE with a baseline, 54→128→6 network, enabled mutation, energy/day‑night as coded). For experiment/run structure and the SLURM jobs, see `EXPERIMENTS.md`. Values here are the in‑code defaults in `ExperimentParams.js`, `NNBrain.js`, `GAManager.js`, `PureRLManager.js`, `AdvancedOrganism.js`; per‑run overrides are recorded in each run's `params.json`. **Where the comparison runs override a default — `hidden_size` 128, `collapse_buffer_size` 100, `learning_rate` 0.01/0.02, `epsilon_enabled` false — both values are given.**
 
 ---
 
@@ -107,13 +107,18 @@ Describe it as: **an online, non‑episodic REINFORCE (Williams, 1992) in the OL
 
 ## 3. Fitness Function (Genetic Algorithm)
 
-Used by `GAManager` to rank organisms for selection — the **primary selection signal** in the GA conditions. Independent of the RL reward, so learning and evolution are compared on the same yardstick.
+Used by `GAManager` to rank organisms for selection — the **primary selection signal** in the EA conditions. Independent of the RL reward, so learning and evolution are compared on the same yardstick.
 
 $$\text{Fitness}_i = \text{cumulative\_food\_score}_i = \sum_{t=1}^{T_i} v_{\text{food}}(t)$$
 
 where $T_i$ is organism $i$'s lifetime (ticks) and $v_{\text{food}}(t)$ is the energy value of any food eaten at tick $t$.
 
-### GA Selection and Reproduction (`GAManager.evolve()`)
+### EA Selection and Reproduction (`GAManager.evolve()`)
+
+> **Terminology.** This is an *evolutionary algorithm*, not a genetic algorithm in
+> the seminal sense: the genome is a real-valued weight vector in $[-1,1]^{7814}$
+> and the operators act on it directly (§6), with no bit-string encoding to decode.
+> `GAManager` is the historical class name and is left alone in the code.
 
 Runs at the end of every generation (a fixed 10 000‑tick / 5‑map window — see §8):
 
@@ -147,7 +152,7 @@ $$\text{Input}(54) \to \text{ReLU}(W_1,b_1)\,(n_h) \to \text{softmax}(W_2,b_2)\,
 | $n_h = 128$ (production) | 6912 | 128 | 768 | 6 | **7814** |
 | $n_h = 64$ (code default) | 3456 | 64 | 384 | 6 | 3910 |
 
-Each organism holds `genome_weights` (heritable) and `active_weights` (acted on; RL updates these). In GA‑only mode they are the **same reference** (no drift).
+Each organism holds `genome_weights` (heritable) and `active_weights` (acted on; RL updates these). In EA‑only mode they are the **same reference** (no drift).
 
 ### Weight initialisation (Glorot/Xavier **uniform**)
 
@@ -234,7 +239,7 @@ $$c_i = \begin{cases} a_i & u_i < 0.5\\ b_i & \text{else}\end{cases},\quad u_i\s
 
 $$w_i' = \operatorname{clip}\Big(w_i + \mathbb{1}[u<p]\,\mathcal N(0,\sigma),\ [-1,1]\Big)$$
 
-- **Inter‑generation** (GA between‑gen; pure‑RL between‑episode & top‑up): $p=\text{MUT\_PROB}=0.03$, $\sigma=\text{MUT\_SIGMA}=0.1$ (from `ExperimentParams`, honours `--mut-prob/--mut-sigma`).
+- **Inter‑generation** (EA between‑gen; pure‑RL between‑episode & top‑up): $p=\text{MUT\_PROB}=0.03$, $\sigma=\text{MUT\_SIGMA}=0.1$ (from `ExperimentParams`, honours `--mut-prob/--mut-sigma`).
 - **Intra‑generation** (asexual reproduction, all conditions): $p=\text{ASEXUAL\_MUT\_PROB}=0.05$, $\sigma=0.1$.
 
 Both draws are **per weight and independent** — a Bernoulli trial for every one of the $61 n_h + 6$ entries, not one draw per genome — and the $[-1,1]$ clip is applied only to the weights that actually mutated.
@@ -254,7 +259,7 @@ Note the two channels differ in kind as well as rate: within a generation reprod
 
 ### Tunability asymmetry (matters when reading a mutation sweep)
 
-`MUT_PROB` / `MUT_SIGMA` are read from `ExperimentParams` and honour `--mut-prob` / `--mut-sigma`; **`ASEXUAL_MUT_PROB` / `ASEXUAL_MUT_SIGMA` are module constants** in `AdvancedOrganism.js:117-118` with no CLI override. A sweep over `--mut-prob` therefore moves only the inter‑generation 3% term while the intra‑generation 5% term — the larger contributor above — stays pinned. Such a sweep measures the sensitivity of *between‑generation disruption*, not of total genetic variation, and should be reported as such. (`PureRLManager`'s between‑episode mutation reads the same `mut_prob`/`mut_sigma`, so it moves with the GA term.)
+`MUT_PROB` / `MUT_SIGMA` are read from `ExperimentParams` and honour `--mut-prob` / `--mut-sigma`; **`ASEXUAL_MUT_PROB` / `ASEXUAL_MUT_SIGMA` are module constants** in `AdvancedOrganism.js:117-118` with no CLI override. A sweep over `--mut-prob` therefore moves only the inter‑generation 3% term while the intra‑generation 5% term — the larger contributor above — stays pinned. Such a sweep measures the sensitivity of *between‑generation disruption*, not of total genetic variation, and should be reported as such. (`PureRLManager`'s between‑episode mutation reads the same `mut_prob`/`mut_sigma`, so it moves with the EA term.)
 
 (Both were disabled in the earlier design; they are now enabled and consistent across conditions.)
 
@@ -290,7 +295,7 @@ Distinguishing prey (10) from roaming (11) and patrol (12) predators lets avoida
 
 ## 8. Generation / Episode Structure
 
-A generation is a fixed **$\text{TICKS\_PER\_GEN}=\text{TICKS\_PER\_MAP}\times\text{MAPS\_PER\_GEN}=2000\times5=10{,}000$‑tick** window, shown as 5 different maps in sequence. The population **persists across maps within a generation** (same energy/position; only terrain changes and RL traces reset). At the window end the manager runs GA `evolve()` (or the pure‑RL window close). This replaces the old "generation ends when the lineage dies" rule.
+A generation is a fixed **$\text{TICKS\_PER\_GEN}=\text{TICKS\_PER\_MAP}\times\text{MAPS\_PER\_GEN}=2000\times5=10{,}000$‑tick** window, shown as 5 different maps in sequence. The population **persists across maps within a generation** (same energy/position; only terrain changes and RL traces reset). At the window end the manager runs EA `evolve()` (or the pure‑RL window close). This replaces the old "generation ends when the lineage dies" rule.
 
 ---
 
@@ -303,12 +308,12 @@ Energy‑triggered: when energy gained since the last reproduction reaches a thr
 $$\text{energyGainedSinceReproduction} \ge 3.5$$
 
 **Inheritance:**
-- **GA conditions (learning, evolution):** child inherits parent's `genome_weights` only (**non‑Lamarckian**) + asexual mutation. RL drift is discarded.
-- **Pure RL:** parent's learned `active_weights` are synced into the genome first, so the child inherits the **learned** state (**Lamarckian**).
+- **EA conditions (learning, evolution):** child inherits parent's `genome_weights` only (**non‑Lamarckian**) + asexual mutation. RL drift is discarded.
+- **Pure RL:** *within* a generation, identical to the above — the child inherits `genome_weights` + asexual mutation, and RL drift is discarded. The learned state enters the genome only at the window boundary (**Lamarckian between generations, not within one**; see `EXPERIMENTS.md §3.3`).
 
 ### Between‑generation
 
-GA: tournament selection → uniform crossover → mutation → 100 founders (§3). Pure RL: no GA — the window close caps/tops‑up the population to 100 from a buffer of recently‑dead learned weights (see `EXPERIMENTS.md §3.3`).
+EA: tournament selection → uniform crossover → mutation → 100 founders (§3). Pure RL: no EA — the window close caps/tops‑up the population to 100 from a buffer of recently‑dead learned weights (see `EXPERIMENTS.md §3.3`).
 
 ---
 
@@ -350,7 +355,7 @@ Normalising per weight makes the value comparable across hidden sizes: a raw $L_
 
 - Learning condition: $>0$ (RL adapts active weights; not inherited — genome frozen).
 - Evolution: $=0$ (`active === genome`).
-- Pure RL: $>0$, and the drift **is** inherited (Lamarckian).
+- Pure RL: $>0$, and the drift **is** inherited — but at the window boundary, not by within‑life offspring (see `EXPERIMENTS.md §3.3`).
 
 ### RMS weight magnitude (`avg_network_weight_mag`)
 
@@ -392,7 +397,7 @@ $\bar f_{\text{top20\%}}$ (top‑20% mean fitness), $\bar f$ (population mean fi
 | Xavier limit $L$ | $\sqrt{6/(n_{in}+n_{out})}$ | founder weight init, uniform; biases 0 |
 | `POPULATION_SIZE` | 100 | founders per generation |
 | `SELECTION_PERCENT` | 0.20 | top‑20% **reporting** cohort only — not a selection cutoff |
-| `TOURNAMENT_K` | 2 | GA tournament size |
+| `TOURNAMENT_K` | 2 | EA tournament size |
 | `MUT_PROB` / `MUT_SIGMA` | 0.03 / 0.1 | inter‑generation mutation |
 | `ASEXUAL_MUT_PROB` / `_SIGMA` | 0.05 / 0.1 | intra‑generation mutation |
 | reproduction trigger | 3.5 energy | asexual reproduction |
@@ -409,11 +414,11 @@ $\bar f_{\text{top20\%}}$ (top‑20% mean fitness), $\bar f$ (population mean fi
 
 ## 13. Experiment Conditions
 
-| Condition | Flags | RL | GA | Heritable unit | Lamarckian |
+| Condition | Flags | RL | EA | Heritable unit | Lamarckian |
 |---|---|---|---|---|---|
 | **Evolution** | `--condition evolution` | — | ✓ | genome | n/a |
 | **Learning** | `--condition learning` | ✓ | ✓ | genome (RL drift discarded) | No |
-| **Pure RL** | `--mode pure_rl` | ✓ | — | active (synced→genome) | Yes |
+| **Pure RL** | `--mode pure_rl` | ✓ | — | genome within a generation; active synced→genome at the window boundary | Between generations only |
 
 **Environments & operating point (going forward):** the learning/pure‑RL conditions run **no‑epsilon**, with $\alpha=0.01$ in the **predator‑free baseline** environment and $\alpha=0.02$ in the **roaming‑predator** environment (60 predators, drain 5). Each α is the optimum from that environment's learning‑rate sweep. See `EXPERIMENTS.md` for the SLURM job arrays.
 

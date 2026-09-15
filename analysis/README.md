@@ -66,8 +66,8 @@ This is more interpretable than raw L2 norm because it shows the "typical" weigh
 
 ### Changes Per Generation
 
-- **↑ Increasing trend**: GA selection is favoring networks with larger weight magnitudes
-- **↓ Decreasing trend**: GA selection favors more conservative weight scales
+- **↑ Increasing trend**: EA selection is favoring networks with larger weight magnitudes
+- **↓ Decreasing trend**: EA selection favors more conservative weight scales
 - **→ Stable trend**: Weight magnitudes remain consistent across generations
 
 ### Learned Weight Difference

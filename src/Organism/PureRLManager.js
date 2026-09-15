@@ -174,23 +174,27 @@ class PureRLManager {
     // ── Agent registration ────────────────────────────────────────────────────
 
     /**
-     * Called by AdvancedOrganism.reproduce() for naturally born children.
+     * Called by AdvancedOrganism.reproduce() for naturally born children, and
+     * by spawnGeneration() for the founding cohort.
      *
-     * Before registering the child, we sync the parent's active_weights →
-     * genome_weights so the child inherits the learned state rather than
-     * the original starting weights. This uses the existing inheritance
-     * path in AdvancedOrganism without modifying it.
+     * WITHIN a generation this condition is NON-Lamarckian, exactly like the
+     * EA arms: reproduce() builds the child from the parent's genome_weights,
+     * which is fixed at the parent's own birth value for its whole life, so the
+     * parent's RL drift is not passed on. Learning enters the heritable genome
+     * only at the window boundary — see closeWindow(), where a survivor's
+     * active_weights are mutated into its genome_weights, and
+     * _bufferDeadWeights(), which is what the top-up samples.
      *
-     * The child then receives Gaussian mutation via _mutateGenome() as
-     * normal — this is the within-episode mutation source.
+     * This method previously tried to sync the parent's active_weights into its
+     * genome_weights here, to make within-generation reproduction Lamarckian.
+     * That code never ran — it was guarded on `agent.parent`, which nothing in
+     * the codebase ever assigns — and it was sequenced after the child's genome
+     * had already been copied, so it could not have affected that child anyway.
+     * It is deleted rather than repaired: every reported run was produced
+     * without it, so making it work would change the mechanism and invalidate
+     * them. See EXPERIMENTS.md §3.3.
      */
     registerAgent(agent) {
-        // agent.parent is set by AdvancedOrganism.reproduce() before calling
-        // registerAgent. Sync parent's active → genome so this child
-        // inherits the learned state.
-        if (agent.parent && agent.parent.brain) {
-            agent.parent.brain.syncGenomeFromActive();
-        }
         this._trackAgent(agent);
     }
 

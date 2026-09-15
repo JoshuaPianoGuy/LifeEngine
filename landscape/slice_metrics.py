@@ -300,6 +300,132 @@ def fig_slices(rows, out_png):
     print(f'\n  wrote {out_png}')
 
 
+# ── Significance ─────────────────────────────────────────────────────────────
+#
+# Three comparisons are available on 12 slices, and they have very different
+# power. Each is emitted with `p_floor` — the smallest p that design could ever
+# return — so a p sitting exactly on its floor is not misread as a null result.
+#
+#   between environments   6 v 6, Mann-Whitney floor 2/C(12,6) = 0.0022.
+#                          Enough to detect a clean separation.
+#   between outcome groups 3 v 3, floor 2/C(6,3) = 0.100. NOT enough for
+#                          anything. Reported because the descriptive gap is
+#                          worth seeing, never as evidence of absence.
+#   sign of a metric       one-sample over all 12, floor 2*0.5^12 = 0.00049.
+#                          The only high-power test here, and it answers
+#                          "is FDC negative at all", not "does it differ".
+#
+# THE SLICE IS THE UNIT, and there are twelve of them. These are deliberately
+# chosen anchors (three per outcome group per environment), not a random sample
+# of runs, so a significant result generalises to "slices anchored like these"
+# and not to the 600-run population. That is a real limit and it is why the
+# fitness inference lives in analyse_conditions_by_environment.py instead.
+
+TESTED_METRICS = [
+    ('lambda_w',     'autocorrelation length (weight units)'),
+    ('fdc_top5',     'fitness-distance correlation (top-5% centroid)'),
+    ('fdc_best',     'fitness-distance correlation (best cell)'),
+    ('viable_frac',  'fraction of the slice above viability'),
+    ('dispersion_05', 'dispersion of the top 5%'),
+]
+
+
+def metric_tests(rows, path):
+    """Mann-Whitney between environments and between outcome groups, plus a
+    sign test on the metric itself. Writes one row per (metric, comparison)."""
+    from math import comb
+    from scipy import stats
+    import csv as _csv
+
+    def env_of(r):
+        return r['env'].split('/')[0]
+
+    def grp_of(r):
+        return r['env'].split('/', 1)[1] if '/' in r['env'] else ''
+
+    envs = sorted({env_of(r) for r in rows})
+    out = []
+    for key, label in TESTED_METRICS:
+        vals = [(env_of(r), grp_of(r), float(r[key]))
+                for r in rows if key in r and np.isfinite(r.get(key, np.nan))]
+        if len(vals) < 4:
+            continue
+        allv = np.array([v for _e, _g, v in vals])
+
+        # 1. Sign test: is the metric consistently one side of zero?
+        pos = int((allv > 0).sum())
+        n = allv.size
+        out.append({
+            'metric': key, 'label': label, 'comparison': 'sign (vs 0)',
+            'group_a': 'all slices', 'group_b': '', 'n_a': n, 'n_b': 0,
+            'mean_a': float(allv.mean()), 'mean_b': np.nan,
+            'median_a': float(np.median(allv)), 'median_b': np.nan,
+            'diff': float(allv.mean()),
+            'p': float(stats.binomtest(pos, n, 0.5).pvalue),
+            'p_floor': 2.0 * 0.5 ** n,
+            'n_positive': pos, 'test': 'binomial sign test'})
+
+        # 2. Between environments, 6 v 6.
+        if len(envs) == 2:
+            a = np.array([v for e, _g, v in vals if e == envs[0]])
+            b = np.array([v for e, _g, v in vals if e == envs[1]])
+            if a.size and b.size:
+                u = stats.mannwhitneyu(a, b, alternative='two-sided')
+                out.append({
+                    'metric': key, 'label': label, 'comparison': 'between environments',
+                    'group_a': envs[0], 'group_b': envs[1],
+                    'n_a': int(a.size), 'n_b': int(b.size),
+                    'mean_a': float(a.mean()), 'mean_b': float(b.mean()),
+                    'median_a': float(np.median(a)), 'median_b': float(np.median(b)),
+                    'diff': float(a.mean() - b.mean()), 'p': float(u.pvalue),
+                    'p_floor': 2.0 / comb(a.size + b.size, a.size),
+                    'n_positive': -1, 'test': 'Mann-Whitney U (two-sided)'})
+
+        # 3. Between outcome groups, WITHIN each environment. 3 v 3.
+        for env in envs:
+            sub = [(g, v) for e, g, v in vals if e == env]
+            groups = sorted({g for g, _v in sub})
+            if len(groups) != 2:
+                continue
+            a = np.array([v for g, v in sub if g == groups[0]])
+            b = np.array([v for g, v in sub if g == groups[1]])
+            if not (a.size and b.size):
+                continue
+            u = stats.mannwhitneyu(a, b, alternative='two-sided')
+            out.append({
+                'metric': key, 'label': label,
+                'comparison': f'outcome groups within {env}',
+                'group_a': groups[0], 'group_b': groups[1],
+                'n_a': int(a.size), 'n_b': int(b.size),
+                'mean_a': float(a.mean()), 'mean_b': float(b.mean()),
+                'median_a': float(np.median(a)), 'median_b': float(np.median(b)),
+                'diff': float(a.mean() - b.mean()), 'p': float(u.pvalue),
+                'p_floor': 2.0 / comb(a.size + b.size, a.size),
+                'n_positive': -1, 'test': 'Mann-Whitney U (two-sided)'})
+
+    if not out:
+        return
+    with open(path, 'w', newline='') as fh:
+        w = _csv.DictWriter(fh, fieldnames=list(out[0]))
+        w.writeheader()
+        for r in out:
+            w.writerow(r)
+    print(f'\n  wrote {path}   ({len(out)} tests)')
+    print(f'  {"metric":<15}{"comparison":<32}{"a":>10}{"b":>10}{"p":>9}{"floor":>8}   verdict')
+    for r in out:
+        at_floor = np.isfinite(r['p']) and abs(r['p'] - r['p_floor']) < 1e-9
+        if r['comparison'] == 'sign (vs 0)':
+            verdict = f'{r["n_positive"]}/{r["n_a"]} positive'
+            b = '        —'
+        else:
+            b = f'{r["mean_b"]:>10.3f}'
+            verdict = ('significant' if r['p'] < 0.05 else
+                       'AT THE FLOOR — untestable' if at_floor else
+                       'not significant')
+        print(f'  {r["metric"]:<15}{r["comparison"]:<32}{r["mean_a"]:>10.3f}{b}'
+              f'{r["p"]:>9.4f}{r["p_floor"]:>8.4f}   {verdict}')
+
+
 def main():
     ap = argparse.ArgumentParser(
         description='Landscape difficulty metrics over several slices, reported '
@@ -388,6 +514,8 @@ def main():
                         f'"{r.get(k, "")}"' if k in ('anchor', 'grid_dir')
                         else str(r.get(k, '')) for k in keys[1:]) + '\n')
             print(f'  wrote {path}   ({len(sub)} slices)')
+
+    metric_tests(rows, os.path.join(args.out_dir, 'slice_metric_tests.csv'))
 
     fig_slices(rows, os.path.join(args.out_dir, 'slice_metrics.png'))
 

@@ -1,0 +1,226 @@
+analyse_hard_stats.py — 60 roaming predators, drain 5
+logs root: logs_hard
+
+==============================================================================
+DESIGN
+==============================================================================
+  runs discovered      : 330
+  conditions           : evolution, learning, pure_rl, random_floor
+  map seeds (clusters) : 10  -> [2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010]
+  replicates per cell  : min 3, max 10
+
+  Runs per condition x seed:
+  seed          2001  2002  2003  2004  2005  2006  2007  2008  2009  2010
+  condition                                                               
+  evolution       10    10    10    10    10    10    10    10    10    10
+  learning        10    10    10    10    10    10    10    10    10    10
+  pure_rl         10    10    10    10    10    10    10    10    10    10
+  random_floor     3     3     3     3     3     3     3     3     3     3
+
+  The unit of INDEPENDENT replication is the seed, not the run. Every
+  test below that ignores that is labelled NAIVE and is reported only
+  as the comparison point.
+
+==============================================================================
+OUTCOMES
+==============================================================================
+  viability threshold  : 4.3750  (replacement fitness 3.5 / 0.8)
+  converged fitness    : mean of the last 50 generations
+  time-to-threshold    : first generation with avg_fitness >= threshold;
+                         runs that never reach it are RIGHT-CENSORED at
+                         their last generation, not dropped.
+
+  evolution   n=100  viable  90/100 (0.900)   reached threshold 100/100
+              per-seed P(viable): 2001:0.9, 2002:0.9, 2003:1.0, 2004:0.9, 2005:0.7, 2006:0.8, 2007:1.0, 2008:0.8, 2009:1.0, 2010:1.0
+              between-seed sd of P(viable) = 0.1054
+  learning    n=100  viable 100/100 (1.000)   reached threshold 100/100
+              per-seed P(viable): 2001:1.0, 2002:1.0, 2003:1.0, 2004:1.0, 2005:1.0, 2006:1.0, 2007:1.0, 2008:1.0, 2009:1.0, 2010:1.0
+              between-seed sd of P(viable) = 0.0000
+  pure_rl     n=100  viable  98/100 (0.980)   reached threshold 100/100
+              per-seed P(viable): 2001:1.0, 2002:1.0, 2003:0.9, 2004:1.0, 2005:1.0, 2006:1.0, 2007:1.0, 2008:1.0, 2009:1.0, 2010:0.9
+              between-seed sd of P(viable) = 0.0422
+  random_floor  n= 30  viable   0/30  (0.000)   reached threshold 0/30
+              per-seed P(viable): 2001:0.0, 2002:0.0, 2003:0.0, 2004:0.0, 2005:0.0, 2006:0.0, 2007:0.0, 2008:0.0, 2009:0.0, 2010:0.0
+              between-seed sd of P(viable) = 0.0000
+
+==============================================================================
+P(VIABLE) — CLUSTERED INFERENCE
+==============================================================================
+  DEGENERATE ARMS (no variation in the outcome):
+    learning       all runs (100) — viable=1
+    random_floor   no runs (30) — viable=0
+  A logistic model has no finite MLE for these, so their coefficients,
+  standard errors and p-values below are optimiser artefacts, not
+  estimates. The CMH TEST statistic is still valid; read the effect size
+  off the exact conditional interval, or off the linear mixed model on
+  converged fitness, which does not degenerate.
+
+
+--- learning vs evolution (reference) ---
+  NAIVE (runs treated as independent, n=200)
+    2x2 pooled table [[viable, not], ...] = [[100, 0], [90, 10]]
+    Fisher exact  OR = inf   p = 0.0015421
+    log-OR = +3.1493   SE = 1.4547
+  COCHRAN-MANTEL-HAENSZEL (stratified by seed, k=6)
+    OR_MH = inf  — COMPLETE SEPARATION: learning has no FAILED runs
+      in any stratum, so the odds ratio has no finite upper bound
+      and the Robins-Breslow-Greenland interval is undefined.
+      The CMH TEST is unaffected; the interval is replaced by the
+      exact conditional one below.
+    exact conditional OR = inf   95% CI [2.423, inf]
+    exact conditional p = 0.0014762   (k=6 informative strata)
+    CMH chi2 = 8.5500   p = 0.0034552   <- QUOTE THIS
+    Breslow-Day homogeneity: undefined under separation.
+    strata carrying no information (dropped by the statistic): 2003(no outcome variation), 2007(no outcome variation), 2009(no outcome variation), 2010(no outcome variation)
+    DESIGN EFFECT: not computable under separation (both standard errors are undefined). See the time-to-threshold models, where the same clustering is quantified on an outcome that does not separate.
+
+--- pure_rl vs evolution (reference) ---
+  NAIVE (runs treated as independent, n=200)
+    2x2 pooled table [[viable, not], ...] = [[98, 2], [90, 10]]
+    Fisher exact  OR = 5.444   p = 0.03304
+    log-OR = +1.5198   SE = 0.7186
+  COCHRAN-MANTEL-HAENSZEL (stratified by seed, k=8)
+    OR_MH = 5   95% CI [1.124, 22.24]
+    log-OR = +1.6094   SE(RBG) = 0.7616
+    CMH chi2 = 4.2706   p = 0.038776
+    Breslow-Day homogeneity of OR across seeds: chi2 = 12.0687, p = 0.098323
+    strata carrying no information (dropped by the statistic): 2007(no outcome variation), 2009(no outcome variation)
+    DESIGN EFFECT (var ratio clustered/naive) = 1.12  -> effective n ~ 178 of 200 runs
+
+--- random_floor vs evolution (reference) ---
+  NAIVE (runs treated as independent, n=130)
+    2x2 pooled table [[viable, not], ...] = [[0, 30], [90, 10]]
+    Fisher exact  OR = 0   p = 3.2448e-21
+    log-OR = -6.2648   SE = 1.4626
+  COCHRAN-MANTEL-HAENSZEL (stratified by seed, k=10)
+    OR_MH = 0  — COMPLETE SEPARATION: random_floor has no VIABLE runs
+      in any stratum, so the odds ratio has no finite lower bound
+      and the Robins-Breslow-Greenland interval is undefined.
+      The CMH TEST is unaffected; the interval is replaced by the
+      exact conditional one below.
+    exact conditional OR = 0   95% CI [0, 0.02373]
+    exact conditional p = 6.9916e-20   (k=10 informative strata)
+    CMH chi2 = 79.3511   p = 5.1996e-19   <- QUOTE THIS
+    Breslow-Day homogeneity: undefined under separation.
+    DESIGN EFFECT: not computable under separation (both standard errors are undefined). See the time-to-threshold models, where the same clustering is quantified on an outcome that does not separate.
+
+--- Binomial mixed model over all arms: viable ~ condition + (1 | seed) ---
+  GEE, exchangeable working correlation, clustered on seed
+  (population-averaged log-odds; SEs are cluster-robust)
+    Intercept                    beta = +2.1972  SE = 0.3514  p = 4.0158e-10
+    C(condition)[T.learning]     beta = +31.3804  SE = 0.4768  p = 0   <- SEPARATED: no finite MLE, read this as "always viable", not as an odds ratio of e^beta
+    C(condition)[T.pure_rl]      beta = +1.6946  SE = 0.8756  p = 0.052952
+    C(condition)[T.random_floor] beta = -35.7633  SE = 0.4727  p = 0   <- SEPARATED: no finite MLE, read this as "always viable", not as an odds ratio of e^beta
+    within-seed correlation (working alpha) = -0.0158
+  Same model WITHOUT clustering (NAIVE), for the design effect:
+    Intercept                    SE naive = 0.3333  SE clustered = 0.3514   design effect = 1.11
+    C(condition)[T.learning]     SE naive = 13101.0793  SE clustered = 0.4768   design effect = 0.00
+    C(condition)[T.pure_rl]      SE naive = 0.7882  SE clustered = 0.8756   design effect = 1.23
+    C(condition)[T.random_floor] SE naive = 23919.1715  SE clustered = 0.4727   design effect = 0.00
+  Variance component for seed (terrain), logit scale:
+    sigma_seed = 0.4066   sigma^2_seed = 0.1653
+    latent-scale ICC = sigma^2 / (sigma^2 + pi^2/3) = 0.0478
+    -> terrain accounts for 4.8% of the variance in
+       the latent viability propensity. That is a result in its own right:
+       it says how much of whether a run survives is decided by the map it
+       was dealt rather than by the adaptation mechanism.
+
+==============================================================================
+CONVERGED FITNESS — LINEAR MIXED MODEL WITH A RANDOM INTERCEPT FOR SEED
+==============================================================================
+  Same clustering question on the continuous outcome the viability bit was
+  thresholded from. No separation, and the variance component is a plain
+  proportion of variance rather than a latent-scale one.
+
+  evolution  converged fitness: mean 6.6537  sd 1.0174  [3.600, 7.245]
+  learning   converged fitness: mean 7.1872  sd 0.0614  [6.980, 7.383]
+  pure_rl    converged fitness: mean 6.1649  sd 0.4913  [3.580, 6.809]
+  random_floor converged fitness: mean 1.5368  sd 0.1385  [1.303, 1.797]
+
+  LMM  converged_fitness ~ condition + (1 | seed)   [REML]
+    Intercept                    beta = +6.6537  SE = 0.0638  p = 0
+    C(condition)[T.learning]     beta = +0.5335  SE = 0.0882  p = 1.4544e-09
+    C(condition)[T.pure_rl]      beta = -0.4888  SE = 0.0882  p = 2.9818e-08
+    C(condition)[T.random_floor] beta = -5.1169  SE = 0.1298  p = 0
+    sigma^2_seed = 0.00185   sigma^2_residual = 0.38882
+    ICC = sigma^2_seed / (sigma^2_seed + sigma^2_resid) = 0.0047
+    -> TERRAIN ACCOUNTS FOR 0.5% OF THE VARIANCE IN CONVERGED
+       FITNESS. This is the number to report as the seed variance component:
+       it is what justifies clustering, and it is a finding in itself.
+
+  Same fixed effects with NO random effect (NAIVE), for the design effect:
+    Intercept                    SE naive = 0.0625  SE mixed = 0.0638   design effect = 1.04
+    C(condition)[T.learning]     SE naive = 0.0884  SE mixed = 0.0882   design effect = 1.00
+    C(condition)[T.pure_rl]      SE naive = 0.0884  SE mixed = 0.0882   design effect = 1.00
+    C(condition)[T.random_floor] SE naive = 0.1301  SE mixed = 0.1298   design effect = 1.00
+
+  A design effect near 1 here does NOT mean the design is free of
+  pseudo-replication -- it means that for THIS outcome the between-seed
+  variance is small, so clustering costs almost nothing. The correction
+  still has to be applied and reported; what varies is how much it moves
+  the answer. Compare with the time-to-threshold models below, where the
+  same 10 seeds produce design effects well above 1.
+
+==============================================================================
+TIME TO THRESHOLD — COX WITH CLUSTER-ROBUST STANDARD ERRORS
+==============================================================================
+  330 runs, 300 reached the threshold, 30 right-censored (9.1%)
+  reference level: evolution
+    evolution      100/100 reached (0% censored)
+    learning       100/100 reached (0% censored)
+    pure_rl        100/100 reached (0% censored)
+    random_floor     0/30  reached (100% censored)
+
+  MONOTONE LIKELIHOOD: random_floor had NO events at all.
+  Cox cannot estimate a finite coefficient for an arm that never
+  experiences the event — the partial likelihood is maximised by driving
+  the hazard ratio to 0 — so its HR (near zero, with a huge standard
+  error) and its p-value are numerical artefacts and are suppressed below.
+  The correct statement is the descriptive one: 0 of N runs ever reached
+  the threshold. Report that, not a hazard ratio.
+
+  NAIVE (runs independent)
+    condition_learning             HR = 14.42 [9.44, 22.02]  SE(coef) = 0.2161  p = 4.9754e-35
+    condition_pure_rl              HR = 56.05 [36.19, 86.81]  SE(coef) = 0.2232  p = 9.8043e-73
+    condition_random_floor         SUPPRESSED — 0/30 runs reached the threshold; no finite HR exists
+
+  CLUSTER-ROBUST on seed (Lin-Wei sandwich)
+    condition_learning             HR = 14.42 [7.825, 26.56]  SE(coef) = 0.3118  p = 1.1427e-17
+    condition_pure_rl              HR = 56.05 [24.42, 128.6]  SE(coef) = 0.4238  p = 2.1077e-21
+    condition_random_floor         SUPPRESSED — 0/30 runs reached the threshold; no finite HR exists
+
+  STRATIFIED by seed (baseline hazard per terrain)
+    condition_learning             HR = 38.47 [17.57, 84.24]  SE(coef) = 0.3999  p = 7.0955e-20
+    condition_pure_rl              HR = 234.1 [99.93, 548.6]  SE(coef) = 0.4344  p = 3.5703e-36
+    condition_random_floor         SUPPRESSED — 0/30 runs reached the threshold; no finite HR exists
+
+  DESIGN EFFECT per covariate (variance ratio robust/naive):
+    condition_learning             2.08   -> effective n ~ 159 of 330 runs
+    condition_pure_rl              3.61   -> effective n ~ 92 of 330 runs
+    condition_random_floor         n/a (no events — both standard errors are artefacts)
+
+  A design effect above 1 is the pseudo-replication, quantified: it is the
+  factor by which treating runs as independent understates the variance.
+
+==============================================================================
+WHAT TO REPORT
+==============================================================================
+  For P(viable): quote the CMH odds ratio, its 95% CI and p, and state the
+  stratification ("stratified by map seed, k strata"). Quote the ICC from the
+  mixed model beside it as the terrain variance component. Do NOT quote the
+  pooled Fisher result except as the thing being corrected.
+
+  For time-to-threshold: quote the Cox hazard ratio with the CLUSTER-ROBUST
+  CI and p, and say the standard errors are clustered on map seed. Report the
+  censoring fraction — runs that never reach the threshold are informative and
+  the reader needs to know how many there were.
+
+  For converged fitness: quote the mixed-model fixed effects and the ICC. The
+  continuous outcome is the one worth leading with — thresholding a fitness
+  trajectory into one viable/not bit discards most of what the run measured,
+  and at these viability rates it is what forces the separation seen above.
+
+  In every case, state the clustering in the Methods sentence, not just in a
+  table footnote: "n = 100 runs per condition, 10 replicates on each of 10 map
+  seeds; all tests treat the seed as the unit of independent replication."
+

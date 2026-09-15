@@ -1,0 +1,7 @@
+comparison,test,estimate_or,ci_lo,ci_hi,se_log_or,p,k_strata,design_effect
+learning_vs_evolution,CMH,inf,,,,0.0034552222675230393,6.0,
+learning_vs_evolution,Fisher (NAIVE),inf,,,1.4547295514119525,0.0015420521254357008,,
+pure_rl_vs_evolution,CMH,5.0,1.1238651963902113,22.244660730039975,0.7615773105863911,0.03877627288465946,8.0,1.1230731237561709
+pure_rl_vs_evolution,Fisher (NAIVE),5.444444444444445,,,0.718637671750487,0.03304010932418497,,
+random_floor_vs_evolution,CMH,0.0,,,,5.199615607177776e-19,10.0,
+random_floor_vs_evolution,Fisher (NAIVE),0.0,,,1.4625575900595857,3.244834372707922e-21,,

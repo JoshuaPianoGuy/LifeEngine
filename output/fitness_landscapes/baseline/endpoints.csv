@@ -1,0 +1,13 @@
+env,row,group,condition,is_anchor,seed,run,run_final_fitness,read_on,plane_frac,start_f,end_f,slice_median,slice_best,headroom,end_pct,n_unsampled
+baseline,"Evolution — weakest runs (f < 0.272, a median split — still above viability)",underperform,evolution,True,2007,"base_w500_evolution_h128_seed2007_r3",7.37254,f_evo,0.64262,0.77581,0.79920,0.64985,0.87762,0.07842,91.35355,0
+baseline,"Evolution — weakest runs (f < 0.272, a median split — still above viability)",underperform,learning,False,2007,"base_w500_learning_h128_lr0.01_seed2007_r3",7.57475,f_learn,0.64262,0.81096,0.52459,0.67922,0.89178,0.36719,15.98008,0
+baseline,"Evolution — weakest runs (f < 0.272, a median split — still above viability)",underperform,evolution,True,2004,"base_w500_evolution_h128_seed2004_r9",7.36908,f_evo,0.63548,0.75484,0.85582,0.69239,0.97200,0.11618,87.05297,0
+baseline,"Evolution — weakest runs (f < 0.272, a median split — still above viability)",underperform,learning,False,2004,"base_w500_learning_h128_lr0.01_seed2004_r1",7.51673,f_learn,0.63548,0.80243,0.41077,0.71589,1.00000,0.58923,13.17338,0
+baseline,"Evolution — weakest runs (f < 0.272, a median split — still above viability)",underperform,evolution,True,2003,"base_w500_evolution_h128_seed2003_r1",7.30469,f_evo,0.63699,0.72957,0.77647,0.56005,0.82760,0.05113,91.12721,0
+baseline,"Evolution — weakest runs (f < 0.272, a median split — still above viability)",underperform,learning,False,2003,"base_w500_learning_h128_lr0.01_seed2003_r5",7.45020,f_learn,0.63699,0.75110,0.48132,0.58308,0.84172,0.36040,30.23993,0
+baseline,"Evolution — succeeded",succeed,evolution,True,2002,"base_w500_evolution_h128_seed2002_r10",7.59402,f_evo,0.63212,0.75876,0.73388,0.51631,0.83188,0.09800,92.25894,0
+baseline,"Evolution — succeeded",succeed,learning,False,2002,"base_w500_learning_h128_lr0.01_seed2002_r7",7.63559,f_learn,0.63212,0.77291,0.58386,0.55214,0.84388,0.26002,59.30285,0
+baseline,"Evolution — succeeded",succeed,evolution,True,2006,"base_w500_evolution_h128_seed2006_r5",7.56934,f_evo,0.63461,0.84506,0.81595,0.68536,0.89542,0.07947,89.13536,0
+baseline,"Evolution — succeeded",succeed,learning,False,2006,"base_w500_learning_h128_lr0.01_seed2006_r10",7.56966,f_learn,0.63461,0.86839,0.80564,0.72187,0.91697,0.11133,71.02761,0
+baseline,"Evolution — succeeded",succeed,evolution,True,2008,"base_w500_evolution_h128_seed2008_r4",7.55292,f_evo,0.63077,0.85770,0.82702,0.73636,0.92196,0.09493,75.19239,0
+baseline,"Evolution — succeeded",succeed,learning,False,2008,"base_w500_learning_h128_lr0.01_seed2008_r10",7.59821,f_learn,0.63077,0.89219,0.81224,0.76240,0.94950,0.13727,63.46763,0

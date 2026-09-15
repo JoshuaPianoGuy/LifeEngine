@@ -1,0 +1,3 @@
+env,test,n_slices,n_positive,median_of_medians,min,max,p_sign,p_wilcoxon,p_floor_at_this_n
+predator,lift > 0 across slices,6,6,0.018842336255142086,0.006870720040943898,0.040145512035152854,0.03125,0.03125,0.03125
+predator,lift: succeed vs underperform,6,-1,0.030455518222306355,0.035392971884382604,0.008223246987779355,nan,0.1,0.1

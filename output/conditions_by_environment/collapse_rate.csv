@@ -1,0 +1,7 @@
+environment,condition,n_runs,n_seeds,n_collapsed,rate,wilson_lo,wilson_hi,boot_lo,boot_hi,seeds_with_any_collapse,per_seed_counts
+baseline,evolution,100,10,0,0.0,0.0,0.03699480747600191,0.0,0.0,0,
+baseline,learning,100,10,0,0.0,0.0,0.03699480747600191,0.0,0.0,0,
+baseline,pure_rl,100,10,0,0.0,0.0,0.03699480747600191,0.0,0.0,0,
+hard,evolution,100,10,10,0.1,0.05522854161313613,0.1743673043676654,0.04,0.16,6,2001:1;2002:1;2004:1;2005:3;2006:2;2008:2
+hard,learning,100,10,0,0.0,0.0,0.03699480747600191,0.0,0.0,0,
+hard,pure_rl,100,10,2,0.02,0.005501852234968185,0.07001316294199365,0.0,0.05,2,2003:1;2010:1

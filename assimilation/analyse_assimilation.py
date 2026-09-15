@@ -4,8 +4,8 @@ assimilation/analyse_assimilation.py
 Genetic assimilation: does an inherited genome get better on its own?
 
 Reads the founder-probe results built by make_founder_jobs.py and run through
-run_founder_probe_array.slurm — every logged founder genome re-evaluated as a
-monomorphic 100-clone cohort with the GA off, once with in-lifetime learning
+slurm/run_founder_probe_array.slurm — every logged founder genome re-evaluated as a
+monomorphic 100-clone cohort with the EA off, once with in-lifetime learning
 disabled and once with it enabled, on the same maps.
 
     f_off  what the INHERITED weights do alone      <- the primary measurement
@@ -85,7 +85,8 @@ import matplotlib.pyplot as plt
 
 INK = '#374151'
 GRID_C = '#D1D5DB'
-COND_COLOUR = {'evolution': '#059669', 'learning': '#2563EB'}
+COND_COLOUR = {'evolution': '#D98A2B', 'learning': '#152A47'}  # grey 154 / 46
+COND_STYLE  = {'evolution': ('--', 'o'), 'learning': ('-', 's')}
 ENV_ORDER = ['baseline', 'hard']
 
 # Display names. The keys stay as they are — they are the --units labels and a
@@ -269,6 +270,214 @@ def assimilation_ratio(seed_tbl):
     return pd.DataFrame(rows)
 
 
+def _one_sample(v, conf=0.95):
+    """Mean, CI, Cohen's d, paired-t and Wilcoxon for one column of seed values.
+
+    The Wilcoxon test STATISTIC is kept, not just its p-value: a table that
+    reports a test is expected to show what was computed, and the signed-rank
+    statistic is the only thing a reader can check the p against by hand at
+    n = 10.
+    """
+    from scipy import stats
+    v = np.asarray(v, dtype=float)
+    v = v[np.isfinite(v)]
+    k = v.size
+    if k < 3:
+        return None
+    sd = v.std(ddof=1)
+    sem = sd / np.sqrt(k)
+    tcrit = float(stats.t.ppf(0.5 + conf / 2, k - 1))
+    tstat, tp = stats.ttest_1samp(v, 0.0)
+    try:
+        w, wp = stats.wilcoxon(v)
+    except ValueError:
+        w, wp = np.nan, np.nan
+    return {'n_seeds': k, 'mean': v.mean(), 'sd': sd, 'sem': sem,
+            'w_stat': float(w),
+            'ci95_lo': v.mean() - tcrit * sem, 'ci95_hi': v.mean() + tcrit * sem,
+            'cohens_d': v.mean() / sd if sd > 0 else np.nan,
+            't_stat': float(tstat), 'p_t': float(tp), 'p_wilcoxon': float(wp),
+            'n_positive': int((v > 0).sum()), 'n_negative': int((v < 0).sum())}
+
+
+def assimilation_tests(ratios, matched=None, n_boot=10000, seed=20260831):
+    """Significance tests for the assimilation signature. The seed is the unit.
+
+    WHY THE RATIO IS NOT THE TEST STATISTIC, THOUGH IT IS THE HEADLINE NUMBER
+    -------------------------------------------------------------------------
+    `ratio = delta_f_off / delta_f_on` is the right thing to *quote* and the wrong
+    thing to *test*. Its denominator is a difference that is not bounded away from
+    zero: on this data two of ten seeds in baseline/evolution and two of ten in
+    hard/learning have a non-positive numerator or denominator, which flips the
+    ratio negative (-0.054, -0.049) for reasons that have nothing to do with
+    assimilation. A mean and a t-test over per-seed ratios inherits that, so the
+    ratio is bootstrapped as a RATIO OF MEANS — mean(d_f_off) / mean(d_f_on) over
+    resampled whole seeds — which has no such singularity, and the hypothesis
+    "ratio > 1" is read off whether the interval clears 1.
+
+    THE TESTABLE FORM OF THE SAME CLAIM
+    ------------------------------------
+    Assimilation is the innate phenotype catching up to the learned one, so the
+    learning advantage shrinks:
+
+        d_lift = lift(gen_to) - lift(gen_from) < 0
+
+    That is a plain difference of two paired measurements, well-behaved for every
+    seed, and it is the primary test here. `d_f_off > 0` is reported beside it
+    because the two together separate the two ways d_lift can go negative:
+    innate rising to meet learned (assimilation) versus learned falling.
+
+    WHAT IS CLEAN. `d_f_off` is ALWAYS clean — the RL-off pass runs no RL at all,
+    so a mismatched epsilon or learning rate is inert there. Whether `d_lift`,
+    `d_f_on` and the ratio are clean depends on the provenance of that cell's
+    RL-ON pass, passed in as `matched` (the per-cell mean of the `rl_matched`
+    flag). That is a property of WHICH PROBE produced the rows, not of the arm's
+    name: an --rl-match re-run layered over the original makes the evolution
+    arm's RL-on pass comparable, and these tests have to notice that rather than
+    assume the control is confounded forever. With no `matched` given, only the
+    learning arm counts as clean — the state before such a re-run exists.
+    """
+    rng = np.random.default_rng(seed)
+    matched = {} if matched is None else dict(matched)
+    rows = []
+    for (env, cond), g in ratios.groupby(['env', 'condition']):
+        # The LEARNING arm must never be rl-matched — its own params.json holds
+        # the settings its lineages actually evolved under, so overriding them
+        # would be the error, not the fix. It is clean exactly when it was left
+        # alone. Every other arm is the reverse: clean only once an --rl-match
+        # re-run has replaced its RL-on pass. (Same rule as the provenance block
+        # in main(); rl_matched means "came from a re-run", not "is correct".)
+        # < 0.001 / < 0.999 rather than == 0 / == 1 so a cell whose re-run
+        # covered only some genomes is flagged, not rounded clean.
+        frac = matched.get((env, cond), 0.0)
+        conf = (frac > 0.001) if cond == 'learning' else (frac < 0.999)
+        for col, claim, confounded in (
+                ('d_f_off', 'inherited genome improves on its own', False),
+                ('d_lift', 'learning advantage shrinks', conf),
+                ('d_f_on', 'learned phenotype improves', conf)):
+            st = _one_sample(g[col])
+            if st is None:
+                continue
+            rows.append({'env': env, 'condition': cond, 'quantity': col,
+                         'claim': claim, 'confounded': confounded, **st})
+
+        # Ratio of means, seed-clustered bootstrap.
+        off = g['d_f_off'].to_numpy(dtype=float)
+        on = g['d_f_on'].to_numpy(dtype=float)
+        ok = np.isfinite(off) & np.isfinite(on)
+        off, on = off[ok], on[ok]
+        k = off.size
+        if k >= 3:
+            boot = np.empty(n_boot)
+            for b in range(n_boot):
+                pick = rng.integers(0, k, k)
+                den = on[pick].mean()
+                boot[b] = off[pick].mean() / den if den != 0 else np.nan
+            boot = boot[np.isfinite(boot)]
+            den = on.mean()
+            rows.append({
+                'env': env, 'condition': cond, 'quantity': 'ratio_of_means',
+                'claim': 'innate gaining on learned (>1)',
+                'confounded': conf,
+                'n_seeds': k, 'mean': (off.mean() / den) if den != 0 else np.nan,
+                'sd': np.nan, 'sem': np.nan,
+                'ci95_lo': float(np.percentile(boot, 2.5)) if boot.size else np.nan,
+                'ci95_hi': float(np.percentile(boot, 97.5)) if boot.size else np.nan,
+                'cohens_d': np.nan, 't_stat': np.nan,
+                'p_t': np.nan, 'p_wilcoxon': np.nan,
+                'n_positive': int((g['ratio'] > 1).sum()),
+                'n_negative': int((g['ratio'] <= 1).sum())})
+    return pd.DataFrame(rows)
+
+
+def contrast_arms(ratios, col='d_f_off'):
+    """Learning vs evolution on the same seeds, paired.
+
+    Only `d_f_off` is a fair contrast: it is the one quantity measured
+    identically in both arms (no RL runs on that pass, so the evolution arm's
+    epsilon/learning-rate mismatch cannot touch it).
+    """
+    from scipy import stats
+    rows = []
+    for env, g in ratios.groupby('env'):
+        a = g[g.condition == 'learning'].set_index('seed')[col]
+        b = g[g.condition == 'evolution'].set_index('seed')[col]
+        shared = sorted(set(a.index) & set(b.index))
+        if len(shared) < 3:
+            continue
+        da, db = a.loc[shared].to_numpy(float), b.loc[shared].to_numpy(float)
+        st = _one_sample(da - db)
+        rows.append({'env': env, 'quantity': col, 'arm_a': 'learning',
+                     'arm_b': 'evolution', 'mean_a': da.mean(),
+                     'mean_b': db.mean(), **st})
+    return pd.DataFrame(rows)
+
+
+def _holm(ps):
+    """Holm step-down adjustment over one family. Returns adjusted p in input order."""
+    ps = np.asarray(ps, dtype=float)
+    order = np.argsort(ps)
+    adj = np.empty(ps.size)
+    running = 0.0
+    for rank, i in enumerate(order):
+        running = max(running, (ps.size - rank) * ps[i])
+        adj[i] = min(running, 1.0)
+    return adj
+
+
+def contrast_arms_by_generation(seed_tbl, col='f_off'):
+    """Learning vs evolution at EACH probe generation, paired by seed.
+
+    contrast_arms() tests d_f_off — the whole generation-250-to-1000 CHANGE — and
+    that is the right statistic for "did the inherited genome improve more in one
+    arm". It is the wrong one for the claim the innate_fitness figure actually
+    invites, which is about the LEVEL of the two curves at a point: "the arms
+    separate early and have converged by generation 1000". A difference in levels
+    that opens and then closes leaves d_f_off near zero, so the change-based test
+    reports nothing where the figure plainly shows something.
+
+    So this is the per-generation companion: at each dump generation, the same
+    seeds, paired, learning minus evolution on f_off. Positive means the LEARNING
+    arm's inherited genomes score higher with RL off.
+
+    f_off is the only quantity worth contrasting across arms — it is measured with
+    no RL running at all, so the evolution arm's epsilon/learning-rate mismatch
+    (see the module docstring) cannot reach it. f_on and lift are not comparable
+    between arms and are deliberately not offered here.
+
+    MULTIPLICITY. The four generations are one family per environment, so p is
+    Holm-adjusted within each environment and both the raw and adjusted values are
+    kept. Reading the four raw p-values as four independent findings is exactly the
+    error the adjustment exists to stop: on this data the baseline generation-250
+    gap is p = 0.049 raw and p = 0.12 adjusted, which is the difference between
+    "evolution is ahead early" and "we cannot say that".
+    """
+    rows = []
+    for env, g in seed_tbl[seed_tbl.generation > 0].groupby('env'):
+        env_rows = []
+        for gen, sub in g.groupby('generation'):
+            a = sub[sub.condition == 'learning'].set_index('seed')[col]
+            b = sub[sub.condition == 'evolution'].set_index('seed')[col]
+            shared = sorted(set(a.index) & set(b.index))
+            if len(shared) < 3:
+                continue
+            da = a.loc[shared].to_numpy(dtype=float)
+            db = b.loc[shared].to_numpy(dtype=float)
+            st = _one_sample(da - db)
+            if st is None:
+                continue
+            env_rows.append({'env': env, 'generation': int(gen), 'quantity': col,
+                             'arm_a': 'learning', 'arm_b': 'evolution',
+                             'mean_a': da.mean(), 'mean_b': db.mean(), **st})
+        if not env_rows:
+            continue
+        for r, adj in zip(env_rows, _holm([r['p_t'] for r in env_rows])):
+            r['p_holm'] = float(adj)
+            r['n_generations_in_family'] = len(env_rows)
+        rows.extend(env_rows)
+    return pd.DataFrame(rows)
+
+
 # Figure footnotes are OFF by default. Every caveat they carried is stated in
 # this module's docstring and belongs in the surrounding prose of a write-up,
 # where it can be edited; baked into the image it cannot be, and it forces the
@@ -308,19 +517,25 @@ def _style(ax):
     ax.tick_params(colors=INK, labelsize=8)
 
 
-def _band(ax, sub, col, colour, label, ls='-'):
-    """Seed mean with a +/-1 SD band across seeds."""
+def _band(ax, sub, col, colour, label, ls=None, marker=None):
+    """Seed mean with a +/-1 SD band across seeds.
+
+    Line style and marker shape are redundant with colour on purpose: the two
+    arms have to stay separable in a black-and-white printout, where hue is
+    gone and only luminance and texture survive.
+    """
+    dls, dmk = COND_STYLE.get(label, ('-', 'o'))
     g = sub.groupby('generation')[col]
     m, sd, gens = g.mean(), g.std(ddof=1), sorted(sub.generation.unique())
-    ax.plot(gens, m.loc[gens], color=colour, lw=2, ls=ls, marker='o', ms=4,
-            label=label, zorder=3)
+    ax.plot(gens, m.loc[gens], color=colour, lw=2, ls=(ls or dls),
+            marker=(marker or dmk), ms=4, label=label, zorder=3)
     ax.fill_between(gens, (m - sd).loc[gens], (m + sd).loc[gens],
                     color=colour, alpha=.15, lw=0, zorder=2)
 
 
 def fig_innate(seed_tbl, rng, out_png):
     """The primary figure: what the INHERITED genome does on its own."""
-    fig, axs = plt.subplots(1, 2, figsize=(12.4, 4.6), sharey=True)
+    fig, axs = plt.subplots(1, 2, figsize=(12.4, 4.1), sharey=True)
     for ax, env in zip(axs, ENV_ORDER):
         sub = seed_tbl[seed_tbl.env == env]
         for cond in ('evolution', 'learning'):
@@ -348,9 +563,9 @@ def fig_innate(seed_tbl, rng, out_png):
         _style(ax)
     axs[0].set_ylabel('f_off — inherited genome, learning OFF\n(normalised)',
                       fontsize=9, color=INK)
-    axs[0].legend(frameon=False, fontsize=9, labelcolor=INK, loc='lower right')
-    fig.suptitle('Inherited genomes evaluated in the predator and baseline '
-                 'environments', fontsize=13, color=INK, y=1.0)
+    axs[0].legend(frameon=False, fontsize=7.5, labelcolor=INK,
+                  loc='lower right', handlelength=1.8, handletextpad=0.6,
+                  labelspacing=0.35, borderaxespad=0.6)
     _caption(fig,
              'Seed means with ±1 SD across the 10 seeds. This pass runs no RL at '
              'all, so it is unaffected by the hyperparameter mismatch that '
@@ -359,7 +574,8 @@ def fig_innate(seed_tbl, rng, out_png):
              'from, not a replay of them — its error bar carries terrain and '
              'Monte-Carlo noise only, since no lineage has diverged yet.')
     fig.tight_layout()
-    fig.savefig(out_png, dpi=160, bbox_inches='tight', facecolor='white')
+    fig.savefig(out_png, dpi=160, bbox_inches='tight', pad_inches=0.01,
+                facecolor='white')
     plt.close(fig)
     print(f'  wrote {out_png}')
 
@@ -462,8 +678,7 @@ def fig_lift(seed_tbl, out_png):
         for cond in ('evolution', 'learning'):
             s = sub[sub.condition == cond]
             if len(s):
-                _band(ax, s, 'lift_norm', COND_COLOUR[cond], cond,
-                      ls='--' if cond == 'evolution' else '-')
+                _band(ax, s, 'lift_norm', COND_COLOUR[cond], cond)
         ax.axhline(0, color=INK, lw=1.1, ls=':')
         ax.set_title(f'{env_title(env)} environment', fontsize=11, color=INK)
         ax.set_xlabel('generation of the founder dump', fontsize=9, color=INK)
@@ -609,6 +824,54 @@ def main():
              compression='gzip')
     seed_tbl.to_csv(os.path.join(args.out_dir, 'seed_summary.csv'), index=False)
     ratios.to_csv(os.path.join(args.out_dir, 'assimilation_ratio.csv'), index=False)
+
+    matched = p.groupby(['env', 'condition'])['rl_matched'].mean().to_dict()
+    tests = assimilation_tests(ratios, matched=matched)
+    arms = contrast_arms(ratios)
+    by_gen = contrast_arms_by_generation(seed_tbl)
+    tests.to_csv(os.path.join(args.out_dir, 'assimilation_tests.csv'), index=False)
+    arms.to_csv(os.path.join(args.out_dir, 'assimilation_arm_contrast.csv'), index=False)
+    by_gen.to_csv(os.path.join(args.out_dir, 'assimilation_arm_by_generation.csv'),
+                  index=False)
+
+    print('\n=== significance, seed as the unit (k = 10 per cell) ===')
+    print(f'  {"env":<9}{"cond":<11}{"quantity":<16}{"mean":>9}{"95% CI":>20}'
+          f'{"d":>7}{"p(t)":>10}{"p(Wilc)":>10}   sign')
+    for _i, r in tests.iterrows():
+        ci = f'[{r["ci95_lo"]:+.3f}, {r["ci95_hi"]:+.3f}]'
+        d = '     —' if not np.isfinite(r['cohens_d']) else f'{r["cohens_d"]:>6.2f}'
+        pt = '        —' if not np.isfinite(r['p_t']) else f'{r["p_t"]:>9.2g}'
+        pw = '        —' if not np.isfinite(r['p_wilcoxon']) else f'{r["p_wilcoxon"]:>9.2g}'
+        flag = ' CONFOUNDED' if r['confounded'] else ''
+        print(f'  {r["env"]:<9}{r["condition"]:<11}{r["quantity"]:<16}'
+              f'{r["mean"]:>9.3f}{ci:>20}{d} {pt} {pw}   '
+              f'{int(r["n_positive"])}+/{int(r["n_negative"])}-{flag}')
+    print('  (d_lift < 0 is the assimilation direction; ratio_of_means > 1 likewise.')
+    print('   CONFOUNDED marks a cell whose RL-ON pass was NOT built with the')
+    print('   learning arm\'s RL settings; d_f_off never depends on that and is')
+    print('   clean everywhere. See the provenance block above.)')
+
+    if not arms.empty:
+        print('\n=== learning vs evolution on d_f_off, paired by seed (the clean contrast) ===')
+        for _i, r in arms.iterrows():
+            ci = f'[{r["ci95_lo"]:+.3f}, {r["ci95_hi"]:+.3f}]'
+            print(f'  {r["env"]:<9} learning {r["mean_a"]:>7.3f}  vs  evolution '
+                  f'{r["mean_b"]:>7.3f}   Δ {r["mean"]:>+7.3f}  {ci}  '
+                  f'dz {r["cohens_d"]:>5.2f}  p(t) {r["p_t"]:.2g}  '
+                  f'p(Wilc) {r["p_wilcoxon"]:.2g}')
+
+    if not by_gen.empty:
+        print('\n=== learning vs evolution on f_off AT EACH GENERATION, paired by seed ===')
+        print(f'  {"env":<9}{"gen":>5}{"learning":>10}{"evolution":>11}{"Δ":>9}'
+              f'{"95% CI":>20}{"dz":>7}{"p(t)":>9}{"p(Holm)":>9}   sign')
+        for _i, r in by_gen.iterrows():
+            ci = f'[{r["ci95_lo"]:+.3f}, {r["ci95_hi"]:+.3f}]'
+            print(f'  {r["env"]:<9}{int(r["generation"]):>5}{r["mean_a"]:>10.3f}'
+                  f'{r["mean_b"]:>11.3f}{r["mean"]:>+9.3f}{ci:>20}'
+                  f'{r["cohens_d"]:>7.2f}{r["p_t"]:>9.2g}{r["p_holm"]:>9.2g}   '
+                  f'{int(r["n_positive"])}+/{int(r["n_negative"])}-')
+        print('  (Δ > 0 = the LEARNING arm\'s inherited genomes score higher with RL off.')
+        print('   p is Holm-adjusted over the generations WITHIN each environment.)')
 
     print('\n=== f_off (inherited genome alone), seed mean ± SD, RAW units ===')
     t = (seed_tbl.groupby(['env', 'condition', 'generation'])['f_off']

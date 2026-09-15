@@ -9,9 +9,9 @@ metric per environment, so a figure can be dropped into the write-up without
 cropping a panel out of a grid, plus a `compare/` set that puts the two
 environments side by side for the same metric.
 
-    run_evolution_condition_*_array.slurm    GA only          -> evolution
-    run_learning_condition_*_array.slurm     GA + in-life RL  -> learning
-    run_pure_rl_condition_*_array.slurm      RL only, no GA   -> pure_rl
+    run_evolution_condition_*_array.slurm    EA only          -> evolution
+    run_learning_condition_*_array.slurm     EA + in-life RL  -> learning
+    run_pure_rl_condition_*_array.slurm      RL only, no EA   -> pure_rl
 
 Six cells (3 conditions x 2 environments), 100 runs each, discovered from
 params.json and never from folder names. Pure RL is logged with
@@ -71,7 +71,7 @@ WHAT IS WRITTEN
       strip_final_fitness_normalised.png
       weight_difference.png             avg_learned_weight_diff (0 in evolution)
       weight_magnitude.png              avg_network_weight_mag (RMS)
-      genome_variance.png               GA diversity
+      genome_variance.png               EA diversity
       population_total_agents.png
       population_peak.png
       behaviour_*.png                   from organisms.csv, see BEHAVIOUR
@@ -218,20 +218,30 @@ import analyse_learning_hard_runs as la
 
 
 # ── The three conditions ──────────────────────────────────────────────────────
-# Colour triple is the validated one from analyse_hard_conditions_combined
-# (worst all-pairs dE 14.1 under deuteranopia). Line style is redundant with
-# colour ON PURPOSE: three overlapping bands is exactly the case where a reader
-# who cannot separate two hues has nothing else to go on.
+# The triple is chosen to survive being PRINTED IN BLACK AND WHITE, which the
+# previous one did not: its learning and pure-RL hues converted to grey 109 and
+# 116 out of 255, seven levels apart and indistinguishable. These sit at grey
+# 46, 99 and 154 — at least 53 levels apart on every pair — so luminance alone
+# separates them, and they still clear dE 48 under simulated deuteranopia
+# (better than the 14.1 the old triple was chosen for) while keeping at least
+# 2.8:1 contrast against white so the lightest is still a solid line.
+#
+# Colour is never the only channel. Line style carries the condition on every
+# curve — solid, dashed, dash-dot — and `marker` carries it on every strip,
+# where there is no line to hold a dash pattern. Markers are deliberately NOT
+# stamped on the curves: they were tried and removed, because on a 1000-
+# generation axis they have to be sampled, and a reader reasonably asks what
+# the sampled positions mean. The dash pattern needs no such explanation.
 CONDITIONS = [
-    {'key': 'evolution', 'label': 'Evolution (GA only)',
+    {'key': 'evolution', 'label': 'Evolution (EA only)',
      'condition': 'evolution', 'mode': 'standard',
-     'colour': '#D97706', 'ls': '--'},
-    {'key': 'learning', 'label': 'Learning (GA + in-life RL)',
+     'colour': '#D98A2B', 'ls': '--', 'marker': 'o'},      # grey 154
+    {'key': 'learning', 'label': 'Learning (EA + in-life RL)',
      'condition': 'learning', 'mode': 'standard',
-     'colour': '#2563EB', 'ls': '-'},
-    {'key': 'pure_rl', 'label': 'Pure RL (no GA)',
+     'colour': '#152A47', 'ls': '-', 'marker': 's'},       # grey  46
+    {'key': 'pure_rl', 'label': 'Pure RL (no EA)',
      'condition': 'learning', 'mode': 'pure_rl',
-     'colour': '#DB2777', 'ls': '-.'},
+     'colour': '#A83E52', 'ls': '-.', 'marker': '^'},      # grey  99
 ]
 
 # `key` is an IDENTIFIER — it names the output folder, the discover() filter and
@@ -1068,6 +1078,81 @@ def paired_by_seed(cells, envs, conditions, metric='avg_fitness'):
     return df
 
 
+def paired_by_environment(cells, envs, conditions, metric='avg_fitness'):
+    """Baseline vs predator environment for the SAME condition, paired on map seed.
+
+    This is the test the strip figures ask for. `paired_by_seed` answers
+    "do the three conditions differ *within* an environment"; the compare strips
+    put the two environments side by side, and the question that raises — is the
+    gap between the columns real — is a different comparison and had no test.
+
+    PAIRED, for the same reason as paired_by_seed. Seeds 2001-2010 were run in
+    BOTH environments, and a seed fixes the 50-map pool, so a baseline run and a
+    predator run of the same seed sit on the SAME terrain — the environments
+    differ by the predators and the learning rate, not by the world. Pairing the
+    ten seed means differences out the terrain that both arms share and tests the
+    environment effect on 9 df, instead of throwing that structure away on an
+    unpaired 100-vs-100 that also assumes an independence the runs do not have.
+
+    Sign convention: diff = baseline - predator, so a POSITIVE mean difference
+    means the predator environment costs that condition fitness.
+
+    Holm-adjusted across the three conditions tested here. The adjustment is kept
+    separate from paired_by_seed's six comparisons because these are a different
+    family answering a different question; pooling all nine into one correction
+    would penalise both for tests neither of them made.
+    """
+    from scipy import stats
+    if len(envs) < 2:
+        return pd.DataFrame()
+    a_env, b_env = envs[0]['key'], envs[1]['key']
+    rows = []
+    for cond in conditions:
+        ca = cells.get((a_env, cond['key']))
+        cb = cells.get((b_env, cond['key']))
+        if ca is None or cb is None:
+            continue
+        ma, mb = seed_means(ca, metric), seed_means(cb, metric)
+        shared = sorted(set(ma) & set(mb))
+        if len(shared) < 3:
+            continue
+        da = np.array([ma[s] for s in shared])
+        db = np.array([mb[s] for s in shared])
+        diff = da - db
+        k = len(shared)
+        sd = diff.std(ddof=1)
+        sem = sd / np.sqrt(k)
+        tcrit = float(stats.t.ppf(0.975, k - 1))
+        tstat, tp = stats.ttest_rel(da, db)
+        try:
+            _w, wp = stats.wilcoxon(da, db)
+        except ValueError:
+            wp = np.nan
+        rows.append({
+            'condition': cond['key'], 'env_a': a_env, 'env_b': b_env,
+            'n_seeds': k, 'mean_a': da.mean(), 'mean_b': db.mean(),
+            'mean_diff': diff.mean(), 'sd_diff': sd, 'sem_diff': sem,
+            'ci95_lo': diff.mean() - tcrit * sem,
+            'ci95_hi': diff.mean() + tcrit * sem,
+            'cohens_dz': diff.mean() / sd if sd > 0 else np.nan,
+            't_stat': float(tstat), 'p_paired_t': float(tp),
+            'p_wilcoxon': float(wp),
+            'seeds_favouring_a': int((diff > 0).sum()),
+            'seeds_favouring_b': int((diff < 0).sum()),
+        })
+    if not rows:
+        return pd.DataFrame()
+    df = pd.DataFrame(rows)
+    order = np.argsort(df['p_paired_t'].to_numpy())
+    m = len(df)
+    adj, running = np.empty(m), 0.0
+    for rank, idx in enumerate(order):
+        running = max(running, (m - rank) * df['p_paired_t'].iloc[idx])
+        adj[idx] = min(running, 1.0)
+    df['p_holm'] = adj
+    return df
+
+
 def cluster_bootstrap(cells, envs, conditions, metric='avg_fitness',
                       n_boot=10000, seed=20260824):
     """Percentile CIs for the mean AND the median, resampling SEEDS.
@@ -1272,8 +1357,20 @@ def km_curves(tt, envs, conditions):
     viability still contributes everything it tells us — that it had not done so
     by generation 1000 — instead of being dropped (which would bias the median
     down) or scored as 1000 (which would invent a time it never had).
+
+    RMST IS HERE BECAUSE THE HAZARD RATIO CANNOT BE READ AS A CONSTANT EFFECT.
+    The Cox models below report `ph_assumption_min_p`, and on this data it is
+    ~1e-5 in both environments: the hazards are NOT proportional, so each HR is
+    an average over the follow-up rather than one number that holds throughout.
+    The restricted mean survival time needs no such assumption. `rmst_gen` is the
+    expected number of generations a run spends NOT yet viable, up to tau (the
+    last generation observed), so a SMALLER value is a faster arm and the
+    difference between two arms is in generations — a unit that can be quoted
+    directly, unlike a time-averaged hazard ratio.
     """
     from lifelines import KaplanMeierFitter
+    from lifelines.utils import restricted_mean_survival_time as _rmst
+    tau = float(tt['time'].max()) if len(tt) else 0.0
     fits, rows = {}, []
     for env in envs:
         for cond in conditions:
@@ -1295,8 +1392,18 @@ def km_curves(tt, envs, conditions):
                 'reached_by_100': float(1 - kmf.predict(100)),
                 'reached_by_250': float(1 - kmf.predict(250)),
                 'reached_by_500': float(1 - kmf.predict(500)),
+                'rmst_gen': float(_rmst(kmf, t=tau)) if tau else np.nan,
+                'rmst_tau': tau,
             })
-    return fits, pd.DataFrame(rows)
+    df = pd.DataFrame(rows)
+    # RMST difference against the reference arm, within each environment.
+    if not df.empty:
+        ref = conditions[0]['key']
+        base = df[df['condition'] == ref].set_index('environment')['rmst_gen']
+        df['rmst_vs_' + ref] = [
+            r['rmst_gen'] - base.get(r['environment'], np.nan)
+            for _i, r in df.iterrows()]
+    return fits, df
 
 
 def cox_models(tt, envs, conditions, ref='evolution'):
@@ -1305,7 +1412,7 @@ def cox_models(tt, envs, conditions, ref='evolution'):
     The hazard here is the instantaneous rate of REACHING viability, so a hazard
     ratio above 1 means faster — which is the Baldwin claim stated in the form
     the model tests. Evolution is the reference level, so HR is read as "this
-    condition reaches viability HR times as fast as the GA alone".
+    condition reaches viability HR times as fast as the EA alone".
 
     Clustering on `seed` is the same correction as the clustered confidence
     intervals elsewhere: the ten replicates of a map are not independent, and an
@@ -1464,7 +1571,7 @@ def legend_strip(fig, handles, title, ncol=None, y=0.005, fontsize=9.0):
     leg = fig.legend(handles=handles, loc='upper center',
                      bbox_to_anchor=(0.5, y), ncol=(ncol or len(handles)),
                      frameon=False, fontsize=fontsize, labelcolor=INK,
-                     handlelength=2.4, handletextpad=0.8, columnspacing=3.0,
+                     handlelength=3.4, handletextpad=0.8, columnspacing=2.4,
                      borderaxespad=0.0, title=title)
     leg.get_title().set_fontsize(9)
     leg.get_title().set_color(INK)
@@ -1492,6 +1599,90 @@ def side_legend(fig, entries, final_window, band, anchor=None):
                         f'converged mean ± {spread} across runs')
 
 
+def crop_ylim(axs, rng=None, pad=0.05):
+    """Fit the SHARED y-axis to what was actually drawn, instead of [0, 1].
+
+    A normalised axis is not obliged to show the whole [0, 1] interval, and on
+    this data it wastes a lot of plate: the converged fitness strips live between
+    0.35 and 0.87, so a third of the panel is empty. Cropping buys y-resolution
+    per point and a shorter figure at the same time — the one place where those
+    two do not trade off against each other.
+
+    WHAT IS AND IS NOT NEGOTIABLE HERE. The crop is computed over EVERY panel and
+    applied once, so the two environments still share one axis — that is the
+    whole point of the side-by-side plate and auto-scaling each panel would
+    destroy it. The viability threshold is forced into range too: it is drawn and
+    labelled, and a cropped view that cut it off would be worse than the empty
+    space it saved. And because a cropped axis makes a difference look larger
+    than a [0, 1] axis does, the range is stated in the subtitle rather than left
+    for the reader to infer from the ticks.
+    """
+    from matplotlib.collections import PathCollection
+    lo, hi = np.inf, -np.inf
+    for ax in np.ravel(np.asarray(axs, dtype=object)):
+        for ln in ax.get_lines():
+            y = np.asarray(ln.get_ydata(), dtype=float)
+            y = y[np.isfinite(y)]
+            if y.size:
+                lo, hi = min(lo, y.min()), max(hi, y.max())
+        for coll in ax.collections:
+            if isinstance(coll, PathCollection):       # scatter: the dots
+                v = np.asarray(coll.get_offsets(), dtype=float)
+                v = v[:, 1] if v.ndim == 2 and v.shape[1] == 2 else np.array([])
+            else:                                      # fill_between: the band
+                paths = coll.get_paths()
+                v = (np.concatenate([p.vertices[:, 1] for p in paths])
+                     if paths else np.array([]))
+            v = np.asarray(v, dtype=float)
+            v = v[np.isfinite(v)]
+            if v.size:
+                lo, hi = min(lo, v.min()), max(hi, v.max())
+    if rng is not None:
+        thr = rescale([VIABILITY], rng)[0]
+        lo, hi = min(lo, thr), max(hi, thr)
+    if not np.isfinite(lo) or not np.isfinite(hi) or hi <= lo:
+        return None
+    m = (hi - lo) * pad
+    np.ravel(np.asarray(axs, dtype=object))[0].set_ylim(lo - m, hi + m)
+    return lo - m, hi + m
+
+
+def _crop_note(lim):
+    """The subtitle clause that says the axis does not start at zero."""
+    return ('' if lim is None else
+            f' · y cropped to [{lim[0]:.2f}, {lim[1]:.2f}]')
+
+
+def condition_key(ax, conditions, loc='lower right'):
+    """The three conditions, inside a panel, and nothing else.
+
+    Replaces the strip that used to hang under the plate. That strip carried the
+    converged value for every condition in both environments — three columns of
+    three lines, about 40pt of figure height — and those numbers are now in the
+    prose and the caption, where a reader can copy them. What the figure still
+    has to do is say which curve is which, and that costs one line each.
+
+    `loc` defaults to lower right because on both plates that corner is empty:
+    the fitness curves plateau along the top, and the survival curves reach 1.0
+    early and then run flat to the end of the axis.
+    """
+    handles = [Line2D([], [], color=c['colour'], ls=c['ls'], lw=2.0,
+                      label=c['label']) for c in conditions]
+    # handlelength is in FONT-SIZE units, and it has to clear a full dash cycle
+    # or the key misrepresents the plate. Matplotlib's '-.' period is 21.2pt at
+    # lw 2 (12.8 dash, 3.2 gap, 2.0 dot, 3.2 gap) and '--' is 10.6pt. At the old
+    # 1.8 the handle was 13.5pt: pure RL rendered its 12.8pt dash and stopped
+    # before the dot, so it read as SOLID, and evolution showed one full dash
+    # plus a truncated one, so it read as long-dash-short-dash. 4.0 gives 30pt —
+    # one and a half dash-dot cycles, and three even dashes.
+    leg = ax.legend(handles=handles, loc=loc, frameon=False, fontsize=7.5,
+                    handlelength=4.0, handletextpad=0.6, labelspacing=0.45,
+                    borderaxespad=0.6)
+    for t in leg.get_texts():
+        t.set_color(INK)
+    return leg
+
+
 def bar_key(ax):
     """Neutral-ink key for the two bar styles, inside the axes.
 
@@ -1509,7 +1700,7 @@ def bar_key(ax):
 
 
 def strip_columns(ax, groups, colours, show_threshold=True, rng=None,
-                  point_size=16, jitter=0.17, seed0=12345):
+                  point_size=16, jitter=0.17, seed0=12345, markers=None):
     """Jittered dots + a solid MEAN bar and a dashed MEDIAN bar, per column.
 
     groups: [(label, values ndarray)]. One drawing routine for both the
@@ -1517,7 +1708,8 @@ def strip_columns(ax, groups, colours, show_threshold=True, rng=None,
     in what a bar means.
     """
     drawn = []
-    for i, ((label, v), colour) in enumerate(zip(groups, colours)):
+    marks = markers or ['o'] * len(groups)
+    for i, ((label, v), colour, marker) in enumerate(zip(groups, colours, marks)):
         v = np.asarray(v, dtype=float)
         v = v[np.isfinite(v)]
         if not v.size:
@@ -1526,6 +1718,7 @@ def strip_columns(ax, groups, colours, show_threshold=True, rng=None,
         # redraw, so two versions of a figure can be compared dot for dot.
         rs = np.random.default_rng(seed0 + i)
         ax.scatter(i + rs.uniform(-jitter, jitter, v.size), v, s=point_size,
+                   marker=marker,
                    color=colour, alpha=0.55, lw=0.4, edgecolors='white',
                    zorder=3)
         ax.plot([i - 0.30, i + 0.30], [v.mean()] * 2, color=colour, lw=2.4,
@@ -1581,7 +1774,7 @@ def strip_conditions(ax, cells, env_key, conditions, metric, source='gen',
     evolution arm is bimodal (a collapsed cluster and a successful one) and a
     mean line alone would report a value almost no run actually took.
     """
-    present, groups, colours = [], [], []
+    present, groups, colours, marks = [], [], [], []
     for cond in conditions:
         cell = cells.get((env_key, cond['key']))
         if cell is None:
@@ -1592,9 +1785,11 @@ def strip_conditions(ax, cells, env_key, conditions, metric, source='gen',
         present.append(cond)
         groups.append((cond['label'].split(' (')[0], v))
         colours.append(cond['colour'])
+        marks.append(cond.get('marker', 'o'))
     if not groups:
         return []
-    strip_columns(ax, groups, colours, show_threshold=show_threshold, rng=rng)
+    strip_columns(ax, groups, colours, show_threshold=show_threshold, rng=rng,
+                  markers=marks)
     return list(zip(present, [g[1] for g in groups]))
 
 
@@ -1622,7 +1817,7 @@ def save(fig, path, rect=None, dpi=None):
     for fmt in OUTPUT['formats']:
         out = f'{stem}.{fmt}'
         fig.savefig(out, dpi=(dpi or OUTPUT['dpi']), bbox_inches='tight',
-                    facecolor='white', format=fmt)
+                    pad_inches=0.01, facecolor='white', format=fmt)
         written.append(fmt)
     plt.close(fig)
     print(f'    wrote {stem}.{{{",".join(written)}}}')
@@ -1651,7 +1846,8 @@ def fig_seed_strip(cells, env, cond, ranges, scope, args, out_path,
     # categories is well past where categorical colour stays separable, so they
     # are told apart by position.
     colours = [cond['colour']] + [la.NEUTRAL] * (len(groups) - 1)
-    strip_columns(ax, groups, colours, rng=rng, point_size=18)
+    strip_columns(ax, groups, colours, rng=rng, point_size=18,
+                  markers=[cond.get('marker', 'o')] * len(groups))
     ax.set_ylabel(metric_label(metric, 'gen')
                   + (' — normalised' if rng else ''))
     ax.set_xlabel('Map seed')
@@ -1678,7 +1874,7 @@ def fig_seed_strip_grid(cells, envs, conditions, ranges, scope, args, out_path,
     algorithmic one.
     """
     nrow, ncol = len(envs), len(conditions)
-    fig, axs = plt.subplots(nrow, ncol, figsize=(5.6 * ncol, 4.3 * nrow),
+    fig, axs = plt.subplots(nrow, ncol, figsize=(5.6 * ncol, 4.1 * nrow),
                             sharey='row', squeeze=False)
     drew = False
     for r, env in enumerate(envs):
@@ -1701,7 +1897,8 @@ def fig_seed_strip_grid(cells, envs, conditions, ranges, scope, args, out_path,
             # right — and a panel whose points all sit above it says something
             # only if the line is in the panel.
             strip_columns(ax, groups, colours, rng=rng, point_size=11,
-                          show_threshold=True)
+                          show_threshold=True,
+                          markers=[cond.get('marker', 'o')] * len(groups))
             ax.tick_params(axis='x', labelsize=7)
             st = cluster_stats(cell['table'][metric].to_numpy(dtype=float),
                                cell['table']['seed'].to_numpy())
@@ -1716,10 +1913,7 @@ def fig_seed_strip_grid(cells, envs, conditions, ranges, scope, args, out_path,
     if not drew:
         plt.close(fig)
         return False
-    fig.suptitle(f'{metric_label(metric, "gen")} by map seed — every condition '
-                 f'and environment  ·  solid = mean, dashed = median, '
-                 f'whisker = ±1 std', fontsize=12.5, color=INK, y=1.0)
-    save(fig, out_path, rect=(0, 0, 1, 0.96))
+    save(fig, out_path, rect=(0, 0, 1, 1))
     return True
 
 
@@ -1808,7 +2002,10 @@ def fig_km(tt, env, conditions, sustain, out_path, thr_norm=None):
 
 
 def fig_km_compare(tt, envs, conditions, sustain, out_path, thr_norm=None):
-    fig, axs = plt.subplots(1, 2, figsize=(11.6, 4.9), sharey=True)
+    # Taller than the single-environment plate: with the key underneath rather
+    # than in a right-hand column, the two panels have the whole width, and the
+    # extra height keeps them from reading as letterbox strips.
+    fig, axs = plt.subplots(1, 2, figsize=(11.6, 4.8), sharey=True)
     per_env, any_drawn = [], False
     for ax, env in zip(axs, envs):
         drawn = draw_km(ax, tt, env, conditions, sustain)
@@ -1821,36 +2018,10 @@ def fig_km_compare(tt, envs, conditions, sustain, out_path, thr_norm=None):
     axs[0].set_ylabel('Fraction of runs having reached viability\n'
                       '(share of runs, not a fitness)')
 
-    handles = []
-    for cond in conditions:
-        parts = []
-        for env, drawn in per_env:
-            for c, sub, kmf in drawn:
-                if c['key'] != cond['key']:
-                    continue
-                med = kmf.median_survival_time_
-                med_txt = 'not reached' if not np.isfinite(med) else f'{med:.0f}'
-                cens = int((sub['event'] == 0).sum())
-                tail = f', {cens} censored' if cens else ''
-                parts.append(f'{env["short"]}: gen {med_txt} (n = {len(sub)}{tail})')
-        if parts:
-            handles.append(Line2D([], [], color=cond['colour'], ls=cond['ls'],
-                                  lw=2.4,
-                                  label=cond['label'] + '\n' + '\n'.join(parts)))
-    leg = fig.legend(handles=handles, loc='center left',
-                     bbox_to_anchor=(0.815, 0.5), frameon=False, fontsize=9,
-                     labelcolor=INK, labelspacing=1.6, handlelength=2.6,
-                     title='median generation reaching\nsustained viability')
-    leg.get_title().set_fontsize(9)
-    leg.get_title().set_color(INK)
-    fig.suptitle(f'Time to viability — {envs[0]["short"]} vs {envs[1]["short"]}',
-                 fontsize=12.5, color=INK, y=1.005)
-    fig.text(0.40, 0.945,
-             f'Kaplan–Meier · event = {sustain} consecutive generations at '
-             f'{_thr_text(thr_norm)} · shaded 95% CI · shared y-axis, '
-             f'INDEPENDENT x (the two environments differ ~10x in timescale)',
-             ha='center', fontsize=8.5, color=INK, alpha=0.78)
-    save(fig, out_path, rect=(0, 0, 1, 0.925))
+    condition_key(axs[0], [c for c in conditions
+                           if any(c['key'] in {d[0]['key'] for d in drawn}
+                                  for _e, drawn in per_env if drawn)])
+    save(fig, out_path, rect=(0, 0, 1, 1))
     return True
 
 
@@ -1885,7 +2056,7 @@ def per_environment(cells, env, conditions, ranges, scope, args, out_root, figur
                 + (f' · smoothed {args.smooth} gens' if args.smooth > 1 else '')
                 + f' · converged = last {args.final_window} gens')
         if normalise:
-            ax.set_ylim(-0.02, 1.02)
+            note += _crop_note(crop_ylim([ax], rng))
             note += (f'\nrescaled by the {scope} raw range '
                      f'[{rng[0]:.2f}, {rng[1]:.2f}] — one transform for every '
                      f'condition and environment')
@@ -1922,7 +2093,7 @@ def per_environment(cells, env, conditions, ranges, scope, args, out_root, figur
         fig.suptitle(f'Converged average fitness — {env["label"]}',
                      fontsize=12.5, color=INK, y=0.995)
         if normalise:
-            ax.set_ylim(-0.02, 1.02)
+            crop_ylim([ax], rng)
         save(fig, os.path.join(out_dir, f'{stem}.png'), rect=(0, 0, 1, 0.93))
 
     # Per-seed strips: one per condition, plus all three on one sheet.
@@ -1947,7 +2118,8 @@ def comparisons(cells, envs, conditions, ranges, scope, args, out_root, figures)
     print(f'  side-by-side -> {out_dir}')
 
     for metric, stem, normalise, source in figures:
-        fig, axs = plt.subplots(1, 2, figsize=(11.6, 4.5), sharey=True)
+        fig, axs = plt.subplots(1, 2, figsize=(11.6, 3.2 if normalise else 4.5),
+                                sharey=True)
         drawn_any, per_env = False, []
         for ax, env in zip(axs, envs):
             rng = get_range(ranges, env['key'], metric, scope) if normalise else None
@@ -1964,48 +2136,24 @@ def comparisons(cells, envs, conditions, ranges, scope, args, out_root, figures)
 
         rng0 = get_range(ranges, envs[0]['key'], metric, scope) if normalise else None
         axs[0].set_ylabel(axis_label(metric, source, normalise, rng0))
-        if normalise:
-            axs[0].set_ylim(-0.02, 1.02)
+        crop = crop_ylim(axs, rng0 if normalise else None) if normalise else None
 
-        # The legend carries BOTH environments' converged values per condition,
-        # since that side-by-side difference is what the figure is for.
-        handles = []
-        for cond in conditions:
-            parts = []
-            for env, drawn, rng in per_env:
-                if cond not in drawn:
-                    continue
-                v = converged(cells[(env['key'], cond['key'])], metric, source,
-                              args.final_window, rng)
-                if v.size:
-                    sd = v.std(ddof=1) if v.size > 1 else 0.0
-                    parts.append(f'{env["short"]}: {v.mean():.4g} ± {sd:.3g} '
-                                 f'(n = {v.size})')
-            if parts:
-                handles.append(Line2D([], [], color=cond['colour'], ls=cond['ls'],
-                                      lw=2.4,
-                                      label=cond['label'] + '\n' + '\n'.join(parts)))
-        spread = 'IQR' if args.band == 'iqr' else '1 std'
-        legend_strip(fig, handles, f'converged mean ± {spread} across runs')
-
-        note = (f'{la.centre_label(args.band)} over runs · shaded '
-                f'{la.band_label(args.band, args.aggregate)} · shared y-axis'
-                + (f' · smoothed {args.smooth} gens' if args.smooth > 1 else '')
-                + f' · converged = last {args.final_window} gens')
-        if normalise:
-            note += f' · one min–max range for both panels ({scope} scope)'
-        fig.suptitle(f'{metric_label(metric, source)} — '
-                     f'{envs[0]["short"]} vs {envs[1]["short"]}',
-                     fontsize=12.5, color=INK, y=1.01)
-        fig.text(0.5, 0.955, note, ha='center', fontsize=8.5, color=INK,
-                 alpha=0.78)
+        # No suptitle and no subtitle: both said things the caption says
+        # better, and between them they cost two lines of plate height. The
+        # per-panel titles stay — the caption cannot tell a reader which of two
+        # panels is which. Deleting the text alone would save nothing, because
+        # tight_layout hands the freed space straight back to the axes, so the
+        # figsize comes down by the same amount above.
+        condition_key(axs[0], [c for c in conditions
+                               if any(c in d for _e, d, _r in per_env)])
         save(fig, os.path.join(out_dir, f'compare_{stem}.png'),
-             rect=(0, 0, 1, 0.94))
+             rect=(0, 0, 1, 1))
 
     # Strip comparison.
     for normalise, stem in ((False, 'strip_final_fitness_raw'),
                             (True, 'strip_final_fitness_normalised')):
-        fig, axs = plt.subplots(1, 2, figsize=(11.0, 4.9), sharey=True)
+        fig, axs = plt.subplots(1, 2, figsize=(11.0, 3.5 if normalise else 4.9),
+                                sharey=True)
         drew = []
         for ax, env in zip(axs, envs):
             rng = get_range(ranges, env['key'], 'avg_fitness', scope) if normalise else None
@@ -2019,17 +2167,10 @@ def comparisons(cells, envs, conditions, ranges, scope, args, out_root, figures)
             continue
         rng0 = get_range(ranges, envs[0]['key'], 'avg_fitness', scope) if normalise else None
         axs[0].set_ylabel(axis_label('avg_fitness', 'gen', normalise, rng0))
-        if normalise:
-            axs[0].set_ylim(-0.02, 1.02)
-        fig.suptitle(f'Converged average fitness — {envs[0]["short"]} vs '
-                     f'{envs[1]["short"]}', fontsize=12.5, color=INK, y=1.005)
-        fig.text(0.5, 0.945,
-                 f'one dot per run · solid bar = mean ±1 std · dashed bar = median'
-                 f' · converged = last {args.final_window} gens · shared y-axis',
-                 ha='center', fontsize=8.5, color=INK, alpha=0.78)
+        crop = crop_ylim(axs, rng0 if normalise else None) if normalise else None
         bar_key(axs[0])
         save(fig, os.path.join(out_dir, f'compare_{stem}.png'),
-             rect=(0, 0, 1, 0.925))
+             rect=(0, 0, 1, 1))
 
     fig_seed_strip_grid(cells, envs, conditions, ranges, scope, args,
                         os.path.join(out_dir, 'compare_strip_by_seed.png'))
@@ -2350,6 +2491,21 @@ def report_survival(km_tab, cox, lr, sustain):
         print('  (median = Kaplan-Meier median generation; by gN = estimated '
               'fraction reached by generation N)')
 
+    ref = 'evolution'
+    col = 'rmst_vs_' + ref
+    if not km_tab.empty and col in km_tab.columns:
+        tau = km_tab['rmst_tau'].iloc[0]
+        print(f'\n=== RMST to generation {tau:.0f} — the effect size that does NOT '
+              f'assume proportional hazards ===')
+        print(f'  {"env":<10}{"condition":<11}{"gens not yet viable":>21}'
+              f'{"vs " + ref:>14}')
+        for _, r in km_tab.iterrows():
+            print(f'  {r["environment"]:<10}{r["condition"]:<11}'
+                  f'{r["rmst_gen"]:>21.1f}{r[col]:>+14.1f}')
+        print('  (expected generations a run spends BELOW the threshold, so lower '
+              'is faster.\n   Read this rather than the hazard ratio wherever the '
+              'PH p below is < 0.05.)')
+
     if not cox.empty:
         print('\n=== Cox proportional hazards (SEs clustered by map seed) ===')
         print(f'  {"env":<10}{"term vs evolution":<20}{"HR":>7}{"95% CI":>18}'
@@ -2359,9 +2515,13 @@ def report_survival(km_tab, cox, lr, sustain):
             print(f'  {r["environment"]:<10}{r["term"]:<20}'
                   f'{r["hazard_ratio"]:>7.2f}{ci:>18}{r["p"]:>10.2g}'
                   f'{r["concordance"]:>9.3f}{r["ph_assumption_min_p"]:>8.2g}')
-        print('  (HR > 1 = reaches viability FASTER than the GA-only arm. '
-              'PH p < 0.05 means the\n   hazard ratio is a time-average, not a '
-              'constant effect — read the KM curves.)')
+        print('  (HR > 1 = reaches viability FASTER than the EA-only arm.)')
+        worst = cox['ph_assumption_min_p'].min()
+        if np.isfinite(worst) and worst < 0.05:
+            print(f'  !! PH ASSUMPTION VIOLATED (min p = {worst:.1g}). Every HR above '
+                  f'is a TIME-AVERAGE,\n     not a constant effect. The log-rank test '
+                  f'and the KM curves make no such\n     assumption and stand as they '
+                  f'are; quote the RMST difference as the effect size.')
 
     if not lr.empty:
         print('\n=== log-rank across the three conditions ===')
@@ -2387,6 +2547,23 @@ def report_variance(df):
     print('  (sd between = terrain, one number per map; sd within = run-to-run '
           'chance on a fixed map.\n   ICC = var_between / (var_between + '
           'var_within) — a SHARE, so read it beside the absolute sds.)')
+
+
+def report_env_contrast(df):
+    """The environment effect, one row per condition."""
+    if df is None or df.empty:
+        return
+    print('\n=== baseline vs predator environment, paired by map seed '
+          '(k = 10 pairs, same terrain both sides) ===')
+    print(f'  {"condition":<12}{"baseline":>10}{"predator":>10}{"Δmean":>10}'
+          f'{"95% CI":>22}{"dz":>7}{"p(t)":>10}{"p(Holm)":>10}{"p(Wilcox)":>11}   favours baseline')
+    for _i, r in df.iterrows():
+        ci = f'[{r["ci95_lo"]:+.3f}, {r["ci95_hi"]:+.3f}]'
+        print(f'  {r["condition"]:<12}{r["mean_a"]:>10.3f}{r["mean_b"]:>10.3f}'
+              f'{r["mean_diff"]:>+10.3f}{ci:>22}{r["cohens_dz"]:>7.2f}'
+              f'{r["p_paired_t"]:>10.2g}{r["p_holm"]:>10.2g}{r["p_wilcoxon"]:>11.2g}'
+              f'   {int(r["seeds_favouring_a"])}/{int(r["n_seeds"])}')
+    print('  (Δ > 0 means the predator environment COSTS that condition fitness)')
 
 
 def report_stats(paired, boot, coll):
@@ -2588,13 +2765,16 @@ def main():
                                  n_boot=args.n_boot)
         coll = collapse_rates(cells, ENVIRONMENTS, CONDITIONS,
                               n_boot=args.n_boot)
+        env_contrast = paired_by_environment(cells, ENVIRONMENTS, CONDITIONS)
         for df, name in ((paired, 'paired_by_seed.csv'),
+                         (env_contrast, 'paired_by_environment.csv'),
                          (boot, 'bootstrap_ci.csv'),
                          (coll, 'collapse_rate.csv')):
             path = os.path.join(out_root, name)
             df.to_csv(path, index=False)
             print(f'    wrote {path}   ({len(df)} rows)')
         report_stats(paired, boot, coll)
+        report_env_contrast(env_contrast)
     print(f'\nDone -> {out_root}')
 
 
