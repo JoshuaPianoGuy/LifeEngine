@@ -475,6 +475,9 @@ class PureRLManager {
 }
 
 PureRLManager.POPULATION_SIZE = POPULATION_SIZE;
+// Baked at load from ExperimentParams.collapse_buffer_size; exposed so a UI
+// can report the value actually in force.
+PureRLManager.COLLAPSE_BUFFER_SIZE = COLLAPSE_BUFFER_SIZE;
 PureRLManager.TICKS_PER_GEN   = TICKS_PER_GEN;
 
 module.exports = PureRLManager;

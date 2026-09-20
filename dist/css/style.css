@@ -226,6 +226,58 @@ input:hover,input:active {
     overflow-wrap: anywhere;
 }
 
+/* ── Experiment Parameters tab ──────────────────────────────────────────────
+   Two-column grid of the tuning values this run is using, grouped into
+   sections. Rendered by ControlPanel.renderExperimentParams(), which reads each
+   value from the module that owns it. */
+.ep-section {
+    margin: 12px 0 2px;
+    font-size: 0.95em;
+    color: var(--tab);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 2px;
+}
+
+.ep-section:first-child {
+    margin-top: 4px;
+}
+
+.ep-grid {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 1px 12px;
+    margin: 4px 0 2px;
+    padding: 4px 8px;
+    border-left: 3px solid var(--tab-active);
+    background: rgba(65, 103, 136, 0.08);
+    font-size: 0.9em;
+    line-height: 1.45;
+}
+
+.ep-row {
+    display: contents;
+}
+
+.ep-label {
+    grid-column: 1;
+    font-weight: bold;
+    color: var(--tab);
+}
+
+.ep-live {
+    grid-column: 2;
+    font-family: monospace;
+    /* Long values wrap rather than widening the control panel. */
+    overflow-wrap: anywhere;
+}
+
+.experiment-params-note,
+.experiment-params-empty {
+    font-size: 0.85em;
+    opacity: 0.85;
+    line-height: 1.45;
+}
+
 .left-half {
     grid-column: 1;
 }

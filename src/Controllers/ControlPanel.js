@@ -5,6 +5,15 @@ const WorldConfig = require("../WorldConfig");
 const LoadController = require("./LoadController");
 const {ColorScheme, color_scheme_names} = require("../Rendering/ColorScheme");
 const logger = require("../Logger");
+// Read by renderExperimentParams() so the Experiment Parameters tab reports
+// the constants these modules actually baked in at load, not a snapshot.
+const ExperimentParams = require("../ExperimentParams");
+const NNBrain = require("../Organism/Perception/NNBrain");
+const GAManager = require("../Organism/GAManager");
+const AdvancedOrganism = require("../Organism/AdvancedOrganism");
+const PureRLManager = require("../Organism/PureRLManager");
+const PredatorHyperparameters = require("../Organism/PredatorHyperparameters");
+const GenerationConstants = require("../Organism/GenerationConstants");
 
 class ControlPanel {
     constructor(engine) {
@@ -32,6 +41,7 @@ class ControlPanel {
         LoadController.control_panel = this;
         
         this.renderRunConfig();
+        this.renderExperimentParams();
     }
 
     /**
@@ -80,6 +90,112 @@ class ControlPanel {
             row('RL',          rl_line) +
             row('World',       `map seed ${preset.map_seed} · ${preset.grid_cols}×${preset.grid_rows} grid`)
         );
+    }
+
+    /**
+     * Render the "Experiment Parameters" tab: the tuning values THIS run is
+     * using.
+     *
+     * Every value is read at render time from the module that owns it, not
+     * from ExperimentParams and not from any snapshot. That distinction
+     * matters: NNBrain, GAManager, AdvancedOrganism and PureRLManager copy
+     * their constants out of ExperimentParams once, at module load, so a later
+     * write to ExperimentParams would NOT change the running simulation. What
+     * these modules hold is what is actually in force, so that is what is shown.
+     *
+     * Sections are filtered by condition — the EA block is hidden when no EA
+     * runs, the RL block when no RL runs — so the panel never implies a
+     * parameter is doing something it is not.
+     */
+    renderExperimentParams() {
+        const $table = $('#experiment-params-table');
+        if (!$table.length) return;
+
+        const esc = (s) => $('<div>').text(String(s)).html();
+        const num = (v) => (v === null || v === undefined) ? '—' : String(v);
+        const onoff = (v) => v ? 'on' : 'off';
+
+        const mode = WorldConfig.experiment_mode;
+        const rl_on = WorldConfig.learning_enabled || mode === 'pure_rl' || mode === 'frozen_pg';
+        const ea_on = mode !== 'pure_rl';
+
+        const P = PredatorHyperparameters;
+        const sections = [];
+
+        sections.push(['World', [
+            ['Grid', `${WorldConfig.MAP_COLS ?? '—'} × ${WorldConfig.MAP_ROWS ?? '—'} cells`],
+            ['Map seed', num(WorldConfig.MAP_SEED)],
+            ['Ticks per map', num(GenerationConstants.TICKS_PER_MAP)],
+            ['Maps per generation', num(GenerationConstants.MAPS_PER_GEN)],
+            ['Generation length', `${GenerationConstants.TICKS_PER_GEN} ticks`],
+            ['Food density scale', `${num(ExperimentParams.food_density_scale)} runtime cell(s) per reference cell`],
+        ]]);
+
+        sections.push(['Network', [
+            ['Hidden layer width', num(NNBrain.HIDDEN_SIZE)],
+            ['Inputs → outputs', `${NNBrain.STATE_SIZE} → ${NNBrain.HIDDEN_SIZE} → ${NNBrain.OUTPUT_SIZE}`],
+            ['Genome size', `${NNBrain.GENOME_SIZE} weights`],
+        ]]);
+
+        if (rl_on) {
+            const eps = [['Epsilon-greedy', onoff(NNBrain.EPSILON_ENABLED)]];
+            // start/end/shape only do anything while epsilon is actually on.
+            if (NNBrain.EPSILON_ENABLED) {
+                eps.push(['Epsilon start → end', `${NNBrain.EPSILON_START} → ${NNBrain.EPSILON_END}`]);
+                eps.push(['Epsilon decay exponent', num(NNBrain.EPSILON_DECAY_EXPONENT)]);
+            }
+            sections.push(['Reinforcement learning', [
+                ['Learning rate (α)', num(NNBrain.RL_LR)],
+                ...eps,
+                ['Trace decay (γ)', num(NNBrain.TRACE_DECAY)],
+                ['Baseline decay (β)', num(NNBrain.BASELINE_DECAY)],
+                ['Explore bonus', num(AdvancedOrganism.EXPLORE_BONUS)],
+                ['Energy-decay reward penalty', `−${AdvancedOrganism.DECAY_PENALTY} per unit`],
+                ['Predator-drain reward penalty', `−${AdvancedOrganism.PREDATOR_DRAIN_PENALTY} per unit`],
+            ]]);
+        }
+
+        if (ea_on) {
+            sections.push(['Evolutionary algorithm', [
+                ['Founders per generation', num(GAManager.POPULATION_SIZE)],
+                ['Tournament size (k)', num(GAManager.TOURNAMENT_K)],
+                ['Between-generation mutation', `p ${GAManager.MUT_PROB}, σ ${GAManager.MUT_SIGMA}`],
+                ['Within-generation mutation', `p ${AdvancedOrganism.ASEXUAL_MUT_PROB}, σ ${AdvancedOrganism.ASEXUAL_MUT_SIGMA}`],
+            ]]);
+        }
+
+        if (mode === 'pure_rl') {
+            sections.push(['Pure RL', [
+                ['Founders per generation', num(PureRLManager.POPULATION_SIZE)],
+                ['Respawn buffer', `${PureRLManager.COLLAPSE_BUFFER_SIZE} organisms`],
+                ['Between-episode mutation', `p ${ExperimentParams.mut_prob}, σ ${ExperimentParams.mut_sigma}`],
+            ]]);
+        }
+
+        sections.push(['Organism', [
+            ['Start energy / capacity', `${AdvancedOrganism.START_ENERGY} / ${AdvancedOrganism.ENERGY_CAPACITY}`],
+            ['Energy decay', `${AdvancedOrganism.ENERGY_DECAY_RATE} per ${AdvancedOrganism.ENERGY_DECAY_INTERVAL} ticks`],
+            ['Max lifetime', `${AdvancedOrganism.MAX_LIFETIME} ticks`],
+            ['Reproduction success rate', num(AdvancedOrganism.REPRODUCTION_SUCCESS_RATE)],
+        ]]);
+
+        sections.push(['Predators', [
+            ['Roaming count', num(P.count)],
+            ['Drain per contact', `${P.drainAmount} energy`],
+            ['Detection radius', `${P.detectionRadius} cells`],
+            ['Patrol per patch', num(P.patrol.predatorsPerPatch)],
+        ]]);
+
+        const html = sections.map(([title, rows]) =>
+            `<h4 class='ep-section'>${esc(title)}</h4>` +
+            `<div class='ep-grid'>` +
+            rows.map(([label, value]) =>
+                `<span class='ep-row'><span class='ep-label'>${esc(label)}</span>` +
+                `<span class='ep-live'>${esc(value)}</span></span>`).join('') +
+            `</div>`
+        ).join('');
+
+        $table.html(html);
     }
 
     defineMinMaxControls(){
@@ -286,6 +402,17 @@ class ControlPanel {
             }
             else if (this.id === 'editor') {
                 self.editor_controller.setEditorPanel();
+            }
+            else if (this.id === 'experiment-params') {
+                // Re-read on every open rather than trusting the render done at
+                // construction. Some values are not final until the world has
+                // been built: PredatorManager.spawnAll() calls
+                // resolveForGrid(cols), which rescales the predator radii, and
+                // it runs once per reset — before that, detectionRadius still
+                // holds its 400-column reference value (25 rather than 31 at
+                // width 500). Re-rendering here also keeps the tab honest after
+                // a reset onto a different grid size.
+                self.renderExperimentParams();
             }
             self.tab_id = this.id;
         });

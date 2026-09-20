@@ -820,6 +820,13 @@ class AdvancedOrganism extends Organism {
 }
 
 AdvancedOrganism.MAX_LIFETIME    = MAX_LIFETIME;
+// Baked-at-load constants, exposed for the same reason as NNBrain's above.
+AdvancedOrganism.EXPLORE_BONUS            = EXPLORE_BONUS;
+AdvancedOrganism.REPRODUCTION_SUCCESS_RATE = REPRODUCTION_SUCCESS_RATE;
+AdvancedOrganism.DECAY_PENALTY            = DECAY_PENALTY;
+AdvancedOrganism.PREDATOR_DRAIN_PENALTY   = PREDATOR_DRAIN_PENALTY;
+AdvancedOrganism.ENERGY_DECAY_RATE        = ENERGY_DECAY_RATE;
+AdvancedOrganism.ENERGY_DECAY_INTERVAL    = ENERGY_DECAY_INTERVAL;
 AdvancedOrganism.ENERGY_CAPACITY = ENERGY_CAPACITY;
 AdvancedOrganism.START_ENERGY    = START_ENERGY;
 AdvancedOrganism.FOOD_ENERGY     = FOOD_ENERGY;

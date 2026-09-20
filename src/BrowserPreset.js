@@ -83,6 +83,70 @@ const MAP_SEED = 999;
 const GRID_COLS = 500;
 const GRID_ROWS = 500;
 
+/**
+ * RESIZING THE WORLD — read before changing GRID_COLS / GRID_ROWS.
+ *
+ * Nothing breaks structurally at any size (tested 40x40 to 1000x1000: no
+ * errors), but a resized run is NOT comparable to the reported results, because
+ * two things change at once and only one of them is automatic:
+ *
+ *   SCALES automatically — predator detection / give-up / patrol radii, via
+ *     PredatorHyperparameters.resolveForGrid(cols), which rescales from the
+ *     400-column reference. detectionRadius is 31 at 500 wide, 63 at 1000.
+ *
+ *   DOES NOT scale — food. A map pool places a FIXED number of food cells
+ *     (~2,533 for seed 42, identical at every width), so coverage falls as the
+ *     world grows: 17.6% at 120x120, 1.0% at 500x500, 0.25% at 1000x1000.
+ *     Pass the AREA RATIO to ExperimentParams.food_density_scale to hold
+ *     density constant (500->1000 is 4), exactly as --food-density-scale does
+ *     headless.
+ *
+ *   DOES NOT scale — predator COUNT. It is an absolute number, so predator
+ *     density moves inversely with area: 60 predators is ~240 per million
+ *     cells at 500x500 but ~60 at 1000x1000.
+ *
+ *   DOES NOT scale — GAManager.SPAWN_RADIUS (a hardcoded 30 cells), so the
+ *     founding cohort occupies a quarter of a 120-wide world but 3% of a
+ *     1000-wide one.
+ *
+ * Prestige-patch COUNT also shifts with size for the same map (5 patches at
+ * 500x500 vs 11 at 1000x1000 on seed 42, map 1). Harmless while patrol
+ * predators are off, but it would multiply the patrol pool if they were on.
+ * See EXPERIMENTS.md 5.2b.
+ */
+
+/**
+ * Network width. The reported runs all pass --hidden-size 128; the
+ * ExperimentParams default is 64, which is a DIFFERENT network (genome 3910
+ * weights instead of 7814) and not comparable to the published results. Set
+ * here so the browser matches the experiments rather than the file default.
+ * Lower it to 64 if you want a faster browser run and do not need comparability.
+ */
+const HIDDEN_SIZE = 128;
+
+/**
+ * Pure-RL respawn buffer. Only used by --mode pure_rl, where it is the sole
+ * mechanism carrying strategies across a generation boundary. The reported runs
+ * use 100 (chosen so the founder count matches the 100 founders of the other
+ * two conditions); the ExperimentParams default is 25.
+ */
+const COLLAPSE_BUFFER_SIZE = 100;
+
+/**
+ * Per-tick reward for stepping on an unvisited cell. The explore-bonus sweep
+ * found it did not help, so every reported run passes --explore-bonus 0. This
+ * already matches the ExperimentParams default; set explicitly so the preset
+ * stays correct if that default ever moves.
+ */
+const EXPLORE_BONUS = 0;
+
+/**
+ * Runtime food cells placed per reference food cell. 1 = the historical
+ * behaviour and what every 500x500 run used. Raise it to the area ratio if you
+ * enlarge the world — see the resizing note above.
+ */
+const FOOD_DENSITY_SCALE = 1;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // PRESET TABLES — these encode the SLURM scripts; you should not need to edit
 // them unless the production run configuration itself changes.
@@ -168,6 +232,15 @@ ExperimentParams.learning_rate = env.learning_rate;
 // entirely when this is false, so they are deliberately left alone.
 ExperimentParams.epsilon_enabled = false;
 
+// Network / buffer / reward knobs the SLURM scripts pass explicitly. Without
+// these four assignments the browser silently ran on the ExperimentParams
+// defaults (hidden_size 64, collapse_buffer_size 25), which do NOT match any
+// reported run — see the constant definitions above.
+ExperimentParams.hidden_size          = HIDDEN_SIZE;
+ExperimentParams.collapse_buffer_size = COLLAPSE_BUFFER_SIZE;
+ExperimentParams.explore_bonus        = EXPLORE_BONUS;
+ExperimentParams.food_density_scale   = FOOD_DENSITY_SCALE;
+
 // ── Predators ────────────────────────────────────────────────────────────────
 // PredatorHyperparameters is the ONLY source of truth the browser reads at
 // runtime (PredatorManager.spawnAll). The matching ExperimentParams fields are
@@ -200,6 +273,7 @@ WorldConfig.browser_preset = {
     grid_rows:     GRID_ROWS,
     learning_rate: env.learning_rate,
     epsilon_enabled: false,
+
 };
 
 // ── Startup banner ───────────────────────────────────────────────────────────

@@ -159,9 +159,47 @@ preset. Confirm what is actually running from the About tab or the
 Use `npm run serve`, not `dist/index.html` opened as a file: CSV logging works by POSTing
 to `server.js`, which writes the same directory layout as headless.
 
-Two limits worth knowing: there is **no generation cap** in the browser (it runs until
-you stop it), and a 500×500 world in a browser is far slower than a headless task. The
-browser build is for *watching behaviour*, not for producing comparison data.
+**The preset values are the experiment values, and they are defaults.** `BrowserPreset`
+applies the full reported configuration without you setting anything — including
+`hidden_size 128` and `collapse_buffer_size 100`, which are *not* the
+`ExperimentParams.js` defaults (64 and 25). Those two matter: at the file default the
+browser would build a 3,910-weight genome against the experiments' 7,814, i.e. a
+different network. Because the preset assigns them before any simulation module loads,
+**editing `ExperimentParams.js` / `WorldConfig.js` / `PredatorHyperparameters.js`
+directly will not change a browser run** for any preset-owned field — change
+`BrowserPreset.js`.
+
+The **Experiment Parameters** tab in the control panel lists every tuning value the run
+is using — world, network, RL, EA, organism and predator settings — grouped into
+sections, with blocks hidden when they do not apply (no EA section under `pure_rl`, no RL
+section under `evolution`). Each value is read at render time from the module that owns
+it, so it reports what the simulation is actually running on rather than a copy that
+could drift. That makes it the quickest way to check a run's configuration, including
+when you have changed `BrowserPreset.js` to try something other than the published
+settings.
+
+**Resizing the world.** `GRID_COLS` / `GRID_ROWS` are editable, and nothing breaks
+structurally at any size (tested 40×40 to 1000×1000, no errors) — but a resized run is
+not comparable to the reported results, because only some things rescale:
+
+| | Rescales with world size? |
+|---|---|
+| Predator detection / give-up / patrol radii | **Yes** — `resolveForGrid(cols)` from the 400-column reference (31 cells at 500 wide, 63 at 1000) |
+| Food | **No** — a map pool places a fixed number of food cells, so coverage falls: 17.6% at 120×120, 1.0% at 500×500, 0.25% at 1000×1000 |
+| Predator count | **No** — a flat 60, so predator density moves inversely with area |
+| `GAManager.SPAWN_RADIUS` | **No** — hardcoded 30 cells, a quarter of a 120-wide world but 3% of a 1000-wide one |
+
+So enlarging the world makes food scarcer *and* predators sparser at the same time,
+which confounds "bigger world" with "harder world". Set `food_density_scale` to the area
+ratio to hold food density constant (500→1000 is `4`, giving 10,132 food cells instead
+of 2,533); predator count you must decide on yourself. Prestige-*patch* count also shifts
+with size for the same map (5 at 500×500 vs 11 at 1000×1000 on seed 42), which is
+harmless while patrol predators are off but would multiply the patrol pool if enabled.
+See `EXPERIMENTS.md` §5.2b.
+
+Two further limits worth knowing: there is **no generation cap** in the browser (it runs
+until you stop it), and a 500×500 world in a browser is far slower than a headless task.
+The browser build is for *watching behaviour*, not for producing comparison data.
 
 ### 4.3 Headless, one run
 

@@ -639,6 +639,12 @@ class NNBrain {
 }
 
 NNBrain.GENOME_SIZE      = GENOME_SIZE;
+// Baked-at-load RL constants, exposed so a UI can report what this build is
+// ACTUALLY running rather than re-reading ExperimentParams, which can be
+// mutated after these were captured.
+NNBrain.RL_LR            = RL_LR;
+NNBrain.TRACE_DECAY      = TRACE_DECAY;
+NNBrain.BASELINE_DECAY   = BASELINE_DECAY;
 NNBrain.STATE_SIZE       = STATE_SIZE;
 NNBrain.HIDDEN_SIZE      = HIDDEN_SIZE;
 NNBrain.OUTPUT_SIZE      = OUTPUT_SIZE;

@@ -41,6 +41,7 @@
 
 				<div class="tabnav">
 					<p class='tabnav-item open-tab' id='about'>About</p>
+					<p class='tabnav-item' id='experiment-params'>Experiment Parameters</p>
 					<p class='tabnav-item' id='editor'>Editor</p>
 					<p class='tabnav-item' id='world-controls'>World Controls</p>
 					<p class='tabnav-item' id='hyperparameters'>Evolution Controls</p>
@@ -89,6 +90,25 @@
 								<a href=https://github.com/MaxRobinsonTheGreat/EvolutionSimulatorV2 title='View the code'><i class="fa-brands fa-github"></i></a>
 								<a href=" https://www.patreon.com/emergentgarden" title='Support the project'><i class="fa-brands fa-patreon"></i></a>
 							</div>
+					</div>
+				</div>
+
+				<!-- The tuning values this run is using. Filled by
+				     ControlPanel.renderExperimentParams(), which reads each value from
+				     the module that owns it at render time. -->
+				<div id='experiment-params' class='tab'>
+					<div class='left-half'>
+						<h3>Experiment Parameters</h3>
+						<div id='experiment-params-table'>Loading&hellip;</div>
+						<p class='experiment-params-note'>
+							To change any of these, edit <code>src/BrowserPreset.js</code> and
+							rebuild. It is applied before any simulation module loads, which is
+							why editing <code>ExperimentParams.js</code>, <code>WorldConfig.js</code>
+							or <code>PredatorHyperparameters.js</code> directly will <em>not</em>
+							change a browser run for these fields. Resizing the world changes food
+							and predator density without rescaling them &mdash; see the resizing
+							note in <code>BrowserPreset.js</code>.
+						</p>
 					</div>
 				</div>
 
