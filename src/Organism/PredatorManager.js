@@ -22,6 +22,15 @@ const PatrolBrain         = require('./Perception/PatrolBrain');
 const CellStates          = require('./Cell/CellStates');
 const PredatorHyperparams = require('./PredatorHyperparameters');
 
+/**
+ * Owns the predator pools and keeps them stocked across map swaps.
+ *
+ * The roaming pool is a fixed size for the whole run and is the only pool
+ * active in the final experiments. The patrol pool scales with the current
+ * map's prestige-patch count and is inert whenever
+ * PredatorHyperparameters.patrol.predatorsPerPatch is 0, which every
+ * production run sets (see PatrolBrain.js).
+ */
 class PredatorManager {
     constructor(env) {
         this.env = env;

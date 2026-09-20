@@ -82,7 +82,7 @@
 #   logs/evolution/standard/auto-run/roam60d5_w500_randomfloor_h128_seed<S>_r<N>/
 # ============================================================================
 #SBATCH --job-name="floor_hard_w500_h128"
-#SBATCH --account=compsci
+#SBATCH --account=YOUR_ACCOUNT
 #SBATCH --partition=ada
 #SBATCH --time=12:00:00
 #SBATCH --nodes=1
@@ -92,8 +92,9 @@
 #SBATCH --array=0-99
 #SBATCH --output=logs/floor_hard_w500_h128_%A_%a.out
 #SBATCH --error=logs/floor_hard_w500_h128_%A_%a.err
-#SBATCH --mail-type=BEGIN,END,FAIL
-#SBATCH --mail-user=dgrjos001@myuct.ac.za
+# Optional job mail — uncomment and set your own address:
+# #SBATCH --mail-type=BEGIN,END,FAIL
+# #SBATCH --mail-user=your-email@example.com
 
 # ── Environment (EDIT for your account) ─────────────────────────────────────
 NODE_BIN="${NODE_BIN:-$HOME/.nvm/versions/node/v16.20.2/bin/node}"

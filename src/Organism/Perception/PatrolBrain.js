@@ -1,6 +1,14 @@
 /**
  * PatrolBrain.js
  *
+ * UNUSED IN THE FINAL EXPERIMENTS. PredatorManager only constructs a
+ * PatrolBrain when PredatorHyperparameters.patrol.predatorsPerPatch > 0, and
+ * every production run passes --predators-per-patch 0 so roaming predation is
+ * the single predator variable. No patrol predator is ever spawned in a
+ * reported run; see EXPERIMENTS.md §2.7 and MATHEMATICAL_REFERENCE.md §10.
+ * The percept channel for patrol predators (index 12) is therefore always
+ * zero in the final runs, though it still occupies an input slot.
+ *
  * Scripted patrol policy for prestige-food guardian predators.
  * Subclasses PredatorBrain, overriding only decide() to add a home-leash:
  *
@@ -28,6 +36,12 @@ const PredatorBrain        = require('./PredatorBrain');
 const Directions           = require('../Directions');
 const PredatorHyperparams  = require('../PredatorHyperparameters');
 
+/**
+ * PredatorBrain with a home leash: hunts normally inside patrolRadius of its
+ * assigned patch, and abandons any chase to return home once outside it.
+ *
+ * Unused in the final experiments — see the file header.
+ */
 class PatrolBrain extends PredatorBrain {
     constructor(owner) {
         super(owner);

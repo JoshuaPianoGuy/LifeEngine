@@ -11,12 +11,19 @@
  *    signal. Energy decays over time; eating food restores it. Reaching 0
  *    energy kills the agent. This drives the reward function for RL.
  *
- * 3. Lifespan is capped at MAX_LIFETIME (1500 ticks). An agent dies at
- *    whichever comes first: energy hits 0, or 1500 ticks elapse.
+ * 3. Lifespan is effectively uncapped: MAX_LIFETIME is 1,000,000 ticks, far
+ *    beyond the 10,000-tick generation window, so it never binds in practice.
+ *    An agent dies when its energy hits 0, and in any case cannot outlive the
+ *    generation it was born into. (The constant was 1500 in an earlier design,
+ *    which is where the old "dies at 1500 ticks" wording came from.)
  *
- * 4. Reproduction is asexual genome inheritance (Model C):
- *    - Triggered by the standard LifeEngine mechanic: eat food equal to body
- *      size (food_collected >= anatomy.cells.length).
+ * 4. Reproduction is asexual genome inheritance:
+ *    - Triggered by ENERGY GAINED, not by food count: a parent reproduces once
+ *      energyGainedSinceReproduction >= 3.5 (see update()). This replaces the
+ *      base LifeEngine mechanic of food_collected >= anatomy.cells.length,
+ *      which still governs the parent Organism class but is overridden here.
+ *      Decoupling from specific food items keeps the trigger comparable across
+ *      food tiers. See the paper's Table 1, "Reproduction trigger (asexual)".
  *    - Child genome = parent genome_weights + Gaussian mutation.
  *    - anatomy mutation (add/change/remove cell) is DISABLED — anatomy is
  *      fixed so the NN input/output dimensions never change.
@@ -110,9 +117,29 @@ const PREDATOR_DRAIN_PENALTY = 0.5;
 // ── Debugging ───────────────────────────────────────────────────────────────
 const DEBUG_ACTIONS = false;  // Set to true to log NN actions and movement outcomes
 
-// ── GA mutation constants (within-generation asexual reproduction) ────────────
-// Applied when an agent reproduces mid-generation.
-// Enabled: Gaussian mutation allows natural exploration and prevents local maxima
+// ── Mutation constants (within-generation asexual reproduction) ──────────────
+// Applied when an agent reproduces mid-generation. Gaussian perturbation keeps
+// the lineage exploring and prevents it settling in a local maximum.
+//
+// This is the INTRA-generation channel, and it is deliberately a different
+// rate from the inter-generation one:
+//
+//   here (every asexual birth)   p = 0.05, σ = 0.1   ← these constants
+//   generation boundary          p = ExperimentParams.mut_prob = 0.03, σ = 0.1
+//                                (applied by GAManager to crossover children)
+//
+// Both are per-WEIGHT independent Bernoulli trials followed by a [-1,1] clip.
+// Despite the 3%/5% rates looking similar, this 5% channel contributes MORE
+// total genetic variation, because it fires on every birth while the 3% fires
+// once per genome per generation boundary — and a lineage can reproduce many
+// times inside one 10,000-tick generation. See MATHEMATICAL_REFERENCE.md §6
+// for the expected-count table.
+//
+// NOTE these are module constants with NO CLI override: --mut-prob and
+// --mut-sigma do not reach them. A mutation sweep moves the 3% term only.
+//
+// The genome mutated here is the parent's genome_weights, never its
+// active_weights, so within-life RL drift is not inherited (non-Lamarckian).
 
 const ASEXUAL_MUT_PROB  = 0.05;  // 5% per-weight mutation probability
 const ASEXUAL_MUT_SIGMA = 0.1;   // Gaussian noise std-dev
@@ -127,6 +154,15 @@ const REPRODUCTION_SUCCESS_RATE = ExperimentParams.reproduction_success_rate;  /
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * The prey organism for the learning-vs-evolution experiment: an Organism with
+ * an NNBrain policy, an energy budget that decays over time, and the
+ * RL reward plumbing.
+ *
+ * This is the class under selection — predators (PredatorOrganism) are a
+ * fixed hazard and are never evolved. See the file header for the full list
+ * of differences from the base Organism.
+ */
 class AdvancedOrganism extends Organism {
     /**
      * @param {number}   col
@@ -165,7 +201,13 @@ class AdvancedOrganism extends Organism {
 
         // Metrics: energy snapshots at 20% of MAX_LIFETIME (per spec)
         this.energy_at_early_sample = null;
-        this._early_sample_tick     = Math.floor(MAX_LIFETIME * 0.20);  // tick 300
+        // NOTE: 20% of MAX_LIFETIME is tick 200,000, which no organism can
+        // reach — a generation is only 10,000 ticks. This sample therefore
+        // never fires and avg_energy_early (logged as avg_energy_at_tick_1000)
+        // is 0.000 in every row of every run. The 20% rule dates from when
+        // MAX_LIFETIME was 1500 (giving tick 300). The metric is unused in the
+        // paper; left in place so the CSV schema does not change.
+        this._early_sample_tick     = Math.floor(MAX_LIFETIME * 0.20);
 
         // Per-food-type counts for Logger detail rows
         this.food_by_type = {};

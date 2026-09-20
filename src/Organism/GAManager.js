@@ -1,37 +1,60 @@
 /**
  * GAManager.js
  *
- * Controls the between-generation genetic algorithm for the
- * learning-vs-evolution experiment (Model C).
+ * Controls the between-generation evolutionary algorithm for the
+ * learning-vs-evolution experiment.
+ *
+ * TERMINOLOGY: this is an *evolutionary algorithm*, not a genetic algorithm in
+ * the seminal sense — the genome is a real-valued weight vector in [-1,1]^N and
+ * the operators act on it directly, with no bit-string encoding to decode.
+ * `GAManager` is the historical class name and is deliberately left alone; the
+ * prose in the papers and figures says EA. See MATHEMATICAL_REFERENCE.md §3.
  *
  * What a generation is:
- *   A generation starts when the founding population is spawned and ends when
- *   every organism in the lineage is dead — founders AND all their asexual
- *   descendants. There is no fixed tick count. A successful generation with
- *   good food-seeking behaviour will last longer and produce more descendants.
- *   A failing generation dies out quickly.
+ *   A FIXED window of TICKS_PER_GEN = TICKS_PER_MAP x MAPS_PER_GEN
+ *   = 2000 x 5 = 10,000 world ticks, shown as 5 different maps in sequence.
+ *   The population PERSISTS across maps within the window — same organisms,
+ *   same energy, same positions; only the terrain changes and RL eligibility
+ *   traces reset (see startNextMap). evolve() runs when the window closes,
+ *   whether or not the lineage is still alive.
+ *
+ *   This replaces an earlier rule under which a generation ran until every
+ *   organism in the lineage had died, with no fixed tick count. That rule is
+ *   gone: generation length is now constant, which is what makes per-generation
+ *   metrics comparable across conditions and runs.
+ *   See MATHEMATICAL_REFERENCE.md §8 and EXPERIMENTS.md §2.2.
  *
  * Within-generation reproduction (handled by AdvancedOrganism.reproduce()):
  *   Asexual. Child genome = parent genome_weights + Gaussian mutation.
- *   Triggered by the standard LifeEngine mechanic: food_collected >= body size.
+ *   Triggered by energy gained, not food count: energyGainedSinceReproduction
+ *   >= 3.5 (AdvancedOrganism.update overrides the base LifeEngine rule).
  *   Every new child calls GAManager.registerAgent() so it is tracked.
  *
  * Between-generation evolution (handled here):
- *   When the lineage dies out entirely, GAManager.evolve() runs:
- *     1. Collect all agents that lived this generation (founders + descendants)
- *     2. Sort by fitness (cumulative food score)
- *     3. Take top N_PARENTS (5) as parents
- *     4. Uniform crossover between parents → POPULATION_SIZE offspring genomes
- *     5. Gaussian mutation on each offspring genome
- *     6. No elitism — every genome in the next generation comes from crossover
- *   This seeds the founding population of generation G+1.
+ *   At the end of the 10,000-tick window, GAManager.evolve() runs:
+ *     1. Eligible set = ALL agents that lived this generation (the 100 founders
+ *        plus every descendant). There is NO truncation: every agent has a
+ *        non-zero chance of being selected.
+ *     2. Sort by fitness (cumulative food score) — for metrics and logging.
+ *     3. Tournament selection, K = TOURNAMENT_K = 2: each parent is the fitter
+ *        of two agents drawn uniformly from the WHOLE eligible set. Selection
+ *        pressure is set by K alone, not by a fitness cutoff.
+ *     4. Uniform crossover of the two parents' genomes (each weight from A or B
+ *        at 50/50), clipped to [-1, 1].
+ *     5. Gaussian mutation on each offspring genome (MUT_PROB, MUT_SIGMA).
+ *     6. No elitism — all POPULATION_SIZE founders of generation G+1 are fresh
+ *        crossover children.
  *
- * Metrics recorded per generation (per spec):
+ *   NOTE: SELECTION_PERCENT (0.2) is a REPORTING parameter only — it defines
+ *   the top-20% cohort for top20percent_fitness and the top-cohort drift and
+ *   variance metrics. It plays NO role in parent selection.
+ *
+ * Metrics recorded per generation:
  *   avg_energy_early  — average energy of all agents at their 20% lifetime mark
  *   avg_energy_end    — average energy of all agents at death / end of lifetime
  *   top20percent_fitness — average cumulative food score of the top 20% agents
  *   generation_ticks  — how many world ticks the generation lasted
- *   population_peak   — largest simultaneous population during the generation
+ *   peak_population   — largest simultaneous population during the generation
  */
 
 'use strict';
@@ -45,7 +68,10 @@ const ExperimentParams = require('../ExperimentParams');  // tunable: pop size +
 // ── GA hyper-parameters ───────────────────────────────────────────────────────
 
 const POPULATION_SIZE = ExperimentParams.population_size;  // tunable (default 100)
-const SELECTION_PERCENT = 0.2; // top 20% GA selection
+const SELECTION_PERCENT = 0.2; // REPORTING ONLY: the top-20% cohort for
+                               // top20percent_fitness and top-cohort drift /
+                               // variance. NOT used for parent selection —
+                               // that is tournament selection at TOURNAMENT_K.
 const MUT_PROB        = ExperimentParams.mut_prob;   // tunable (default 0.03)
 const TOURNAMENT_K    = 2;     // tournament size for parent selection
 const MUT_SIGMA       = ExperimentParams.mut_sigma;  // tunable (default 0.1)
@@ -56,6 +82,18 @@ const { TICKS_PER_MAP, MAPS_PER_GEN } = require('./GenerationConstants');
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * The between-generation evolutionary algorithm: tournament selection over a
+ * fixed 10,000-tick generation window, then Gaussian mutation of the selected
+ * genomes to seed the next cohort.
+ *
+ * Drives both reported EA conditions, switched by the `rl_enabled` constructor
+ * flag: evolution (rl_enabled = false, genome only) and learning
+ * (rl_enabled = true, genome plus within-life REINFORCE). It also backs the
+ * random-policy floor, where the selected pool is discarded each generation.
+ *
+ * See the file header for what constitutes a generation.
+ */
 class GAManager {
     /**
      * @param {WorldEnvironment} env
@@ -112,6 +150,10 @@ class GAManager {
         this.selection_percent = SELECTION_PERCENT;
 
         // ── Natural disaster config ───────────────────────────────────────────
+        // UNUSED IN THE FINAL EXPERIMENTS: disaster_enabled is false in every
+        // reported run, so the cull path in evolve() is never entered and
+        // disaster_cull_frac is 0.0000 throughout. See ExperimentParams.js.
+        //
         // Read at construction so a headless override applied before module load
         // takes effect. A dedicated PRNG keeps disaster timing/victims
         // reproducible across runs without coupling to the map seed (which only
@@ -280,17 +322,31 @@ class GAManager {
         return null;
     }
 
+    /**
+     * Advance the generation to its next map. The population is carried over
+     * intact (same organisms, energy and positions) and re-registered with the
+     * new grid; only RL eligibility traces are cleared.
+     */
     startNextMap() {
         this.map_tick_count = 0;
         logger.logEvent('GA', `Gen ${this.generation} -> starting Map ${this.current_map_index + 1}/${MAPS_PER_GEN}`);
 
-        // Keep living agents in the environment array but reposition them and reset traces
+        // Carry living agents into the new map unchanged: they keep their
+        // energy AND their grid position; only the terrain under them changes
+        // and their RL eligibility traces are reset. They are re-registered
+        // with the new map's grid below, not repositioned.
         const survivors = Array.from(this.living_agents);
         this.env.organisms = []; // Temporarily clear list to let addOrganism work cleanly without duplicates
         
         for (const org of survivors) {
-            // Do not reset energy or position between maps as requested
-            // Keep the exact same state, just register them back with the new map
+            // Energy and position are deliberately NOT reset between maps: a
+            // generation is one continuous 10,000-tick window shown as 5 maps
+            // in sequence, so the population persists across the swap and only
+            // the terrain changes. Resetting either would turn each map into a
+            // fresh episode and break the generation-length semantics.
+            // See MATHEMATICAL_REFERENCE.md §8.
+            // Traces ARE reset, since credit earned on the previous map's
+            // layout does not transfer to the new one.
 
             if (org.brain && org.brain.resetTraces) {
                 org.brain.resetTraces();
@@ -312,7 +368,9 @@ class GAManager {
         const sorted = [...this.all_agents].sort((a, b) => b.getFitness() - a.getFitness());
 
         // Decide the natural-disaster cull for THIS generation BEFORE recording
-        // metrics, so the generation's row can carry the fraction culled. The
+        // metrics, so the generation's row can carry the fraction culled.
+        // (Inert in the final experiments — disaster_enabled is false, so this
+        // whole block short-circuits and no agent is culled.) The
         // strike is attributed to the generation it fires on (this.generation, N);
         // its population effect lands on N+1's founders, spawned right after.
         //

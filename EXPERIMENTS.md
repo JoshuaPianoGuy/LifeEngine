@@ -270,6 +270,22 @@ Both sweep `learning_rate ∈ {0.005, 0.01, 0.02, 0.03}` × 3 seeds in the same 
 * `run_lr_no_epsilon_sweep_roaming_array.slurm` — **no‑epsilon** family (pure on‑policy REINFORCE). 4 LR × 3 seeds = 12 tasks. Analysed by `analyse_lr_sweep_noeps.py`.
 * `run_lr_epsilon_sweep_roaming_array.slurm` — **epsilon** family, additionally sweeping `epsilon_start ∈ {0.2,0.3,0.5,0.7}` × `decay_shape ∈ {sublinear,linear,quadratic}` (4×4×3×3 seeds = 144 runs, packed into 48 array tasks that each loop the 3 seeds to respect the queue's submit limit). Analysed by `analyse_lr_sweep_epsilon.py` (panel per decay, line per LR).
 
+> **Scripts removed; results kept.** The scripts named above are no longer in
+> the repository. They served **parameter tuning only** — none of them
+> produces a figure or statistic in the final results — so they were removed
+> in the repository cleanup. This section stays as a record of how the
+> operating point was chosen, and everything they wrote is still committed
+> under `output/`:
+>
+> | Family | Results |
+> |---|---|
+> | no‑epsilon LR sweep | `output/lr_sweep_noeps_hard/` |
+> | epsilon LR sweep | `output/lr_sweep_epsilon_hard/` |
+> | earlier LR views | `output/lr_sweep_behaviour/`, `output/lr_sweep_only/` |
+>
+> Recover any of them from git history, e.g.
+> `git show 3e62eb0:<script> > <script>`.
+
 ### 5.2b The 1000×1000 world (an exploration, not the final setup)
 
 Two things came out of this line of work and stayed: **`hidden_size 128`** and
@@ -285,6 +301,22 @@ not because the headline results use it.
 * `run_evolution_condition_hard_w1k_array.slurm` — evolution condition (EA only) in the hard environment, 5 seeds (`1 42 999 123 456`) × 5 replicates = **25 runs** (~10 h median, ~21 h worst; 60 h wall clock, 16 G). Sized for the bimodal stall/take‑off split the capacity sweep found in this cell.
 
 Both fit together inside the 120‑core allowance (90 + 25 = **115 tasks, one run each**); submit the evolution job first so its shorter runs clear early.
+
+> **Scripts removed; results kept.** The scripts named above are no longer in
+> the repository. They served **parameter tuning only** — none of them
+> produces a figure or statistic in the final results — so they were removed
+> in the repository cleanup. This section stays as a record of how the
+> operating point was chosen, and everything they wrote is still committed
+> under `output/`:
+>
+> | Family | Results |
+> |---|---|
+> | w1k learning LR sweep | `output/lr_sweep_learning/` |
+> | w1k evolution (hard) | `output/evolution_hard_runs/`, `output/takeoff_hazard/` |
+> | LR vs evolution comparison | `output/lr_vs_evolution/`, `output/lr_vs_evolution_common_seeds/`, `output/lr0.02_vs_evolution/` |
+>
+> Recover any of them from git history, e.g.
+> `git show 3e62eb0:<script> > <script>`.
 
 **Timing model (measured, not assumed).** Fitting per‑generation wall clock against population in the h128 logs gives a near‑zero intercept — `sec/gen ≈ 0.089 × agents` (learning baseline), `0.075 ×` (learning hard), `0.037 ×` (evolution hard) — so **cost is linear in population**, and a 4× world at matched food density costs 4× per generation. But **halving the generations does not halve the cost**: population grows over a run, so generations 1–500 are only **46.7 %** of a full baseline run's wall clock (43.6 % hard learning, 38.0 % hard evolution). Hence `31 h × 4 × 0.467 ≈ 58 h`, not `31 h × 2`.
 
@@ -306,6 +338,23 @@ Even so, do **not** compare absolute fitness against the 500×500 runs: matched 
 * `run_predator_sweep_array.slurm`, `run_patrol_sweep_array.slurm` — sweep predation pressure (`analyse_predator_sweep.py`, `analyse_predator_metrics.py`).
 * `run_disaster_sweep_*` / `run_disaster_recovery_sweep_*` — disaster probability/fraction and gradual‑recovery variants (`analyse_disaster_sweep_evolution.py`).
 * `run_lr_sweep_fine_array.slurm`, `run_no_epsilon_lr_sweep_array.slurm`, `run_sweep_array.slurm`, `run_simulation.slurm` — earlier / predator‑free LR tuning.
+
+> **Scripts removed; results kept.** The scripts named above are no longer in
+> the repository. They served **parameter tuning only** — none of them
+> produces a figure or statistic in the final results — so they were removed
+> in the repository cleanup. This section stays as a record of how the
+> operating point was chosen, and everything they wrote is still committed
+> under `output/`:
+>
+> | Sweep | Results |
+> |---|---|
+> | epsilon vs no‑epsilon | `output/epsilon_sweep/` |
+> | predator / patrol pressure | `output/predator_sweep/` (the patrol‑metric figures are in its subfolders) |
+> | disaster probability / recovery | `output/disaster_replicates/`, `output/disaster_sweep_evolution_hard_environment/`, `output/disaster_sweep_evolution_tuning/`, `output/evolution_sweep/` |
+> | earlier / predator‑free LR tuning | `output/lr_fine_sweep/`, `output/lr_log_sweep/`, `output/no_eps_lr_fine_sweep/`, `output/no_epsilon_lr_sweep_baseline/` |
+>
+> Recover any of them from git history, e.g.
+> `git show 3e62eb0:<script> > <script>`.
 
 ### 5.4 Seeds and new worlds
 
@@ -491,6 +540,48 @@ All are standalone `python analyse_*.py` scripts (matplotlib, Agg backend) that 
 * **`analyse_hidden_size_sweep.py`** — the **network‑capacity** sweep (hidden width 32 / 64 / 128) from the matched `run_hidden_size_sweep_{evolution,learning,pure_rl}_array.slurm` trio, compared **across all three conditions**. Every figure has the same structure: one column per condition, one row per metric, one line per width (mean ± std over the arm's 15 runs = 3 seeds × 5 replicates, pooled). Writes fitness/population, lifetime + death‑cause, behaviour, food‑tier, cave day/night and learning‑diagnostic figures, plus a final‑window `hid_vs_width.png` (value vs width, one line per condition) and a run‑level Mann‑Whitney/Cliff's‑δ table of each width against the 64 control. `hid_consistency.png` + `hid_band_counts.csv` answer the **consistency** question separately from the performance one: how many of each arm's 15 runs ended in each fitness region, with the regions cut from the environment's pooled runs — a clear two‑group gap becomes a *plateaued low / took off* split (the hard environment: 11/15, 8/15, 5/15 evolution runs plateau at h32/h64/h128), otherwise pooled quartiles. Each run is also flagged *still climbing* vs *plateaued* from its last two windows. `--env baseline|hard|both`; baseline and hard are never mixed (they ran at different LRs). Caches each run's `organisms.csv` summary under `output/.cache_hidden_curves`.
 * **`analyse_lr_sweep.py` / `analyse_lr_sweep_learning.py` / `analyse_lr_sweep_behaviour.py`** — earlier LR‑sweep views (fitness / learning diagnostics / behaviour).
 * **`analyse_epsilon_sweep.py`, `analyse_predator_sweep.py`, `analyse_predator_metrics.py`, `analyse_disaster_sweep_evolution.py`, `analyse_weights*.py`, `compare_weights.py`** — the other sweeps / diagnostics.
+
+> **Which of these are still in the repository.** Only the scripts behind the
+> reported results were kept: `analyse_conditions_by_environment.py`,
+> `analyse_hard_stats.py`, `analyse_learning_hard_runs.py`, `paper_tests.py`,
+> `collate_significance.py`, `make_significance_table.py`,
+> `make_environment_figure.py` and `recolour_env.py`.
+>
+> **Every other `analyse_*.py` listed in this section has been removed.** They
+> were used for **parameter tuning and exploratory sweeps only** — choosing the
+> learning rate, hidden width, trace decay, collapse buffer and explore bonus,
+> and probing stressors that the final comparison does not use — so none of
+> them produces a figure or statistic in the final results. They are left
+> described here as a record of how the operating point was arrived at.
+>
+> **Their outputs are all preserved under `output/`:**
+>
+> | Removed script | Results |
+> |---|---|
+> | `analyse_lr_sweep_noeps.py` | `output/lr_sweep_noeps_hard/` |
+> | `analyse_lr_sweep_epsilon.py` | `output/lr_sweep_epsilon_hard/` |
+> | `analyse_lr_sweep.py` | `output/lr_fine_sweep/`, `output/lr_log_sweep/`, `output/lr_sweep_only/` |
+> | `analyse_lr_sweep_learning.py` | `output/lr_sweep_learning/` |
+> | `analyse_lr_sweep_behaviour.py` | `output/lr_sweep_behaviour/`, `output/lr_log_sweep_behaviour/` |
+> | `analyse_lr_vs_evolution.py` | `output/lr_vs_evolution/`, `output/lr_vs_evolution_common_seeds/`, `output/lr0.02_vs_evolution/` |
+> | `analyse_hidden_size_sweep.py` | `output/hidden_size_sweep_baseline/`, `output/hidden_size_sweep_hard/` |
+> | `analyse_trace_decay_sweep.py` | `output/trace_decay_baseline/`, `output/trace_decay_hard/` |
+> | `analyse_buffer_sweep.py` | `output/buffer_sweep_baseline/`, `output/buffer_sweep_hard/` |
+> | `analyse_explore_bonus_behaviour.py` | `output/explore_bonus_baseline/`, `output/explore_bonus_hard/` |
+> | `analyse_epsilon_sweep.py` | `output/epsilon_sweep/` |
+> | `analyse_predator_sweep.py`, `analyse_predator_metrics.py` | `output/predator_sweep/` |
+> | `analyse_disaster_sweep_evolution.py`, `analyse_disaster_replicates.py` | `output/disaster_replicates/`, `output/disaster_sweep_evolution_hard_environment/`, `output/disaster_sweep_evolution_tuning/`, `output/evolution_sweep/` |
+> | `analyse_food_shuffle.py` | `output/food_shuffle/` |
+> | `analyse_condition_behaviour.py` | `output/condition_behaviour/`, `output/behavioural_analys_learning_evolution_tuning/` |
+> | `analyse_conditions_comparison.py` | `output/condition_comparison_baseline/`, `output/condition_comparison_hard/` |
+> | `analyse_condition_consistency.py` | `output/condition_consistency_hard/` |
+> | `analyse_hard_conditions_combined.py` | `output/hard_conditions_combined/` |
+> | `analyse_evolution_hard_runs.py` | `output/evolution_hard_runs/` |
+> | `analyse_takeoff_hazard.py` | `output/takeoff_hazard/` |
+> | `analyse_behaviour.py`, `analyse_weights*.py`, `compare_weights.py` | wrote to `output/plots/`, which was not retained — these were console/scratch diagnostics, not figure sources |
+>
+> Recover any removed script from git history, e.g.
+> `git show 3e62eb0:analyse_hidden_size_sweep.py > analyse_hidden_size_sweep.py`.
 
 ### 9.1 Statistics: `analyse_hard_stats.py` — the seed is the unit of replication
 

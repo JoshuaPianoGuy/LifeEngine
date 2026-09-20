@@ -135,7 +135,7 @@
 # Run that LOCALLY after pulling the shard CSVs back — the cluster has no Python.
 # ============================================================================
 #SBATCH --job-name="founder_probe"
-#SBATCH --account=compsci
+#SBATCH --account=YOUR_ACCOUNT
 #SBATCH --partition=ada
 #SBATCH --time=06:00:00
 #SBATCH --nodes=1
@@ -150,8 +150,9 @@
 # path that does not exist on the cluster fails the task before line 1.
 #SBATCH --output=slurm-founder_%A_%a.out
 #SBATCH --error=slurm-founder_%A_%a.err
-#SBATCH --mail-type=BEGIN,END,FAIL
-#SBATCH --mail-user=dgrjos001@myuct.ac.za
+# Optional job mail — uncomment and set your own address:
+# #SBATCH --mail-type=BEGIN,END,FAIL
+# #SBATCH --mail-user=your-email@example.com
 
 set -u
 

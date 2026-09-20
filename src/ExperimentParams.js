@@ -30,13 +30,26 @@
 const ExperimentParams = {
     // ── RL (NNBrain) ──────────────────────────────────────────────────────
     learning_rate: 0.02,   // RL_LR
+
+    // epsilon_start / epsilon_end / epsilon_decay_shape are UNUSED IN THE
+    // FINAL EXPERIMENTS: every production RL run passes --no-epsilon
+    // (epsilon_enabled = false), which pins epsilon to 0 for the whole
+    // lifetime and makes all three knobs inert. They only ever did anything
+    // for the earlier epsilon LR-sweep runs, which are not reported. With
+    // epsilon = 0 the importance ratio is identically 1, so the
+    // importance-sampling path in NNBrain is a no-op too. See EXPERIMENTS.md
+    // §3.2 ("All production runs are --no-epsilon").
     epsilon_start: 0.3,    // EPSILON_START
     epsilon_end:   0.05,   // EPSILON_END
 
     // Eligibility-trace decay γ in the REINFORCE update (NNBrain.TRACE_DECAY):
     // trace <- γ * trace + ∇log π(a). It sets how far back in a lifetime credit
-    // for the current reward is spread — the trace's effective horizon is
-    // ~1/(1-γ) ticks (0.90 → ~10, 0.99 → ~100). Larger γ credits older actions
+    // for the current reward is spread. The reported horizon is the trace's
+    // HALF-LIFE, ln(0.5)/ln(γ) ≈ 6.6 ticks at γ = 0.90 — the figure in the
+    // paper (§3.3) and in MATHEMATICAL_REFERENCE.md §2.2. (The geometric
+    // series also sums to 1/(1-γ) = 10, the mean weighted lag; same γ, a
+    // different summary statistic — do not report the two as if they
+    // disagreed.) Larger γ credits older actions
     // more (better for delayed rewards, higher variance); smaller γ keeps credit
     // local to the last few ticks. Read at NNBrain module load, so set it before
     // the sim modules are required. Default 0.90 = the original in-code constant.
@@ -58,6 +71,8 @@ const ExperimentParams = {
     // organism acts purely on-policy (samples straight from the softmax) and
     // REINFORCE still runs with an importance ratio of exactly 1. Use this to
     // isolate whether epsilon exploration adds anything on top of REINFORCE.
+    // Defaults true, but EVERY reported run overrides it to false via
+    // --no-epsilon, so on-policy REINFORCE is the operating point.
     epsilon_enabled: true, // EPSILON_ENABLED
 
     // Shape of the epsilon decay over lifetime_frac (0 at birth -> 1 at max
@@ -69,6 +84,7 @@ const ExperimentParams = {
     //                                  drops sharply late (convex, explore-late).
     //                                  This is the original in-code behaviour.
     // Unknown values fall back to 'quadratic'.
+    // Inert in the final experiments (epsilon_enabled = false everywhere).
     epsilon_decay_shape: 'quadratic', // EPSILON_DECAY_SHAPE
 
     // ── Network (NNBrain) ─────────────────────────────────────────────────
@@ -78,6 +94,32 @@ const ExperimentParams = {
 
     // ── GA (GAManager) ────────────────────────────────────────────────────
     population_size: 100,  // POPULATION_SIZE (founders per generation)
+
+    // MUTATION — there are TWO independent channels, with different rates and
+    // the same sigma. Both apply per WEIGHT as an independent Bernoulli trial
+    // (not one draw per genome), then clip to [-1,1]:
+    //
+    //   inter-generation  p = mut_prob = 0.03, σ = mut_sigma = 0.1
+    //     Applied here, to each crossover child at the generation boundary,
+    //     and by PureRLManager to its between-episode / top-up genomes.
+    //
+    //   intra-generation  p = ASEXUAL_MUT_PROB = 0.05, σ = 0.1
+    //     Applied in AdvancedOrganism on every asexual birth mid-generation.
+    //     These are module constants there, NOT tunables here.
+    //
+    // The 5% channel is the LARGER source of genetic variation despite firing
+    // on a smaller unit: it fires on every birth, and one lineage can pass
+    // through many births inside a single 10,000-tick generation, whereas the
+    // 3% fires once per genome per boundary (~391 vs ~234 expected mutated
+    // weights per event at hidden_size 128).
+    //
+    // TUNABILITY ASYMMETRY: --mut-prob / --mut-sigma move ONLY the 0.03/0.1
+    // inter-generation term. A mutation sweep therefore measures sensitivity to
+    // between-generation disruption, not to total genetic variation.
+    //
+    // The paper reports both rates in Table 1 but does not argue for the gap
+    // between them; the derivation and expected-count table are in
+    // MATHEMATICAL_REFERENCE.md §6.
     mut_prob:        0.03, // MUT_PROB  (between-generation per-weight mutation rate)
     mut_sigma:       0.1,  // MUT_SIGMA (between-generation Gaussian std-dev)
 
@@ -92,7 +134,12 @@ const ExperimentParams = {
     // refill the world from a handful of near-identical vectors); large keeps
     // more diversity but reaches back to staler, less-learned weights.
     // Read at PureRLManager module load, so set it before the sim modules are
-    // required. Default 25 = the original in-code constant.
+    // required. Default 25 = the original in-code constant, but NOTE that the
+    // default is NOT what the experiments ran: every production pure-RL job
+    // passes --collapse-buffer 100 (the slurm scripts default COLLAPSE_BUFFER
+    // to 100), and the paper's Table 1 reports "Pure RL buffer (condition C):
+    // 100 organisms". 100 was chosen so the founder count matches the 100
+    // founders of conditions A and B, keeping the metrics comparable.
     collapse_buffer_size: 25, // COLLAPSE_BUFFER_SIZE
 
     // ── Reproduction (AdvancedOrganism) ───────────────────────────────────
@@ -110,6 +157,14 @@ const ExperimentParams = {
     reproduction_success_rate: 0.8, // REPRODUCTION_SUCCESS_RATE
 
     // ── Natural disaster (GAManager) ──────────────────────────────────────
+    // UNUSED IN THE FINAL EXPERIMENTS. Every production run leaves
+    // disaster_enabled = false, so none of the six knobs below ever takes
+    // effect and disaster_cull_frac is 0.0000 in every generations.csv. The
+    // mechanism was built and swept during exploration, but no disaster run
+    // is reported in the paper and the analysis scripts for it have been
+    // removed. Kept because it is exercised by the GAManager cull path and is
+    // cheap to re-enable (--disaster), not because anything depends on it.
+    //
     // Optional mass-mortality event applied BEFORE tournament selection: a
     // FIXED fraction of the generation's agents are culled from the SELECTION
     // pool, wiping their genes from the gene pool that seeds the next gen.
@@ -144,7 +199,15 @@ const ExperimentParams = {
                                // progress; the cooldown counts from its last gen.
 
     // ── Predators (mirrors PredatorHyperparameters) ───────────────────────
+    // Roaming predators are the only predation lever in the final
+    // experiments: the two reported environments are baseline
+    // (roaming_predator_count = 0) and hard (60 roaming, drain 5).
     predator_drain:         1.0, // PredatorHyperparameters.drainAmount
+
+    // UNUSED IN THE FINAL EXPERIMENTS: every production run passes
+    // --predators-per-patch 0, so patrol predators never spawn, PatrolBrain
+    // is never instantiated and prestige_patch_centres goes unread. This also
+    // sidesteps the patch-count scaling caveat in EXPERIMENTS.md §5.2b.
     predators_per_patch:    2,   // PredatorHyperparameters.patrol.predatorsPerPatch
     roaming_predator_count: 60,   // PredatorHyperparameters.count
 
@@ -177,6 +240,13 @@ const ExperimentParams = {
     food_density_scale: 1,
 
     // ── Non-stationary "shuffle" environment (FoodShuffle) ─────────────────
+    // UNUSED IN THE FINAL EXPERIMENTS. food_shuffle_period stays 0 in every
+    // production run, so FoodShuffle never permutes anything and the base
+    // {low:0.5, medium:1.0, prestige:2.0} payoff mapping holds throughout.
+    // The two reported environments are baseline and roaming-predator; the
+    // non-stationary environment was explored but is not part of the final
+    // comparison.
+    //
     // Periodically permute which food TIER pays which ENERGY VALUE, forcing
     // within-lifetime learning: a fixed evolved colour preference is optimal in
     // a stationary world but is penalised after each reshuffle, while an RL

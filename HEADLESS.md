@@ -12,6 +12,10 @@ process with no browser, canvas, or display. It is built for the CHPC (PBS) clus
 
 ## Relationship to "CHPC Guide.pdf"
 
+> That PDF is an institutional handout for the national CHPC and is **not in
+> this repository** (removed with the other PDFs in the cleanup). The steps that
+> matter are reproduced below, so this section stands on its own.
+
 The guide's **environment & workflow** steps apply unchanged:
 
 - Install NVM, install **Node 16** (`nvm install 16`), `nvm alias default 16`.

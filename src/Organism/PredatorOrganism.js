@@ -38,6 +38,13 @@ const CellStates   = require('./Cell/CellStates');
 const Directions   = require('./Directions');
 const PredatorBrain = require('./Perception/PredatorBrain');
 
+/**
+ * A fixed, non-evolving, non-learning hazard organism. Reuses the standard
+ * cell-based movement and collision pipeline but is excluded from the EA:
+ * it has no genome, is never selected, and never reproduces.
+ *
+ * See the file header for the differences from AdvancedOrganism.
+ */
 class PredatorOrganism extends Organism {
     constructor(col, row, env) {
         // parent=null always — predators are never spawned via inheritance.

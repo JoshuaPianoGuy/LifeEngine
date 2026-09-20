@@ -90,6 +90,14 @@ const AUTO_DOWNLOAD_EVERY_TICKS = 50000;
 const LOG_SERVER_ENABLED = true;
 const LOG_SERVER_ENDPOINT = '/api/logs/append';
 
+/**
+ * Structured three-tier experiment logger: one row per generation, one row per
+ * organism, and a freeform event stream. Instantiated once and shared as a
+ * module singleton (see the export at the foot of this file), so every
+ * manager writes into the same buffers.
+ *
+ * See the file header for the full field list of each tier.
+ */
 class Logger {
     constructor() {
         this.generation_log = [];   // one entry per generation
@@ -210,7 +218,10 @@ class Logger {
             genome_variance:         genome_variance.toFixed(6),
             avg_network_weight_mag:  avg_network_weight_mag.toFixed(4),
             // Fraction of the selection pool culled by a natural disaster on this
-            // generation (0 = no strike). Nonzero marks the strike generation N;
+            // generation (0 = no strike). CONSTANT 0.0000 in every run reported
+            // in the paper, since natural disasters are disabled there; the
+            // column is retained so the schema matches the exploratory disaster
+            // runs. Nonzero marks the strike generation N;
             // the population effect shows up on N+1. During gradual recovery this
             // steps down each generation (e.g. 0.30, 0.25, ...) until back to 0.
             disaster_cull_frac:      (ga._disaster_cull_this_gen || 0).toFixed(4),

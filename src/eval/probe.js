@@ -5,7 +5,7 @@
  *
  * The probe harness. It measures f(θ): the fitness of ONE fixed genome θ,
  * evaluated as a monomorphic founding population of `population_size` clones,
- * with the genetic algorithm fully disabled, on a single seeded map.
+ * with the evolutionary algorithm fully disabled, on a single seeded map.
  *
  *   probe.evaluate({ genome, mapIndex, ticks }) -> { mean_fitness, ... }
  *
@@ -55,6 +55,14 @@ function _unmuteConsole() {
     _saved_log = null;
 }
 
+/**
+ * Stage-1 harness that measures f(theta) for one fixed genome: spawns a
+ * monomorphic cohort of clones with the EA disabled and
+ * reproduction_success_rate = 0, runs it on one seeded map, and returns the
+ * cohort's mean fitness.
+ *
+ * See the file header for the call signature and the fixed-cohort rationale.
+ */
 class Probe {
     /**
      * @param {boolean} rlEnabled  true = RL-on pass (active_weights drift via
@@ -104,7 +112,10 @@ class Probe {
     /**
      * Evaluate one genome on one map for one run.
      *
-     * @param {Float32Array|number[]} genome  θ, length NNBrain.GENOME_SIZE (3910)
+     * @param {Float32Array|number[]} genome  θ, length NNBrain.GENOME_SIZE,
+     *        which is 61*hidden_size + 6 — 3910 at h64, 7814 at the h128 used
+     *        by the reported runs. Set hidden_size BEFORE the sim modules load
+     *        or a h128 genome is mis-read against a h64 network.
      * @param {object} opts
      * @param {number} opts.mapIndex  which map in the seed's pool to load
      * @param {number} [opts.ticks]   ticks to run (default TICKS_PER_MAP=2000)

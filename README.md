@@ -102,7 +102,14 @@ logs/  logs_hard/           run output, baseline and predator (gitignored)
 | The RL / EA / energy equations | [`MATHEMATICAL_REFERENCE.md`](MATHEMATICAL_REFERENCE.md) |
 | Every headless flag | [`HEADLESS.md`](HEADLESS.md) |
 | The landscape pipeline stage by stage | [`landscape/README.md`](landscape/README.md) |
-| Cluster environment setup | `CHPC Guide.pdf` |
+| Running on UCT's SLURM cluster (the one the experiments ran on) | [`UCT_HEX_GUIDE.md`](UCT_HEX_GUIDE.md) |
+| Submitting to the national CHPC (PBS) | [`HEADLESS.md`](HEADLESS.md) §"Submitting on the CHPC" |
+
+> `CHPC Guide.pdf`, referenced by the older cluster sections, is an institutional
+> handout and is **not in this repository** — it was removed with the other PDFs
+> in the repository cleanup. Nothing depends on it: the environment and workflow
+> steps it covers are reproduced in `HEADLESS.md`, and `UCT_HEX_GUIDE.md` covers
+> the SLURM cluster the reported runs actually used.
 
 ---
 
@@ -173,10 +180,36 @@ node src/headless.js --map-seed 2001 --condition learning --mode standard \
 applied *before* any simulation module loads, so a run is fully described by the
 `params.json` it writes.
 
+> **The short command is not a small production run.** Flags you leave off fall back to
+> `ExperimentParams` defaults, which are *not* the reported configuration — most
+> visibly `--predators-per-patch` defaults to 2, so patrol predators spawn, whereas
+> every reported run disables them with `--predators-per-patch 0`. Use the second
+> command above as the template for anything you intend to compare against the
+> results; see §8 for the full as-run constant set.
+
 The three conditions map to flags as `--condition evolution`, `--condition learning`,
 and `--condition learning --mode pure_rl`.
 
 ### 4.4 On the cluster
+
+**First, set your allocation.** The job scripts ship with a placeholder so they
+carry no one's credentials:
+
+```bash
+# every script in slurm/ has this line — replace it with your own allocation
+#SBATCH --account=YOUR_ACCOUNT
+```
+
+`sbatch` rejects the job outright until this is a real allocation you belong to.
+Either edit the scripts, or override per submission without touching them:
+
+```bash
+sbatch --account=<your-allocation> slurm/run_learning_condition_hard_w500_h128_array.slurm
+```
+
+Job mail is commented out in every script for the same reason; uncomment the two
+`--mail-type` / `--mail-user` lines and set your own address if you want it.
+See `UCT_HEX_GUIDE.md` §7 for the cluster walkthrough.
 
 Each experiment is a SLURM job array, one array task per point in the grid:
 
@@ -200,9 +233,19 @@ node src/eval/validate.js --width 500 --height 500 --hidden-size 128 --seed 2001
 node src/eval/validate.js --only grad,mut
 ```
 
-Eight checks, each printing the measured quantity beside its expected value, with the
+Twelve checks, each printing the measured quantity beside its expected value, with the
 whole run written to `output/validation/verification_report.json`. Non-zero exit if
-anything fails. They cover: weight difference identically zero in the evolution arm;
+anything fails.
+
+> **Ten of the twelve run from a clean checkout.** Two — `mad_logged_runs` and
+> `cave_use_in_production` — scan completed runs on disk under `logs/` and
+> `logs_hard/`, which are gitignored. On a fresh clone they report
+> *"no evolution-condition runs found on disk to scan"* and *"no production
+> organisms.csv found to sample"* and the command exits non-zero. That is the
+> expected result without run data, not a broken build — do a headless run first,
+> or read the other ten.
+
+They cover: weight difference identically zero in the evolution arm;
 all three conditions simulating a byte-identical runtime grid; `reinforce()` matching a
 finite-difference ∇log π(a); the mutation kernels being bit-identical across conditions;
 caves costing exactly zero energy at night; predation energy balancing exactly against
@@ -367,6 +410,29 @@ seeds: `analyse_lr_sweep_noeps.py`, `analyse_hidden_size_sweep.py` (widths 32/64
 across all three conditions), `analyse_epsilon_sweep.py`, `analyse_trace_decay_sweep.py`,
 `analyse_buffer_sweep.py`, `analyse_predator_sweep.py`, `analyse_disaster_replicates.py`,
 `analyse_food_shuffle.py`.
+
+> **These scripts are no longer in the repository.** They were used only for
+> parameter tuning and exploratory sweeps — none of them produces a figure or
+> statistic in the final results — so they were removed in the repository
+> cleanup to keep the tree to the code behind the reported experiments. They
+> are kept in this document as a record of how the operating point was chosen.
+>
+> **Their outputs are preserved.** Every figure and summary CSV these scripts
+> produced is still committed under `output/`:
+>
+> | Script | Results |
+> |---|---|
+> | `analyse_lr_sweep_noeps.py` | `output/lr_sweep_noeps_hard/` |
+> | `analyse_hidden_size_sweep.py` | `output/hidden_size_sweep_baseline/`, `output/hidden_size_sweep_hard/` |
+> | `analyse_epsilon_sweep.py` | `output/epsilon_sweep/` |
+> | `analyse_trace_decay_sweep.py` | `output/trace_decay_baseline/`, `output/trace_decay_hard/` |
+> | `analyse_buffer_sweep.py` | `output/buffer_sweep_baseline/`, `output/buffer_sweep_hard/` |
+> | `analyse_predator_sweep.py` | `output/predator_sweep/` |
+> | `analyse_disaster_replicates.py` | `output/disaster_replicates/` |
+> | `analyse_food_shuffle.py` | `output/food_shuffle/` |
+>
+> To read or re-run one, recover it from git history:
+> `git show 3e62eb0:analyse_lr_sweep_noeps.py > analyse_lr_sweep_noeps.py`
 
 ---
 

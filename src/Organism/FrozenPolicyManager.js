@@ -1,3 +1,29 @@
+/**
+ * FrozenPolicyManager.js
+ *
+ * UNUSED IN THE FINAL EXPERIMENTS. This is the generation manager for
+ * experiment_mode 'frozen_pg', selected by --mode frozen_pg. The reported
+ * runs only ever pass --mode standard (GAManager) or --mode pure_rl
+ * (PureRLManager), so nothing here executes in a production run. The mode is
+ * not described in README.md or EXPERIMENTS.md and no analysis script reads
+ * its output; treat it as an exploratory third condition that was not taken
+ * forward.
+ *
+ * What the mode does, for reference: organisms run with their REINFORCE
+ * updates frozen for the whole lifetime (FrozenPolicyOrganism sets
+ * NNBrain.freeze_updates), so behaviour within a life is fixed. At the
+ * generation boundary the single fittest organism receives ONE deferred
+ * policy-gradient update keyed on its own fitness
+ * (NNBrain.applyFrozenUpdate), and the whole next population is cloned from
+ * that one genome with Gaussian mutation. It is therefore a (1, lambda)
+ * hill-climber with an episodic policy-gradient step, not the tournament EA
+ * that GAManager runs.
+ *
+ * Note that POPULATION_SIZE, MUT_SIGMA and SPAWN_RADIUS below are hardcoded
+ * rather than read from ExperimentParams, so --population-size and
+ * --mut-sigma do not reach this mode.
+ */
+
 'use strict';
 
 const NNBrain = require('./Perception/NNBrain');
@@ -12,7 +38,20 @@ const SPAWN_RADIUS = 30;
 // Generation length — single source of truth (honors WorldConfig overrides).
 const { TICKS_PER_MAP, MAPS_PER_GEN } = require('./GenerationConstants');
 
+/**
+ * Generation manager for the 'frozen_pg' experiment mode. Mirrors the
+ * GAManager interface (spawnGeneration / registerAgent / tick / evolve) so
+ * WorldEnvironment can swap it in, but selects by elitist hill-climbing from
+ * the single best organism instead of by tournament.
+ *
+ * Unused in the final experiments — see the file header.
+ */
 class FrozenPolicyManager {
+    /**
+     * @param {WorldEnvironment} env        owning environment
+     * @param {number}           spawn_col  column the founding cohort spawns around
+     * @param {number}           spawn_row  row the founding cohort spawns around
+     */
     constructor(env, spawn_col, spawn_row) {
         this.env = env;
         this.rl_enabled = true;

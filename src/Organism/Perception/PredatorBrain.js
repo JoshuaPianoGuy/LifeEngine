@@ -39,6 +39,13 @@ const CellStates = require('../Cell/CellStates');
 const Directions  = require('../Directions');
 const PredatorHyperparameters = require('../PredatorHyperparameters');
 
+/**
+ * Scripted chase-or-wander policy for roaming predators. Fixed for the whole
+ * run: never evolved, never trained, so predators are a stationary
+ * environmental hazard rather than a co-evolving adversary.
+ *
+ * See the file header for the detection model.
+ */
 class PredatorBrain {
     constructor(owner) {
         this.owner = owner;

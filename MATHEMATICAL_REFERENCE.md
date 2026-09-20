@@ -55,7 +55,7 @@ $\bar b_0 = 0$ and the traces are zeroed at birth (`resetTraces()`), so each org
 
 Traces accumulate the (importance‑weighted) score function $\rho\,\nabla\log\pi(a)$ and decay each tick with $\gamma = \text{TRACE\_DECAY} = 0.90$.
 
-$\gamma$ is **not** a return discount — no return $G_t$ is ever formed. It is the credit‑assignment horizon: the trace is a geometrically weighted memory of the last $\approx 1/(1-\gamma) = 10$ ticks of score functions, which is the mechanism that pays a delayed food reward back to the movements that reached the food. This is the eligibility of Baxter & Bartlett's OLPOMDP — their trace parameter, which that paper also happens to write $\beta$ (no relation to `BASELINE_DECAY` above) — not the $\gamma$ of a discounted return.
+$\gamma$ is **not** a return discount — no return $G_t$ is ever formed. It is the credit‑assignment horizon: the trace is a geometrically weighted memory of the most recent ticks of score functions, which is the mechanism that pays a delayed food reward back to the movements that reached the food. At $\gamma = 0.90$ the trace's **half‑life is $\ln(0.5)/\ln(\gamma) \approx 6.6$ ticks** — the figure quoted in the paper (§3.3): after ~6.6 ticks a given action's contribution has decayed to half its original weight. (The geometric series sums to $1/(1-\gamma) = 10$, so the *mean* weighted lag is ~10 ticks; both describe the same $\gamma$, and the half‑life is the one reported.) This is the eligibility of Baxter & Bartlett's OLPOMDP — their trace parameter, which that paper also happens to write $\beta$ (no relation to `BASELINE_DECAY` above) — not the $\gamma$ of a discounted return.
 
 **Output layer** ($k = 0,\dots,5$, i.e. $\text{OUTPUT\_SIZE}=6$):
 
@@ -384,7 +384,7 @@ $\bar f_{\text{top20\%}}$ (top‑20% mean fitness), $\bar f$ (population mean fi
 | day / night length | 300 / 300 | 600‑tick cycle |
 | decay multipliers | ×2 day‑cave, ×2 night‑outside, ×0 night‑cave | applied to `ENERGY_DECAY_RATE` |
 | `lookRange` | **200** cells | eye raycast horizon (§7) |
-| food values | 0.5 / 1.0 / 2.0 | low / medium / prestige |
+| food values | 0.01 / 0.5 / 1.0 / 2.0 | base (fallback) / low / medium / prestige |
 | `EXPLORE_BONUS` | **0** (off in all production runs) | reward per new cell; swept only |
 | `DECAY_PENALTY` | 0.05 | reward per unit energy decayed |
 | `PREDATOR_DRAIN_PENALTY` | 0.5 | multiplier on drain: reward $=-0.5d$ per contact ($d=1$ default, $d=5$ hard) |

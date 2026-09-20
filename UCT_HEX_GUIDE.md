@@ -6,7 +6,9 @@ as documented at
 [ucthpc.uct.ac.za/index.php/hpc-cluster](https://ucthpc.uct.ac.za/index.php/hpc-cluster/#softwareselection).
 
 > **This is a different cluster from "CHPC Guide.pdf".** That PDF documents the
-> national **CHPC** (PBS scheduler, `qsub`/`qstat`). This guide documents **UCT's
+> national **CHPC** (PBS scheduler, `qsub`/`qstat`); it is an institutional
+> handout and is no longer in this repository, but `HEADLESS.md` reproduces the
+> parts that matter. This guide documents **UCT's
 > in-house cluster** (SLURM scheduler, `sbatch`/`squeue`, environment `module`
 > system). The two are not interchangeable — check which one your account/allocation
 > is actually on before following either guide. Everything *project-specific*
@@ -200,6 +202,28 @@ If this runs cleanly and writes a CSV folder under `logs/`, the SLURM job will t
 ---
 
 ## 7. Submitting a job with SLURM
+
+> **`run_simulation.slurm` has been removed from the repository.** It was a
+> general-purpose single-run driver used for parameter tuning and the early
+> exploratory sweeps; no result in the final report comes from it, so it was
+> dropped in the repository cleanup along with the other tuning scripts. This
+> section is kept as a record of the cluster workflow, and every command below
+> still describes what those runs did.
+>
+> Three ways forward if you need to submit a job today:
+>
+> * **`run_simulation.pbs` is still in the repository** and takes the same
+>   flags and output layout — use it wherever this section says
+>   `run_simulation.slurm`, with `qsub -v` in place of `sbatch --export=`
+>   (see §6).
+> * **The 16 job scripts behind the reported experiments live in `slurm/`** —
+>   e.g. `sbatch slurm/run_learning_condition_hard_w500_h128_array.slurm`.
+>   These are array jobs for the final conditions rather than single runs.
+> * **Recover the original:**
+>   `git show 3e62eb0:run_simulation.slurm > run_simulation.slurm`.
+>
+> Results from the tuning runs this script drove are preserved under
+> `output/` — see EXPERIMENTS.md §9 for the script-to-folder map.
 
 `run_simulation.slurm` is the SLURM counterpart of `run_simulation.pbs`
 (same flags, same output layout — only the scheduler directives differ).

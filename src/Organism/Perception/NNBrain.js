@@ -198,6 +198,17 @@ function perceptIndex(name) {
 
 // ── Main class ────────────────────────────────────────────────────────────────
 
+/**
+ * The 54 -> H -> 6 softmax policy network carried by every prey organism, plus
+ * the per-tick REINFORCE update that adapts it within a lifetime.
+ *
+ * Holds two weight sets: `genome_weights` (inherited, what the EA selects on)
+ * and `active_weights` (what actually drives behaviour, and what RL moves).
+ * Keeping them separate is what makes the setup Baldwinian rather than
+ * Lamarckian — learned drift dies with the organism.
+ *
+ * See the file header for the architecture and genome layout.
+ */
 class NNBrain {
     constructor(owner, rl_enabled = true) {
         this.owner      = owner;

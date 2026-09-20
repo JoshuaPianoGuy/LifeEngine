@@ -127,7 +127,7 @@
 #   SEEDS="2001 2002 2003" sbatch --array=0-29 ...         # 3 seeds x 10 reps
 # ============================================================================
 #SBATCH --job-name="evo_base_w500_h128"
-#SBATCH --account=compsci
+#SBATCH --account=YOUR_ACCOUNT
 #SBATCH --partition=ada
 #SBATCH --time=72:00:00
 #SBATCH --nodes=1
@@ -137,8 +137,9 @@
 #SBATCH --array=0-99
 #SBATCH --output=logs/evo_base_w500_h128_%A_%a.out
 #SBATCH --error=logs/evo_base_w500_h128_%A_%a.err
-#SBATCH --mail-type=BEGIN,END,FAIL
-#SBATCH --mail-user=dgrjos001@myuct.ac.za
+# Optional job mail — uncomment and set your own address:
+# #SBATCH --mail-type=BEGIN,END,FAIL
+# #SBATCH --mail-user=your-email@example.com
 
 # ── Environment (EDIT for your account) ─────────────────────────────────────
 NODE_BIN="${NODE_BIN:-$HOME/.nvm/versions/node/v16.20.2/bin/node}"

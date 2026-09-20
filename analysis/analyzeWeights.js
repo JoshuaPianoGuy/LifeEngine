@@ -22,6 +22,13 @@ const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
 
+/**
+ * Reads a run's generation log and reports how the RMS-normalised network
+ * weight magnitude moves across generations.
+ *
+ * Node-side analysis utility, not part of the simulation: nothing in src/
+ * imports it. See the file header for usage and the normalisation used.
+ */
 class WeightAnalyzer {
     constructor() {
         this.generations = [];

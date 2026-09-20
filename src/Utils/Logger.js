@@ -8,6 +8,17 @@
 
 'use strict';
 
+/**
+ * DEAD CODE — nothing requires this module.
+ *
+ * An earlier, simpler logger that was superseded by src/Logger.js. No file
+ * in the project imports it, and webpack does not pull it into the browser
+ * bundle, so it contributes nothing to any run, browser or headless. The
+ * logger actually used everywhere is src/Logger.js, which writes the
+ * three-tier generation / organism / event output the analysis scripts read.
+ *
+ * Kept only so the earlier logging format stays legible; safe to delete.
+ */
 class Logger {
     constructor() {
         this.logs = [];

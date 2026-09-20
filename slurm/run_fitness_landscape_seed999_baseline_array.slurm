@@ -63,7 +63,7 @@
 #   SEED=42 sbatch ...                                                          # different map
 # ============================================================================
 #SBATCH --job-name="fitness_landscape_s999_baseline"
-#SBATCH --account=compsci
+#SBATCH --account=YOUR_ACCOUNT
 #SBATCH --partition=ada
 #SBATCH --time=45:00:00
 #SBATCH --nodes=1
@@ -73,8 +73,9 @@
 #SBATCH --array=0-8
 #SBATCH --output=logs/fitness_landscape_s999_baseline_%A_%a.out
 #SBATCH --error=logs/fitness_landscape_s999_baseline_%A_%a.err
-#SBATCH --mail-type=BEGIN,END,FAIL
-#SBATCH --mail-user=dgrjos001@myuct.ac.za
+# Optional job mail — uncomment and set your own address:
+# #SBATCH --mail-type=BEGIN,END,FAIL
+# #SBATCH --mail-user=your-email@example.com
 
 # ── Environment (EDIT for your account) ─────────────────────────────────────
 NODE_BIN="${NODE_BIN:-$HOME/.nvm/versions/node/v16.20.2/bin/node}"

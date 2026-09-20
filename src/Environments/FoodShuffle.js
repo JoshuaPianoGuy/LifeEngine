@@ -1,6 +1,14 @@
 /**
  * FoodShuffle.js
  *
+ * UNUSED IN THE FINAL EXPERIMENTS. This module is inert unless
+ * ExperimentParams.food_shuffle_period > 0, and every reported run leaves it
+ * at 0. The two environments in the paper are baseline (no predators) and
+ * hard (60 roaming predators); the non-stationary environment was explored
+ * but is not part of the final comparison, and its analysis script has been
+ * removed. The code below is retained and still correct — it is simply never
+ * entered by a production run.
+ *
  * Non-stationary "shuffle" environment: periodically permutes which food TIER
  * pays which ENERGY VALUE, forcing WITHIN-LIFETIME learning.
  *

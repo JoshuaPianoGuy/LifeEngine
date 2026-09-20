@@ -59,12 +59,13 @@ const PredatorHyperparameters = {
     // PredatorBrain). Prey have no sensory access to predators at all in this
     // design — detection is one-directional (predator -> prey only).
     //
-    // SCALING NOTE: this should scale proportionally with map size. If tuning
-    // on a map that is e.g. 1/4 the width/height of the final map, use
-    // detectionRadius * (small_map_width / final_map_width) on the small map,
-    // or equivalently store this as a fraction of map width and derive the
-    // absolute radius at world-generation time. Left as an absolute value
-    // here for simplicity; PredatorManager.spawnAll() reads it directly.
+    // SCALING: this value is the radius calibrated for `referenceCols` (400)
+    // and IS rescaled to the actual grid at runtime — PredatorManager.spawnAll()
+    // calls resolveForGrid(cols), which sets detectionRadius = round(25 * cols/400).
+    // The 500-wide production world therefore runs at 25 * 1.25 = 31 cells,
+    // which is the figure quoted in the paper's Table 1. Read the effective
+    // value off PredatorHyperparameters AFTER resolveForGrid has run, not from
+    // this literal.
     detectionRadius: 25,
 
     // Radius (in grid cells) within which the predator "loses" a target it

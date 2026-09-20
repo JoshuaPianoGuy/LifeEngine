@@ -3,15 +3,23 @@ const BodyCell    = require("./BodyCell");
 const Hyperparams = require("../../../Hyperparameters");
 const PredatorHyperparams = require("../../PredatorHyperparameters");
 
-// Functional analogue of MouthCell, but drains prey energy directly on
-// contact instead of eating food cells. Predators never gain energy from
-// this — they don't need food, they only exist to impose an energy cost on
-// prey (see PredatorOrganism / PredatorHyperparameters for rationale).
+/**
+ * Functional analogue of MouthCell, but drains prey energy directly on contact
+ * instead of eating food cells.
+ *
+ * Predators never gain energy from this — they do not need food. They exist
+ * only to impose an energy cost on prey; see PredatorOrganism and
+ * PredatorHyperparameters for the rationale.
+ */
 class PredatorDrainCell extends BodyCell {
     constructor(org, loc_col, loc_row) {
         super(CellStates.predatorDrain, org, loc_col, loc_row);
     }
 
+    /**
+     * Per-tick hook: attempt to drain every edible-neighbour cell around this
+     * one. Called by the cell update loop.
+     */
     performFunction() {
         const env    = this.org.env;
         const real_c = this.getRealCol();
@@ -22,6 +30,14 @@ class PredatorDrainCell extends BodyCell {
         }
     }
 
+    /**
+     * Drain one neighbouring cell's owner if it is living prey, and kill it
+     * immediately should the drain take it to zero energy.
+     *
+     * @param {GridCell|null} n_cell neighbouring cell; ignored when empty,
+     *                               unowned, self, dead, another predator, or
+     *                               an organism with no numeric `energy`.
+     */
     drainNeighbor(n_cell) {
         if (n_cell == null || n_cell.owner == null) return;
         const target = n_cell.owner;

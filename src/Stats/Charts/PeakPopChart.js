@@ -1,6 +1,17 @@
 const GAChartController = require("./GAChartController");
 const FossilRecord = require("../FossilRecord");
 
+/**
+ * Peak simultaneous population reached during each generation. A proxy for how
+ * well the cohort sustained itself: a healthy generation grows well past its
+ * 100 founders, a failing one never exceeds them.
+ *
+ * Backing series: FossilRecord.gen_peak_pops, indexed in step with
+ * FossilRecord.gen_record (the generation number on the x-axis).
+ *
+ * Browser Stats-panel chart only; the headless/HPC runs log the same
+ * quantities to generations.csv instead.
+ */
 class PeakPopChart extends GAChartController {
     constructor() {
         super("Peak Population per Generation", "Population");

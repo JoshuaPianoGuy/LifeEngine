@@ -1,6 +1,22 @@
 const FossilRecord = require("../FossilRecord");
 
+/**
+ * Abstract base for every per-generation chart in the browser Stats panel.
+ * Owns the CanvasJS chart object and the incremental-update bookkeeping;
+ * subclasses supply only the series definitions and how to read one
+ * generation out of FossilRecord.
+ *
+ * Subclasses MUST override setData() and addDataPoint(); the base versions
+ * alert() rather than throw, which is the existing behaviour.
+ *
+ * All charts share the x-axis FossilRecord.gen_record (generation number).
+ */
 class GAChartController {
+    /**
+     * @param {string} title   chart title
+     * @param {string} [y_axis] y-axis label
+     * @param {string} [note]   caption rendered under the chart (#chart-note)
+     */
     constructor(title, y_axis="", note="") {
         this.data = [];
         this.chart = new CanvasJS.Chart("chartContainer", {
@@ -21,6 +37,10 @@ class GAChartController {
         $('#chart-note').text(note);
     }
 
+    /**
+     * Define this chart's series and seed them from the full FossilRecord.
+     * @abstract
+     */
     setData() {
         alert("Must override updateData!");
     }
@@ -43,6 +63,12 @@ class GAChartController {
         this.chart.render();
     }
 
+    /**
+     * Sync the chart to FossilRecord without redrawing everything: walk back
+     * from the newest generation to find how many points are missing, append
+     * those, then drop leading points if FossilRecord has rolled off older
+     * generations (it keeps a bounded window).
+     */
     updateData() {
         if (!FossilRecord.gen_record || FossilRecord.gen_record.length === 0) return;
         
@@ -87,10 +113,16 @@ class GAChartController {
         }
     }
 
+    /**
+     * Append generation `i` of FossilRecord to this chart's series.
+     * @abstract
+     * @param {number} i index into FossilRecord.gen_record
+     */
     addDataPoint(i) {
         alert("Must override addDataPoint");
     }
 
+    /** Empty every series and redraw (used on reset / condition switch). */
     clear() {
         for (var item of this.data) {
             item.dataPoints.length = 0;
